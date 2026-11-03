@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import {
   DEFAULT_SETTINGS,
   type AppSettings,
@@ -7,10 +7,13 @@ import {
   type ConversationListQuery,
   type ConversationPatch,
   type Message,
-  type MessageRole
+  type MessageRole,
+  type Plan,
+  type PlanStatus,
+  type PlanStep
 } from '@shared/types'
 import type { Db } from './client'
-import { conversations, messages, settings } from './schema'
+import { conversations, messages, plans, settings } from './schema'
 
 // ---------------------------------------------------------------- impostazioni
 
@@ -175,4 +178,74 @@ export async function addMessage(db: Db, msg: NewMessage): Promise<Message> {
 
 export async function removeMessage(db: Db, id: string): Promise<void> {
   await db.delete(messages).where(eq(messages.id, id))
+}
+
+// ---------------------------------------------------------------- piani
+
+/** Transizioni ammesse: proposto → approvato/rifiutato, approvato → eseguito/rifiutato. */
+const TRANSITIONS: Record<PlanStatus, PlanStatus[]> = {
+  proposed: ['approved', 'rejected'],
+  approved: ['executed', 'rejected', 'approved'],
+  rejected: [],
+  executed: []
+}
+
+export async function listPlans(db: Db, conversationId: string): Promise<Plan[]> {
+  return db
+    .select()
+    .from(plans)
+    .where(eq(plans.conversationId, conversationId))
+    .orderBy(asc(plans.createdAt), asc(sql`rowid`))
+}
+
+export async function getPlan(db: Db, id: string): Promise<Plan | null> {
+  const [row] = await db.select().from(plans).where(eq(plans.id, id))
+  return row ?? null
+}
+
+export async function createPlan(
+  db: Db,
+  init: { conversationId: string; userMessageId: string; steps: PlanStep[] }
+): Promise<Plan> {
+  const row: Plan = { id: randomUUID(), ...init, status: 'proposed', createdAt: Date.now() }
+  await db.insert(plans).values(row)
+  return row
+}
+
+export async function updatePlan(
+  db: Db,
+  id: string,
+  patch: { steps?: PlanStep[]; status?: PlanStatus }
+): Promise<Plan> {
+  const plan = await getPlan(db, id)
+  if (!plan) throw new Error('Piano non trovato')
+  if (patch.steps && plan.status !== 'proposed' && plan.status !== 'approved') {
+    throw new Error('Questo piano non è più modificabile')
+  }
+  if (patch.status && patch.status !== plan.status && !TRANSITIONS[plan.status].includes(patch.status)) {
+    throw new Error(`Transizione non ammessa: ${plan.status} → ${patch.status}`)
+  }
+  const set: Partial<Plan> = {}
+  if (patch.steps) set.steps = patch.steps
+  if (patch.status) set.status = patch.status
+  if (Object.keys(set).length) await db.update(plans).set(set).where(eq(plans.id, id))
+  return { ...plan, ...set }
+}
+
+export async function removePlan(db: Db, id: string): Promise<void> {
+  await db.delete(plans).where(eq(plans.id, id))
+}
+
+/**
+ * Il piano da seguire per un messaggio utente: l'ultimo approvato o eseguito.
+ * Serve a rigenerare (o riprovare) una risposta seguendo lo stesso piano.
+ */
+export async function planToFollow(db: Db, userMessageId: string): Promise<Plan | null> {
+  const [row] = await db
+    .select()
+    .from(plans)
+    .where(and(eq(plans.userMessageId, userMessageId), inArray(plans.status, ['approved', 'executed'])))
+    .orderBy(desc(plans.createdAt))
+    .limit(1)
+  return row ?? null
 }

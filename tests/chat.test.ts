@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { buildChatMessages, buildOptions, createChatService } from '../src/main/chat'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { createConversation, listMessages, updateConversation } from '../src/main/db/repo'
+import { createConversation, getPlan, listMessages, listPlans, updateConversation, updatePlan } from '../src/main/db/repo'
 import { createOllamaClient } from '../src/main/ollama'
 import type { Conversation, StreamEvent } from '../src/shared/types'
 import { startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
@@ -16,7 +16,8 @@ beforeAll(async () => {
   fake = await startFakeOllama([
     { name: 'qwen3', capabilities: ['completion', 'thinking'] },
     { name: 'llama3.2', capabilities: ['completion'] },
-    { name: 'slow', capabilities: ['completion'], delayMs: 20, chunks: Array.from({ length: 40 }, (_, i) => ({ content: `${i} ` })) }
+    { name: 'slow', capabilities: ['completion'], delayMs: 20, chunks: Array.from({ length: 40 }, (_, i) => ({ content: `${i} ` })) },
+    { name: 'badplan', capabilities: ['completion'], plan: 'scusa, non so fare piani' }
   ])
 })
 afterAll(() => fake.close())
@@ -35,6 +36,7 @@ const lastChatBody = () =>
   fake.requests.filter((r) => r.path === '/api/chat').at(-1)?.body as {
     messages: Array<{ role: string; content: string }>
     think?: boolean
+    format?: unknown
     options: Record<string, unknown>
   }
 
@@ -178,5 +180,133 @@ describe('chat service', () => {
   it('regenerate senza messaggi → errore', async () => {
     const conv = await createConversation(h.db, { model: 'llama3.2' })
     await expect(service().regenerate(target, conv.id)).rejects.toThrow('Niente da rigenerare')
+  })
+})
+
+describe('plan mode', () => {
+  it('propose → piano salvato come proposed, con format=schema e brief nel system prompt', async () => {
+    const conv = await createConversation(h.db, { model: 'qwen3', think: true, constraints: 'Solo italiano', planMode: true })
+    const chat = service()
+    const { streamId, userMessage } = await chat.proposePlan(target, conv.id, 'Spiegami le frazioni')
+    await chat.wait(streamId)
+
+    const body = lastChatBody()
+    expect(body.format).toMatchObject({ required: ['steps'] })
+    expect(body.messages[0].content).toMatch(/^# Vincoli\nSolo italiano\n\n# Modalità piano/)
+    expect(body.messages.at(-1)).toEqual({ role: 'user', content: 'Spiegami le frazioni' })
+
+    expect(events.every((e) => e.kind === 'plan')).toBe(true)
+    const done = events.at(-1)!
+    expect(done.type).toBe('done')
+    expect(done.message).toBeUndefined()
+    expect(done.plan).toMatchObject({ status: 'proposed', userMessageId: userMessage!.id })
+    expect(done.plan!.steps.map((s) => s.title)).toEqual([
+      'Capire la richiesta',
+      'Raccogliere i punti chiave',
+      'Scrivere la risposta'
+    ])
+    // il piano non finisce nello storico dei messaggi
+    expect((await listMessages(h.db, conv.id)).map((m) => m.role)).toEqual(['user'])
+  })
+
+  it('execute → risposta che segue il piano modificato, piano executed', async () => {
+    const conv = await createConversation(h.db, { model: 'llama3.2', role: 'Sei un tutor' })
+    const chat = service()
+    await chat.wait((await chat.proposePlan(target, conv.id, 'Domanda')).streamId)
+    const plan = events.at(-1)!.plan!
+    await updatePlan(h.db, plan.id, { steps: [{ title: 'Solo questo passo', detail: 'Breve.' }] })
+
+    events = []
+    const { streamId, userMessage } = await chat.executePlan(target, plan.id)
+    expect(userMessage).toBeUndefined()
+    expect((await getPlan(h.db, plan.id))?.status).toBe('approved')
+    await chat.wait(streamId)
+
+    const body = lastChatBody()
+    expect(body.format).toBeUndefined()
+    expect(body.messages[0].content).toBe(
+      '# Ruolo\nSei un tutor\n\n# Piano approvato\n' +
+        "L'utente ha approvato questo piano per rispondere alla sua ultima richiesta. Seguilo passo per passo, nell'ordine indicato, senza aggiungere né saltare passi. Non ripetere il piano: esegui.\n\n" +
+        '1. Solo questo passo — Breve.'
+    )
+    expect(body.messages.slice(1)).toEqual([{ role: 'user', content: 'Domanda' }])
+
+    const done = events.at(-1)!
+    expect(done).toMatchObject({ kind: 'chat', type: 'done' })
+    expect(done.message?.content).toBe('Ciao mondo!')
+    expect(done.executedPlan).toMatchObject({ id: plan.id, status: 'executed' })
+    await expect(chat.executePlan(target, plan.id)).rejects.toThrow('non si può eseguire')
+  })
+
+  it('regenerate dopo l\'esecuzione segue ancora il piano', async () => {
+    const conv = await createConversation(h.db, { model: 'llama3.2' })
+    const chat = service()
+    await chat.wait((await chat.proposePlan(target, conv.id, 'Domanda')).streamId)
+    const plan = events.at(-1)!.plan!
+    await chat.wait((await chat.executePlan(target, plan.id)).streamId)
+    await chat.wait((await chat.regenerate(target, conv.id)).streamId)
+    expect(lastChatBody().messages[0].content).toContain('# Piano approvato')
+    expect((await listMessages(h.db, conv.id)).map((m) => m.role)).toEqual(['user', 'assistant'])
+  })
+
+  it('riprova dopo un errore di esecuzione: segue il piano approvato', async () => {
+    const conv = await createConversation(h.db, { model: 'llama3.2' })
+    const chat = service()
+    await chat.wait((await chat.proposePlan(target, conv.id, 'Domanda')).streamId)
+    const plan = events.at(-1)!.plan!
+    await updateConversation(h.db, conv.id, { model: 'inesistente' })
+    await chat.wait((await chat.executePlan(target, plan.id)).streamId)
+    expect(events.at(-1)).toMatchObject({ type: 'error', kind: 'chat' })
+    expect((await getPlan(h.db, plan.id))?.status).toBe('approved')
+
+    await updateConversation(h.db, conv.id, { model: 'llama3.2' })
+    await chat.wait((await chat.regenerate(target, conv.id)).streamId)
+    expect(lastChatBody().messages[0].content).toContain('# Piano approvato')
+    expect(events.at(-1)?.executedPlan).toMatchObject({ id: plan.id, status: 'executed' })
+  })
+
+  it('regeneratePlan sostituisce il piano proposto', async () => {
+    const conv = await createConversation(h.db, { model: 'llama3.2' })
+    const chat = service()
+    await chat.wait((await chat.proposePlan(target, conv.id, 'Domanda')).streamId)
+    const first = events.at(-1)!.plan!
+    await chat.wait((await chat.regeneratePlan(target, conv.id)).streamId)
+    const plans = await listPlans(h.db, conv.id)
+    expect(plans).toHaveLength(1)
+    expect(plans[0].id).not.toBe(first.id)
+    expect(plans[0].status).toBe('proposed')
+  })
+
+  it('risposta non valida → errore, nessun piano; poi si può riprovare', async () => {
+    const conv = await createConversation(h.db, { model: 'badplan' })
+    const chat = service()
+    await chat.wait((await chat.proposePlan(target, conv.id, 'Domanda')).streamId)
+    expect(events.at(-1)).toMatchObject({ type: 'error', kind: 'plan' })
+    expect(events.at(-1)?.error).toContain('piano valido')
+    expect(await listPlans(h.db, conv.id)).toEqual([])
+    await updateConversation(h.db, conv.id, { model: 'llama3.2' })
+    await chat.wait((await chat.regeneratePlan(target, conv.id)).streamId)
+    expect(await listPlans(h.db, conv.id)).toHaveLength(1)
+  })
+
+  it('un piano superato da un nuovo messaggio non si esegue', async () => {
+    const conv = await createConversation(h.db, { model: 'llama3.2' })
+    const chat = service()
+    await chat.wait((await chat.proposePlan(target, conv.id, 'Prima')).streamId)
+    const plan = events.at(-1)!.plan!
+    await chat.wait((await chat.send(target, conv.id, 'Cambio idea')).streamId)
+    await expect(chat.executePlan(target, plan.id)).rejects.toThrow('ultimo messaggio')
+  })
+
+  it('transizioni di stato', async () => {
+    const conv = await createConversation(h.db, { model: 'llama3.2' })
+    const chat = service()
+    await chat.wait((await chat.proposePlan(target, conv.id, 'x')).streamId)
+    const plan = events.at(-1)!.plan!
+    const rejected = await updatePlan(h.db, plan.id, { status: 'rejected' })
+    expect(rejected.status).toBe('rejected')
+    await expect(updatePlan(h.db, plan.id, { status: 'approved' })).rejects.toThrow('Transizione non ammessa')
+    await expect(updatePlan(h.db, plan.id, { steps: [{ title: 'a', detail: '' }] })).rejects.toThrow('non è più modificabile')
+    await expect(chat.executePlan(target, plan.id)).rejects.toThrow('non si può eseguire')
   })
 })

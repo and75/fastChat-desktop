@@ -109,6 +109,7 @@ export interface ConversationListQuery {
 export interface ConversationDetail {
   conversation: Conversation
   messages: Message[]
+  plans: Plan[]
 }
 
 export interface SendResult {
@@ -119,9 +120,13 @@ export interface SendResult {
 
 export type StreamEventType = 'thinking' | 'content' | 'done' | 'error'
 
+/** 'chat': risposta normale o esecuzione di un piano; 'plan': proposta di un piano (content è JSON). */
+export type StreamKind = 'chat' | 'plan'
+
 export interface StreamEvent {
   streamId: string
   conversationId: string
+  kind: StreamKind
   type: StreamEventType
   delta?: string
   error?: string
@@ -129,6 +134,15 @@ export interface StreamEvent {
   message?: Message
   /** Sull'evento 'done': true se la generazione è stata interrotta dall'utente. */
   aborted?: boolean
+  /** Sull'evento 'done' di uno stream 'plan': il piano proposto e salvato. */
+  plan?: Plan
+  /** Sull'evento 'done' dell'esecuzione: il piano passato a 'executed'. */
+  executedPlan?: Plan
+}
+
+export interface PlanUpdate {
+  steps?: PlanStep[]
+  status?: PlanStatus
 }
 
 export interface AppSettings {
@@ -157,6 +171,10 @@ export const IPC = {
   chatSend: 'chat:send',
   chatRegenerate: 'chat:regenerate',
   chatAbort: 'chat:abort',
+  plansPropose: 'plans:propose',
+  plansRegenerate: 'plans:regenerate',
+  plansUpdate: 'plans:update',
+  plansExecute: 'plans:execute',
   /** Evento main → renderer. */
   chatStream: 'chat:stream',
   settingsGet: 'settings:get',

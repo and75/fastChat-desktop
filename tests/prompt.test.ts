@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { buildSystemPrompt, estimateTokens, selectHistory, type HistoryMessage } from '../src/shared/prompt'
+import {
+  buildExecutePrompt,
+  buildPlanPrompt,
+  buildSystemPrompt,
+  estimateTokens,
+  normalizeSteps,
+  parsePlan,
+  PLAN_SCHEMA,
+  selectHistory,
+  type HistoryMessage
+} from '../src/shared/prompt'
 
 const brief = (b: Partial<Record<'role' | 'context' | 'goals' | 'constraints', string>>) => ({
   role: '',
@@ -73,5 +83,63 @@ describe('selectHistory', () => {
 
   it('stima token ~ caratteri/4', () => {
     expect(estimateTokens('x'.repeat(400))).toBe(104)
+  })
+})
+
+describe('plan mode: prompt', () => {
+  const b = brief({ role: 'Sei un tutor', constraints: 'Solo italiano' })
+  const steps = [
+    { title: 'Definire', detail: 'Spiegare il concetto.' },
+    { title: 'Esempio', detail: '' }
+  ]
+
+  it('buildPlanPrompt: brief prima, poi le istruzioni del piano', () => {
+    const out = buildPlanPrompt(b)
+    expect(out.startsWith('# Ruolo\nSei un tutor\n\n# Vincoli\nSolo italiano\n\n# Modalità piano\n')).toBe(true)
+    expect(out).toContain('{"steps":[{"title":"…","detail":"…"}]}')
+  })
+
+  it('buildPlanPrompt senza brief: solo le istruzioni', () => {
+    expect(buildPlanPrompt(brief({})).startsWith('# Modalità piano')).toBe(true)
+  })
+
+  it('buildExecutePrompt: inietta il piano numerato dopo il brief', () => {
+    const out = buildExecutePrompt(b, steps)
+    expect(out.startsWith('# Ruolo\nSei un tutor\n\n# Vincoli\nSolo italiano\n\n# Piano approvato\n')).toBe(true)
+    expect(out.endsWith('1. Definire — Spiegare il concetto.\n2. Esempio')).toBe(true)
+  })
+
+  it('lo schema JSON richiede steps con title e detail', () => {
+    expect(PLAN_SCHEMA.required).toEqual(['steps'])
+    expect(PLAN_SCHEMA.properties.steps.items.required).toEqual(['title', 'detail'])
+  })
+})
+
+describe('plan mode: parsing e normalizzazione', () => {
+  it('JSON valido', () => {
+    expect(parsePlan('{"steps":[{"title":" A ","detail":" a "},{"title":"B","detail":"b"}]}')).toEqual([
+      { title: 'A', detail: 'a' },
+      { title: 'B', detail: 'b' }
+    ])
+  })
+
+  it('JSON dentro un blocco di codice o testo, e array nudo', () => {
+    expect(parsePlan('Ecco:\n```json\n{"steps":[{"title":"A","detail":""}]}\n```')).toEqual([{ title: 'A', detail: '' }])
+    expect(parsePlan('[{"title":"A","detail":"x"}]')).toEqual([{ title: 'A', detail: 'x' }])
+  })
+
+  it('scarta passi senza titolo; errore se non resta niente o non è JSON', () => {
+    expect(parsePlan('{"steps":[{"title":"","detail":"x"},{"title":"B"},42]}')).toEqual([{ title: 'B', detail: '' }])
+    expect(() => parsePlan('{"steps":[]}')).toThrow('piano valido')
+    expect(() => parsePlan('non è json')).toThrow('piano valido')
+    expect(() => parsePlan('{"altro":1}')).toThrow('piano valido')
+  })
+
+  it('normalizeSteps limita a 20 passi e la lunghezza dei campi', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ title: `T${i}`, detail: 'd'.repeat(5000) }))
+    const out = normalizeSteps(many)
+    expect(out).toHaveLength(20)
+    expect(out[0].detail).toHaveLength(2000)
+    expect(() => normalizeSteps('x')).toThrow()
   })
 })

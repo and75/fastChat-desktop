@@ -26,13 +26,54 @@ function useDebouncedPatch(convId: string, delay = 300): (patch: ConversationPat
   }
 }
 
+function Switch(props: {
+  label: string
+  checked: boolean
+  disabled?: boolean
+  title: string
+  compact?: boolean
+  color: string
+  onChange(v: boolean): void
+}): React.JSX.Element {
+  const { label, checked, disabled = false, title, compact = false, color, onChange } = props
+  return (
+    <label
+      title={title}
+      className={
+        'flex select-none items-center gap-2 ' +
+        (compact ? 'text-xs ' : 'text-sm ') +
+        (disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer')
+      }
+    >
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label={label}
+        className="peer sr-only"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span
+        aria-hidden
+        className={
+          'relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 ' +
+          (checked ? color : 'bg-zinc-300 dark:bg-zinc-700')
+        }
+      >
+        <span className={'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ' + (checked ? 'left-4.5' : 'left-0.5')} />
+      </span>
+      <span>{label}</span>
+    </label>
+  )
+}
+
 /** Interruttore del ragionamento: disabilitato se il modello non ha la capability "thinking". */
 export function ThinkToggle({ conversation, compact = false }: { conversation: Conversation; compact?: boolean }): React.JSX.Element {
   const update = useConversations((s) => s.update)
   const caps = useModels((s) => s.capabilities[conversation.model])
   const supported = caps?.thinking === true
-  const on = supported && conversation.think
-  const reason = !conversation.model
+  const title = !conversation.model
     ? 'Nessun modello selezionato'
     : !caps
       ? 'Verifica delle capacità del modello…'
@@ -41,34 +82,30 @@ export function ThinkToggle({ conversation, compact = false }: { conversation: C
         : `${conversation.model} non supporta il ragionamento`
 
   return (
-    <label
-      title={reason}
-      className={
-        'flex select-none items-center gap-2 ' +
-        (compact ? 'text-xs ' : 'text-sm ') +
-        (supported ? 'cursor-pointer' : 'cursor-not-allowed opacity-50')
-      }
-    >
-      <input
-        type="checkbox"
-        role="switch"
-        aria-label="Ragionamento"
-        className="peer sr-only"
-        checked={on}
-        disabled={!supported}
-        onChange={(e) => void update(conversation.id, { think: e.target.checked })}
-      />
-      <span
-        aria-hidden
-        className={
-          'relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 ' +
-          (on ? 'bg-violet-600' : 'bg-zinc-300 dark:bg-zinc-700')
-        }
-      >
-        <span className={'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ' + (on ? 'left-4.5' : 'left-0.5')} />
-      </span>
-      <span>Ragionamento</span>
-    </label>
+    <Switch
+      label="Ragionamento"
+      checked={supported && conversation.think}
+      disabled={!supported}
+      title={title}
+      compact={compact}
+      color="bg-violet-600"
+      onChange={(think) => void update(conversation.id, { think })}
+    />
+  )
+}
+
+/** Plan mode: il modello propone prima un piano, che l'utente approva o modifica. */
+export function PlanModeToggle({ conversation, compact = false }: { conversation: Conversation; compact?: boolean }): React.JSX.Element {
+  const update = useConversations((s) => s.update)
+  return (
+    <Switch
+      label="Plan mode"
+      checked={conversation.planMode}
+      title="Prima il piano, poi l'esecuzione: il modello propone i passi, tu li approvi o li modifichi"
+      compact={compact}
+      color="bg-amber-500"
+      onChange={(planMode) => void update(conversation.id, { planMode })}
+    />
   )
 }
 
@@ -160,6 +197,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
       </label>
 
       <ThinkToggle conversation={conversation} />
+      <PlanModeToggle conversation={conversation} />
 
       <details className="text-sm" open={advancedSet}>
         <summary className="cursor-pointer text-zinc-500">Parametri avanzati</summary>

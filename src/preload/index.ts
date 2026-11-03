@@ -31,6 +31,12 @@ const api: Api = {
       }
     }
   },
+  plans: {
+    propose: (id, text) => invoke(IPC.plansPropose, id, text),
+    regenerate: (id) => invoke(IPC.plansRegenerate, id),
+    update: (planId, update) => invoke(IPC.plansUpdate, planId, update),
+    execute: (planId) => invoke(IPC.plansExecute, planId)
+  },
   settings: {
     get: () => invoke(IPC.settingsGet),
     set: (patch) => invoke(IPC.settingsSet, patch)

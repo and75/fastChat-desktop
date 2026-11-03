@@ -13,6 +13,19 @@ export interface FakeModel {
   chunks?: Array<{ thinking?: string; content?: string }>
   /** Ritardo tra un chunk e l'altro, ms. */
   delayMs?: number
+  /**
+   * Risposta alle richieste con `format` (plan mode): oggetto serializzato in JSON oppure stringa grezza.
+   * Default: un piano di tre passi.
+   */
+  plan?: unknown
+}
+
+export const DEFAULT_FAKE_PLAN = {
+  steps: [
+    { title: 'Capire la richiesta', detail: 'Riassumere cosa chiede l\'utente.' },
+    { title: 'Raccogliere i punti chiave', detail: 'Elencare gli elementi da trattare.' },
+    { title: 'Scrivere la risposta', detail: 'Rispondere in modo ordinato.' }
+  ]
 }
 
 export interface FakeOllama {
@@ -65,7 +78,14 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
     if (req.url === '/api/chat') {
       if (!model) return json(res, 404, { error: `model '${modelName}' not found` })
       const think = (body as { think?: boolean }).think === true
-      const chunks = model.chunks ?? [{ thinking: 'Ci penso. ' }, { content: 'Ciao' }, { content: ' mondo!' }]
+      const format = (body as { format?: unknown }).format
+      let chunks = model.chunks ?? [{ thinking: 'Ci penso. ' }, { content: 'Ciao' }, { content: ' mondo!' }]
+      if (format) {
+        const plan = model.plan ?? DEFAULT_FAKE_PLAN
+        const text = typeof plan === 'string' ? plan : JSON.stringify(plan)
+        chunks = [{ thinking: 'Pianifico. ' }]
+        for (let i = 0; i < text.length; i += 20) chunks.push({ content: text.slice(i, i + 20) })
+      }
       res.writeHead(200, { 'content-type': 'application/x-ndjson' })
       let aborted = false
       res.on('close', () => (aborted = !res.writableFinished))

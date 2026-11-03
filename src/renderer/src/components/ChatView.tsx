@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { MessageBubble } from './MessageBubble'
-import { ThinkToggle } from './ModelSettings'
+import { PlanModeToggle, ThinkToggle } from './ModelSettings'
+import { PlanChecklist, PlanLoading, PlanSummary } from './PlanChecklist'
 
 function Composer({ disabled, streaming }: { disabled: boolean; streaming: boolean }): React.JSX.Element {
   const [text, setText] = useState('')
@@ -46,7 +47,13 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
           value={text}
           disabled={disabled}
           aria-label="Messaggio"
-          placeholder={disabled ? 'Seleziona un modello per iniziare' : 'Scrivi un messaggio… (Invio per inviare, Maiusc+Invio per andare a capo)'}
+          placeholder={
+            disabled
+              ? 'Seleziona un modello per iniziare'
+              : conversation?.planMode
+                ? 'Descrivi la richiesta: il modello proporrà prima un piano…'
+                : 'Scrivi un messaggio… (Invio per inviare, Maiusc+Invio per andare a capo)'
+          }
           className="max-h-60 flex-1 resize-none bg-transparent px-1 py-1 outline-none disabled:cursor-not-allowed"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -70,13 +77,14 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
             disabled={disabled || !text.trim()}
             className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
           >
-            Invia
+            {conversation?.planMode ? 'Pianifica' : 'Invia'}
           </button>
         )}
       </div>
       {conversation && (
         <div className="mt-2 flex items-center gap-4 px-1 text-xs text-zinc-500">
           <ThinkToggle conversation={conversation} compact />
+          <PlanModeToggle conversation={conversation} compact />
           <span data-testid="composer-temperature">Temperatura {conversation.temperature.toFixed(2)}</span>
         </div>
       )}
@@ -85,7 +93,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
 }
 
 export function ChatView(): React.JSX.Element {
-  const { conversation, messages, streams, error, regenerate, clearError } = useChat()
+  const { conversation, messages, plans, streams, error, regenerate, retry, clearError } = useChat()
   const create = useConversations((s) => s.create)
   const live = conversation ? streams[conversation.id] : undefined
   const scroller = useRef<HTMLDivElement>(null)
@@ -136,22 +144,39 @@ export function ChatView(): React.JSX.Element {
             </p>
           )}
           {messages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              role={m.role}
-              content={m.content}
-              thinking={m.thinking}
-              meta={m.role === 'assistant' ? m : undefined}
-              actions={
-                canRegenerate && m === last && m.role === 'assistant' ? (
-                  <button type="button" className="hover:text-zinc-700 dark:hover:text-zinc-200" onClick={() => void regenerate()}>
-                    ↻ Rigenera
-                  </button>
-                ) : undefined
-              }
-            />
+            <Fragment key={m.id}>
+              <MessageBubble
+                role={m.role}
+                content={m.content}
+                thinking={m.thinking}
+                meta={m.role === 'assistant' ? m : undefined}
+                actions={
+                  canRegenerate && m === last && m.role === 'assistant' ? (
+                    <button
+                      type="button"
+                      className="hover:text-zinc-700 dark:hover:text-zinc-200"
+                      onClick={() => void regenerate()}
+                    >
+                      ↻ Rigenera
+                    </button>
+                  ) : undefined
+                }
+              />
+              {plans
+                .filter((p) => p.userMessageId === m.id)
+                .map((p) =>
+                  m === last && (p.status === 'proposed' || p.status === 'approved') ? (
+                    <PlanChecklist key={p.id} plan={p} busy={!!live} />
+                  ) : (
+                    <PlanSummary key={p.id} plan={p} />
+                  )
+                )}
+            </Fragment>
           ))}
-          {live && <MessageBubble role="assistant" content={live.content} thinking={live.thinking} streaming />}
+          {live?.kind === 'plan' && <PlanLoading thinking={live.thinking} content={live.content} />}
+          {live?.kind === 'chat' && (
+            <MessageBubble role="assistant" content={live.content} thinking={live.thinking} streaming />
+          )}
           {error && (
             <div
               role="alert"
@@ -160,7 +185,7 @@ export function ChatView(): React.JSX.Element {
             >
               <span className="flex-1">{error}</span>
               {last?.role === 'user' && (
-                <button type="button" className="font-medium underline" onClick={() => void regenerate()}>
+                <button type="button" className="font-medium underline" onClick={() => void retry()}>
                   Riprova
                 </button>
               )}

@@ -5,8 +5,10 @@ import {
   type ConversationDetail,
   type ConversationListQuery,
   type ConversationPatch,
+  type PlanUpdate,
   type Result
 } from '@shared/types'
+import { normalizeSteps } from '@shared/prompt'
 import { createChatService } from './chat'
 import type { Db } from './db/client'
 import {
@@ -15,9 +17,11 @@ import {
   getSettings,
   listConversations,
   listMessages,
+  listPlans,
   removeConversation,
   setSettings,
-  updateConversation
+  updateConversation,
+  updatePlan
 } from './db/repo'
 import { OllamaError, type OllamaClient } from './ollama'
 
@@ -98,7 +102,11 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
   handle(IPC.conversationsGet, async (_e, id: string): Promise<ConversationDetail> => {
     const conversation = await getConversation(db, requireId(id))
     if (!conversation) throw new Error('Conversazione non trovata')
-    return { conversation, messages: await listMessages(db, conversation.id) }
+    return {
+      conversation,
+      messages: await listMessages(db, conversation.id),
+      plans: await listPlans(db, conversation.id)
+    }
   })
 
   handle(IPC.conversationsCreate, async () => {
@@ -123,4 +131,23 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
   })
   handle(IPC.chatRegenerate, (e, id: string) => chat.regenerate(watch(e.sender), requireId(id)))
   handle(IPC.chatAbort, (_e, streamId: string) => chat.abort(requireId(streamId)))
+
+  // ---- plan mode
+  handle(IPC.plansPropose, (e, id: string, text: string) => {
+    if (typeof text !== 'string') throw new Error('Messaggio non valido')
+    return chat.proposePlan(watch(e.sender), requireId(id), text)
+  })
+  handle(IPC.plansRegenerate, (e, conversationId: string) => chat.regeneratePlan(watch(e.sender), requireId(conversationId)))
+  handle(IPC.plansUpdate, (_e, planId: string, update: PlanUpdate) => {
+    const patch: PlanUpdate = {}
+    if (update?.steps !== undefined) patch.steps = normalizeSteps(update.steps)
+    if (update?.status !== undefined) {
+      if (!['proposed', 'approved', 'rejected', 'executed'].includes(update.status)) throw new Error('Stato non valido')
+      // 'executed' lo imposta solo il main, a esecuzione completata.
+      if (update.status === 'executed') throw new Error('Usa plans.execute per eseguire un piano')
+      patch.status = update.status
+    }
+    return updatePlan(db, requireId(planId), patch)
+  })
+  handle(IPC.plansExecute, (e, planId: string) => chat.executePlan(watch(e.sender), requireId(planId)))
 }

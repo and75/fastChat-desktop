@@ -33,6 +33,19 @@ const fake = await startFakeOllama([
 ])
 const lastChat = () => fake.requests.filter((r) => r.path === '/api/chat').at(-1)?.body
 
+
+/** Attiva/disattiva un interruttore cliccando l'etichetta visibile (l'input è nascosto) e attende lo stato. */
+async function setSwitch(scope, name, on) {
+  const input = scope.getByRole('switch', { name })
+  if ((await input.isChecked()) !== on) {
+    await scope.locator('label', { has: scope.page().getByRole('switch', { name }) }).click()
+  }
+  await scope.page().waitForFunction(
+    ([el, want]) => el.checked === want,
+    [await input.elementHandle(), on]
+  )
+}
+
 const steps = []
 async function step(name, fn) {
   try {
@@ -246,7 +259,7 @@ try {
 
   await step('temperatura e parametri avanzati arrivano a Ollama in options', async () => {
     const settings = page.getByTestId('model-settings')
-    await settings.getByRole('switch', { name: 'Ragionamento' }).check({ force: true })
+    await setSwitch(settings, 'Ragionamento', true)
     await settings.getByLabel('Temperatura').fill('1.2')
     await page.getByTestId('temperature-value').filter({ hasText: '1.20' }).waitFor()
     await settings.getByText('Parametri avanzati').click()
@@ -286,7 +299,7 @@ try {
   })
 
   await step('ragionamento spento: think=false e nessun blocco', async () => {
-    await page.getByTestId('model-settings').getByRole('switch', { name: 'Ragionamento' }).uncheck({ force: true })
+    await setSwitch(page.getByTestId('model-settings'), 'Ragionamento', false)
     await page.waitForFunction(async () => (await window.api.conversations.list()).data[0].think === false)
     await composer.fill('Rispondi subito')
     await composer.press('Enter')
@@ -301,6 +314,107 @@ try {
 
   await page.getByTestId('message-assistant').first().getByTestId('thinking-text').waitFor()
   await page.screenshot({ path: join(root, 'test-results', 'e2e-phase3.png') })
+
+  // ------------------------------------------------------------------ fase 4
+  const planRequests = () => fake.requests.filter((r) => r.path === '/api/chat' && r.body?.format)
+
+  await step('plan mode: il modello propone un piano (format = JSON schema)', async () => {
+    await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
+    await page.getByTestId('model-settings').waitFor()
+    await page.selectOption('#model-select', 'thinker:8b')
+    await page.getByTestId('brief-panel').getByLabel('Vincoli').fill('Usa esempi con la pizza.')
+    await page.getByTestId('brief-panel').getByTestId('brief-status').filter({ hasText: 'Salvato' }).waitFor()
+    await setSwitch(page.getByTestId('model-settings'), 'Plan mode', true)
+    await page.getByRole('button', { name: 'Pianifica' }).waitFor()
+
+    const before = planRequests().length
+    await composer.fill('Spiegami le frazioni')
+    await composer.press('Enter')
+    await page.getByTestId('plan-loading').waitFor()
+    const checklist = page.getByTestId('plan-checklist')
+    await checklist.waitFor()
+    assert.equal(planRequests().length, before + 1)
+    const req = planRequests().at(-1).body
+    assert.deepEqual(req.format.required, ['steps'])
+    assert.match(req.messages[0].content, /^# Vincoli\nUsa esempi con la pizza\.\n\n# Modalità piano/)
+    assert.equal(await checklist.getByTestId('plan-step').count(), 3)
+    // nessuna risposta dell'assistente finché il piano non è approvato
+    assert.equal(await page.getByTestId('message-assistant').count(), 0)
+  })
+
+  await step('checklist: modifica, riordina, elimina e aggiungi passi', async () => {
+    const checklist = page.getByTestId('plan-checklist')
+    await checklist.getByLabel('Titolo del passo 1').fill('Cos\'è una frazione')
+    await checklist.getByLabel('Sposta su il passo 3').click()
+    // ora: 1 Cos'è una frazione, 2 Scrivere la risposta, 3 Raccogliere i punti chiave
+    await checklist.getByLabel('Elimina il passo 3').click()
+    await checklist.getByRole('button', { name: '+ Aggiungi passo' }).click()
+    await checklist.getByLabel('Titolo del passo 3').fill('Esempio con la pizza')
+    await checklist.getByLabel('Dettaglio del passo 3').fill('Una pizza in otto fette.')
+    const titles = await checklist.locator('input[aria-label^="Titolo del passo"]').evaluateAll((els) => els.map((e) => e.value))
+    assert.deepEqual(titles, ['Cos\'è una frazione', 'Scrivere la risposta', 'Esempio con la pizza'])
+    await page.screenshot({ path: join(root, 'test-results', 'e2e-phase4-checklist.png') })
+  })
+
+  await step('approva ed esegui: il piano modificato entra nel system prompt, stato Eseguito', async () => {
+    await page.getByRole('button', { name: 'Approva ed esegui' }).click()
+    await page.getByTestId('message-streaming').waitFor()
+    await page.getByTestId('message-assistant').first().waitFor()
+    await page.getByTestId('plan-checklist').waitFor({ state: 'detached' })
+    await page.getByTestId('plan-status').filter({ hasText: 'Eseguito' }).waitFor()
+
+    const body = lastChat()
+    assert.equal(body.format, undefined)
+    const system = body.messages[0].content
+    assert.match(system, /^# Vincoli\nUsa esempi con la pizza\.\n\n# Piano approvato\n/)
+    assert.match(
+      system,
+      /1\. Cos'è una frazione — Riassumere cosa chiede l'utente\.\n2\. Scrivere la risposta — Rispondere in modo ordinato\.\n3\. Esempio con la pizza — Una pizza in otto fette\.$/
+    )
+    assert.deepEqual(body.messages.slice(1), [{ role: 'user', content: 'Spiegami le frazioni' }])
+  })
+
+  await step('rigenera il piano, poi annulla', async () => {
+    await composer.fill('E i decimali?')
+    await composer.press('Enter')
+    const checklist = page.getByTestId('plan-checklist')
+    await checklist.waitFor()
+    await checklist.getByLabel('Titolo del passo 1').fill('Modifica che verrà scartata')
+    const before = planRequests().length
+    await checklist.getByRole('button', { name: '↻ Rigenera' }).click()
+    await page.waitForFunction(
+      () => document.querySelector('input[aria-label="Titolo del passo 1"]')?.value === 'Capire la richiesta'
+    )
+    assert.equal(planRequests().length, before + 1)
+    // lo storico del secondo piano contiene il primo scambio
+    assert.deepEqual(
+      planRequests().at(-1).body.messages.slice(1).map((m) => m.role),
+      ['user', 'assistant', 'user']
+    )
+    await page.getByTestId('plan-checklist').getByRole('button', { name: 'Annulla' }).click()
+    await page.getByTestId('plan-checklist').waitFor({ state: 'detached' })
+    await page.getByTestId('plan-status').filter({ hasText: 'Annullato' }).waitFor()
+    assert.equal(await page.getByTestId('message-assistant').count(), 1)
+  })
+
+  await step('i piani restano nello storico dopo il reload', async () => {
+    await page.reload()
+    await items.first().waitFor()
+    await items.first().getByRole('button').first().click()
+    await page.getByTestId('plan-status').filter({ hasText: 'Eseguito' }).waitFor()
+    await page.getByTestId('plan-status').filter({ hasText: 'Annullato' }).waitFor()
+  })
+
+  await step('plan mode spento: si torna a "Invia"', async () => {
+    await setSwitch(page.getByTestId('model-settings'), 'Plan mode', false)
+    await page.getByRole('button', { name: 'Invia' }).waitFor()
+  })
+
+  await step('nessun errore JavaScript nel renderer (fase 4)', async () => {
+    assert.deepEqual(errors, [])
+  })
+  await page.getByTestId('plan-summary').first().locator('summary').click()
+  await page.screenshot({ path: join(root, 'test-results', 'e2e-phase4.png') })
 } catch (err) {
   failed = true
   console.error(err)
