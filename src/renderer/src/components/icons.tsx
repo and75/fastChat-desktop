@@ -52,3 +52,24 @@ export function IdCardIcon(props: IconProps): React.JSX.Element {
     </Svg>
   )
 }
+
+/** lucide/download */
+export function DownloadIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M12 15V3" />
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="m7 10 5 5 5-5" />
+    </Svg>
+  )
+}
+
+/** lucide/panel-right */
+export function PanelRightIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M15 3v18" />
+    </Svg>
+  )
+}

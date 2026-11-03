@@ -152,7 +152,11 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
   ]
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-zinc-200 dark:border-zinc-800" data-testid="brief-panel">
+    <aside
+      id="conversation-panel"
+      className="flex w-80 shrink-0 flex-col border-l border-zinc-200 dark:border-zinc-800"
+      data-testid="brief-panel"
+    >
       <div
         role="tablist"
         aria-label="Pannello della conversazione"

@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BriefPanel } from './components/BriefPanel'
 import { ChatView } from './components/ChatView'
+import { IconButton } from './components/IconButton'
+import { DownloadIcon, PanelRightIcon } from './components/icons'
 import { ModelPicker } from './components/ModelPicker'
 import { OllamaBanner } from './components/OllamaBanner'
 import { SettingsDialog } from './components/SettingsDialog'
@@ -9,36 +11,82 @@ import { useChat } from './store/useChat'
 import { useConversations } from './store/useConversations'
 import { useModels } from './store/useModels'
 
-/** Esporta la conversazione aperta in Markdown o JSON (il main chiede dove salvare). */
+/** Esporta la conversazione aperta: icona download con menu a tendina Markdown / JSON. */
 function ExportMenu({ conversationId }: { conversationId: string }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  const root = useRef<HTMLDivElement>(null)
+  const button = useRef<HTMLButtonElement>(null)
+
   const run = async (format: 'md' | 'json'): Promise<void> => {
+    setOpen(false)
     const res = await window.api.conversations.export(conversationId, format)
     if (!res.ok) setStatus(`Errore: ${res.error}`)
     else if (res.data) setStatus(`Salvata in ${res.data}`)
     else setStatus(null)
   }
+
   useEffect(() => {
     if (!status) return
     const t = setTimeout(() => setStatus(null), 6000)
     return () => clearTimeout(t)
   }, [status])
 
-  const btn = 'rounded-md px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
+  // Chiusura con clic fuori o Esc.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent): void => {
+      if (!root.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        button.current?.focus()
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const item =
+    'flex w-full items-center justify-between gap-6 rounded px-3 py-1.5 text-left text-sm hover:bg-zinc-100 focus:bg-zinc-100 focus:outline-none dark:hover:bg-zinc-800 dark:focus:bg-zinc-800'
+
   return (
-    <div className="flex items-center gap-1">
+    <div ref={root} className="relative flex items-center gap-2">
       {status && (
         <span className="max-w-64 truncate text-xs text-zinc-500" title={status} data-testid="export-status">
           {status}
         </span>
       )}
-      <span className="whitespace-nowrap text-sm text-zinc-400">Esporta</span>
-      <button type="button" className={btn} onClick={() => void run('md')} title="Esporta in Markdown">
-        .md
-      </button>
-      <button type="button" className={btn} onClick={() => void run('json')} title="Esporta in JSON">
-        .json
-      </button>
+      <IconButton
+        ref={button}
+        tooltip="Esporta conversazione"
+        hideTooltip={open}
+        active={open}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <DownloadIcon size={18} />
+      </IconButton>
+      {open && (
+        <div
+          role="menu"
+          aria-label="Esporta conversazione"
+          className="absolute right-0 top-full z-50 mt-1.5 min-w-48 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <button type="button" role="menuitem" autoFocus className={item} onClick={() => void run('md')}>
+            Markdown <span className="text-xs text-zinc-400">.md</span>
+          </button>
+          <button type="button" role="menuitem" className={item} onClick={() => void run('json')}>
+            JSON <span className="text-xs text-zinc-400">.json</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -91,19 +139,18 @@ export default function App(): React.JSX.Element {
           </h1>
           <ModelPicker />
           {conversation && (
-            <div className="shrink-0">
+            <div className="flex shrink-0 items-center gap-1">
               <ExportMenu conversationId={conversation.id} />
+              <IconButton
+                tooltip={briefOpen ? 'Nascondi il pannello della conversazione' : 'Mostra il pannello della conversazione'}
+                aria-pressed={briefOpen}
+                aria-controls="conversation-panel"
+                active={briefOpen}
+                onClick={() => setBriefOpen((v) => !v)}
+              >
+                <PanelRightIcon size={18} />
+              </IconButton>
             </div>
-          )}
-          {conversation && (
-            <button
-              type="button"
-              aria-pressed={briefOpen}
-              onClick={() => setBriefOpen((v) => !v)}
-              className="shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              {briefOpen ? 'Nascondi pannello' : 'Impostazioni e brief'}
-            </button>
           )}
         </header>
         <OllamaBanner />

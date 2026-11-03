@@ -487,7 +487,13 @@ try {
 
   // ------------------------------------------------------------------ fase 5
   await step('export Markdown e JSON (brief, messaggi, piani)', async () => {
-    await page.getByTitle('Esporta in Markdown').click()
+    // pulsante a sola icona con menu a tendina
+    const exportBtn = page.getByRole('button', { name: 'Esporta conversazione' })
+    assert.equal(((await exportBtn.textContent()) ?? '').trim(), '')
+    await exportBtn.click()
+    await page.getByRole('menu', { name: 'Esporta conversazione' }).waitFor()
+    await page.getByRole('menuitem', { name: /Markdown/ }).click()
+    await page.getByRole('menu').waitFor({ state: 'detached' })
     await page.getByTestId('export-status').filter({ hasText: 'Salvata in' }).waitFor()
     const md = readFileSync(join(userData, 'export.md'), 'utf8')
     assert.match(md, /^# .+\n\n- Modello: thinker:8b\n/)
@@ -495,7 +501,11 @@ try {
     assert.match(md, /### Utente · .+\n\nSpiegami le frazioni\n\n#### Piano \(eseguito\)\n\n1\. Cos'è una frazione/)
     assert.match(md, /#### Piano \(annullato\)/)
 
-    await page.getByTitle('Esporta in JSON').click()
+    await exportBtn.click()
+    await page.keyboard.press('Escape') // Esc chiude il menu
+    await page.getByRole('menu').waitFor({ state: 'detached' })
+    await exportBtn.click()
+    await page.getByRole('menuitem', { name: /JSON/ }).click()
     await page.waitForFunction(() => document.querySelector('[data-testid="export-status"]')?.textContent?.includes('.json'))
     const json = JSON.parse(readFileSync(join(userData, 'export.json'), 'utf8'))
     assert.equal(json.format, 'fastchat-conversation')
@@ -570,9 +580,19 @@ try {
     // una riga molto lunga va a capo: più spazio orizzontale (pannello chiuso) = campo più basso
     await box.fill('parola '.repeat(70))
     const withPanel = await height()
-    await page.getByRole('button', { name: 'Nascondi pannello' }).click()
+    const panelBtn = page.getByRole('button', { name: 'Nascondi il pannello della conversazione' })
+    assert.equal(await panelBtn.getAttribute('aria-pressed'), 'true')
+    await panelBtn.click()
     await page.waitForFunction((h) => document.querySelector('textarea[aria-label="Messaggio"]').getBoundingClientRect().height < h, withPanel)
-    await page.getByRole('button', { name: 'Impostazioni e brief' }).click()
+    const showBtn = page.getByRole('button', { name: 'Mostra il pannello della conversazione' })
+    assert.equal(await showBtn.getAttribute('aria-pressed'), 'false')
+    // tooltip al passaggio del mouse
+    await showBtn.hover()
+    await page.waitForFunction(() => {
+      const tip = [...document.querySelectorAll('[role="tooltip"]')].find((t) => t.textContent === 'Mostra il pannello della conversazione')
+      return tip && getComputedStyle(tip).opacity === '1'
+    })
+    await showBtn.click()
     await page.waitForFunction((h) => Math.abs(document.querySelector('textarea[aria-label="Messaggio"]').getBoundingClientRect().height - h) < 2, withPanel)
 
     // dopo l'invio il campo torna a una riga
