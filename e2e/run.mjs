@@ -529,6 +529,52 @@ try {
     await page.waitForFunction(() => document.querySelector('#model-select')?.value === 'llama3.2:3b')
   })
 
+  await step('campo di scrittura: altezza dinamica fino al 40% della finestra; barre invisibili', async () => {
+    const box = page.getByLabel('Messaggio')
+    const height = () => box.evaluate((el) => el.getBoundingClientRect().height)
+    await box.fill('')
+    const oneLine = await height()
+    // il placeholder lungo non fa crescere il campo vuoto
+    assert.ok(oneLine < 50, `campo vuoto alto ${oneLine}px`)
+
+    await box.fill('riga\nriga\nriga\nriga\nriga')
+    const five = await height()
+    assert.ok(five > oneLine * 2.5, `5 righe: ${five}px contro ${oneLine}px`)
+
+    await box.fill(Array.from({ length: 80 }, (_, i) => `riga ${i}`).join('\n'))
+    const capped = await box.evaluate((el) => ({
+      h: el.getBoundingClientRect().height,
+      max: window.innerHeight * 0.4,
+      scrolls: el.scrollHeight > el.clientHeight
+    }))
+    assert.ok(capped.h <= capped.max + 1, `80 righe: ${capped.h}px oltre il 40% (${capped.max}px)`)
+    assert.ok(capped.scrolls, 'oltre il limite il testo deve scorrere dentro il campo')
+    await page.screenshot({ path: join(root, 'test-results', 'e2e-composer.png') })
+
+    // una riga molto lunga va a capo: più spazio orizzontale (pannello chiuso) = campo più basso
+    await box.fill('parola '.repeat(70))
+    const withPanel = await height()
+    await page.getByRole('button', { name: 'Nascondi pannello' }).click()
+    await page.waitForFunction((h) => document.querySelector('textarea[aria-label="Messaggio"]').getBoundingClientRect().height < h, withPanel)
+    await page.getByRole('button', { name: 'Impostazioni e brief' }).click()
+    await page.waitForFunction((h) => Math.abs(document.querySelector('textarea[aria-label="Messaggio"]').getBoundingClientRect().height - h) < 2, withPanel)
+
+    // dopo l'invio il campo torna a una riga
+    await box.fill('Ciao\ndi nuovo\nsu tre righe')
+    await box.press('Enter')
+    await page.waitForFunction((h) => document.querySelector('textarea[aria-label="Messaggio"]').getBoundingClientRect().height <= h + 1, oneLine)
+
+    const scrollbars = await page.evaluate(() =>
+      [
+        document.querySelector('[data-testid="messages"]').parentElement,
+        document.querySelector('[data-testid="brief-panel"]'),
+        document.querySelector('textarea[aria-label="Messaggio"]'),
+        document.querySelector('ul[aria-label="Conversazioni"]')
+      ].map((el) => getComputedStyle(el).scrollbarWidth)
+    )
+    assert.deepEqual(scrollbars, ['none', 'none', 'none', 'none'])
+  })
+
   await step('nessun errore JavaScript nel renderer (fase 5)', async () => {
     assert.deepEqual(errors, [])
   })

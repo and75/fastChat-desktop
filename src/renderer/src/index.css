@@ -12,6 +12,14 @@ body,
   height: 100%;
 }
 
+/* Barre di scorrimento invisibili ovunque: si scorre con rotella, trackpad e tastiera. */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
 body {
   margin: 0;
   font-family:

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { MessageBubble } from './MessageBubble'
@@ -17,13 +17,47 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
     ref.current?.focus()
   }, [conversationId])
 
-  // Altezza automatica fino a ~10 righe.
-  useLayoutEffect(() => {
+  const placeholder = disabled
+    ? 'Seleziona un modello per iniziare'
+    : conversation?.planMode
+      ? 'Descrivi la richiesta: il modello proporrà prima un piano…'
+      : 'Scrivi un messaggio… (Maiusc+Invio per andare a capo)'
+
+  /**
+   * Altezza del campo: segue il testo fino al 40% della finestra, poi il testo scorre dentro.
+   * Da vuoto resta su una riga, anche se il placeholder è più lungo del campo.
+   */
+  const resize = useCallback((): void => {
     const el = ref.current
     if (!el) return
+    if (!el.value) {
+      el.style.height = ''
+      return
+    }
     el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 240) + 'px'
-  }, [text])
+    el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.4) + 'px'
+  }, [])
+
+  useLayoutEffect(resize, [text, conversationId, placeholder, resize])
+
+  // Ricalcolo quando cambia la larghezza (pannello aperto/chiuso, finestra ridimensionata) o il tetto del 40%.
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    let lastWidth = el.clientWidth
+    const observer = new ResizeObserver(() => {
+      // Solo i cambi di larghezza: quelli di altezza li causa resize() stesso.
+      if (el.clientWidth === lastWidth) return
+      lastWidth = el.clientWidth
+      resize()
+    })
+    observer.observe(el)
+    window.addEventListener('resize', resize)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', resize)
+    }
+  }, [resize])
 
   const submit = async (): Promise<void> => {
     if (disabled || streaming || !text.trim()) return
@@ -47,14 +81,8 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
           value={text}
           disabled={disabled}
           aria-label="Messaggio"
-          placeholder={
-            disabled
-              ? 'Seleziona un modello per iniziare'
-              : conversation?.planMode
-                ? 'Descrivi la richiesta: il modello proporrà prima un piano…'
-                : 'Scrivi un messaggio… (Maiusc+Invio per andare a capo)'
-          }
-          className="max-h-60 flex-1 resize-none bg-transparent px-1 py-1 outline-none disabled:cursor-not-allowed"
+          placeholder={placeholder}
+          className="max-h-[40vh] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 outline-none disabled:cursor-not-allowed"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
