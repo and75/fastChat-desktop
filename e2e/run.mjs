@@ -306,7 +306,7 @@ try {
     await page.getByTestId('temperature-value').filter({ hasText: '1.20' }).waitFor()
     // le impostazioni avanzate sono sempre visibili (nessun apri/chiudi)
     assert.equal(await settings.locator('details, summary').count(), 0)
-    await settings.getByRole('heading', { name: 'Impostazioni avanzate' }).waitFor()
+    assert.equal(await settings.getByText('Impostazioni avanzate').count(), 0)
 
     // cursori in automatico: posizione e valori presi dal modello (parameters + context_length)
     await settings.getByTestId('top_p-value').filter({ hasText: 'Automatico · 0,95 (consigliato dal modello)' }).waitFor()
@@ -378,7 +378,7 @@ try {
   })
 
   await page.getByTestId('message-assistant').first().getByTestId('thinking-text').waitFor()
-  await page.getByTestId('model-settings').getByText('Impostazioni avanzate').scrollIntoViewIfNeeded()
+  await page.getByTestId('model-settings').getByText('Varietà delle parole').scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(root, 'test-results', 'e2e-phase3.png') })
 
   // ------------------------------------------------------------------ fase 4

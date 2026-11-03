@@ -348,51 +348,46 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
       <ThinkToggle conversation={conversation} />
       <PlanModeToggle conversation={conversation} />
 
-      {/* Sempre visibili: niente apri/chiudi. */}
-      <section aria-labelledby="advanced-title" className="mt-2 border-t border-zinc-200 pt-4 text-sm dark:border-zinc-800">
-        <h3 id="advanced-title" className="font-medium text-zinc-700 dark:text-zinc-300">
-          Impostazioni avanzate
-        </h3>
-        <div className="mt-3 flex flex-col gap-4">
-          <OptionalSlider
-            label="Varietà delle parole"
-            technical="top_p"
-            description="Quante parole alternative il modello considera a ogni passo. Più a sinistra: risposte più prevedibili e ripetitive; più a destra: più varie."
-            value={conversation.topP}
-            autoValue={caps?.defaults.topP ?? OLLAMA_DEFAULTS.topP}
-            autoSource={caps?.defaults.topP != null ? 'consigliato dal modello' : 'predefinito di Ollama'}
-            min={0.05}
-            max={1}
-            step={0.05}
-            format={(v) => v.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            onChange={(v) => save({ topP: v })}
-          />
-          <OptionalSlider
-            label="Memoria della conversazione"
-            technical="num_ctx"
-            description={
-              'Quanto testo il modello tiene a mente, in token (circa ¾ di parola ciascuno). Più a destra: ricorda messaggi più vecchi, ma usa più memoria ed è più lento.' +
-              (caps?.contextLength ? '' : ' Il massimo di questo modello non è noto.')
-            }
-            value={conversation.numCtx}
-            autoValue={caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx}
-            autoSource={caps?.defaults.numCtx != null ? 'consigliato dal modello' : 'predefinito di Ollama'}
-            steps={ctxSteps}
-            format={(v) => `${fmt(v)} token`}
-            extra={approxWords}
-            onChange={(v) => save({ numCtx: v })}
-          />
-          <NumberField
-            label="Risposte ripetibili"
-            technical="seed"
-            description="Con un numero qualsiasi, la stessa domanda dà sempre la stessa risposta: utile per confrontare. Vuoto: ogni risposta è diversa."
-            step={1}
-            value={conversation.seed}
-            placeholder="vuoto = sempre diverse"
-            onChange={(v) => save({ seed: v })}
-          />
-        </div>
-      </section>
+      {/* Parametri facoltativi: sempre visibili, di seguito agli altri controlli. */}
+      <div className="mt-1 flex flex-col gap-4 text-sm">
+        <OptionalSlider
+          label="Varietà delle parole"
+          technical="top_p"
+          description="Quante parole alternative il modello considera a ogni passo. Più a sinistra: risposte più prevedibili e ripetitive; più a destra: più varie."
+          value={conversation.topP}
+          autoValue={caps?.defaults.topP ?? OLLAMA_DEFAULTS.topP}
+          autoSource={caps?.defaults.topP != null ? 'consigliato dal modello' : 'predefinito di Ollama'}
+          min={0.05}
+          max={1}
+          step={0.05}
+          format={(v) => v.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          onChange={(v) => save({ topP: v })}
+        />
+        <OptionalSlider
+          label="Memoria della conversazione"
+          technical="num_ctx"
+          description={
+            'Quanto testo il modello tiene a mente, in token (circa ¾ di parola ciascuno). Più a destra: ricorda messaggi più vecchi, ma usa più memoria ed è più lento.' +
+            (caps?.contextLength ? '' : ' Il massimo di questo modello non è noto.')
+          }
+          value={conversation.numCtx}
+          autoValue={caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx}
+          autoSource={caps?.defaults.numCtx != null ? 'consigliato dal modello' : 'predefinito di Ollama'}
+          steps={ctxSteps}
+          format={(v) => `${fmt(v)} token`}
+          extra={approxWords}
+          onChange={(v) => save({ numCtx: v })}
+        />
+        <NumberField
+          label="Risposte ripetibili"
+          technical="seed"
+          description="Con un numero qualsiasi, la stessa domanda dà sempre la stessa risposta: utile per confrontare. Vuoto: ogni risposta è diversa."
+          step={1}
+          value={conversation.seed}
+          placeholder="vuoto = sempre diverse"
+          onChange={(v) => save({ seed: v })}
+        />
+      </div>
     </section>
   )
 }
