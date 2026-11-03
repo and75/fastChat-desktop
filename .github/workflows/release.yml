@@ -6,7 +6,9 @@
 # - Avvio manuale (Actions → Release → Run workflow):
 #   - con "version" compilato (es. 0.2.0): come sopra, e il workflow crea anche il tag v0.2.0
 #     sul commit scelto;
-#   - con "version" vuoto: solo build, gli installer restano come artifact del run.
+#   - con "version" vuoto: solo build, gli installer restano come artifact del run;
+#   - con "skip_macos": niente build macOS (es. se i runner macOS di GitHub sono in coda),
+#     la release esce con i soli installer Windows e Linux.
 name: Release
 
 on:
@@ -18,6 +20,11 @@ on:
         description: 'Versione da pubblicare, senza "v" (es. 0.2.0). Vuoto = solo build, nessuna release.'
         required: false
         default: ''
+      skip_macos:
+        description: 'Salta la build macOS (release con i soli installer Windows e Linux).'
+        type: boolean
+        required: false
+        default: false
 
 env:
   # Tag della release: dal push del tag, oppure "v" + la versione indicata nell'avvio manuale.
@@ -57,17 +64,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: macOS
-            os: macos-latest
-            target: --mac --arm64 --x64
-          - name: Windows
-            os: windows-latest
-            target: --win --x64
-          - name: Linux
-            os: ubuntu-latest
-            target: --linux --x64
-    runs-on: ${{ matrix.os }}
+        # Elenco dinamico: con skip_macos la build macOS non viene nemmeno accodata.
+        # (exclude non basterebbe: non rimuove le voci aggiunte con include.)
+        name: ${{ fromJSON(inputs.skip_macos && '["Windows","Linux"]' || '["macOS","Windows","Linux"]') }}
+    runs-on: ${{ matrix.name == 'macOS' && 'macos-latest' || matrix.name == 'Windows' && 'windows-latest' || 'ubuntu-latest' }}
     defaults:
       run:
         shell: bash
@@ -90,7 +90,8 @@ jobs:
         # Installer non firmati: niente ricerca di certificati sul runner.
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder ${{ matrix.target }} --publish never
+          TARGET: ${{ matrix.name == 'macOS' && '--mac --arm64 --x64' || matrix.name == 'Windows' && '--win --x64' || '--linux --x64' }}
+        run: npx electron-builder $TARGET --publish never
 
       - uses: actions/upload-artifact@v4
         with:
@@ -125,6 +126,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: FastChat ${{ env.RELEASE_TAG }}
           files: artifacts/*
+          body: ${{ inputs.skip_macos && 'Questa release non include gli installer per macOS.' || '' }}
           generate_release_notes: true
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           fail_on_unmatched_files: true
