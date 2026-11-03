@@ -47,6 +47,9 @@ const api: Api = {
     update: (planId, update) => invoke(IPC.plansUpdate, planId, update),
     execute: (planId) => invoke(IPC.plansExecute, planId)
   },
+  clipboard: {
+    writeText: (text) => invoke(IPC.clipboardWrite, text)
+  },
   settings: {
     get: () => invoke(IPC.settingsGet),
     set: (patch) => invoke(IPC.settingsSet, patch)

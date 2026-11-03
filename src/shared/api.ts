@@ -56,6 +56,10 @@ export interface Api {
     /** Approva (se serve) ed esegue il piano: la risposta arriva come un normale stream di chat. */
     execute(planId: string): Promise<Result<SendResult>>
   }
+  clipboard: {
+    /** Copia testo negli appunti di sistema (tramite il main: il renderer è in sandbox). */
+    writeText(text: string): Promise<Result<void>>
+  }
   settings: {
     get(): Promise<Result<AppSettings>>
     set(patch: Partial<AppSettings>): Promise<Result<AppSettings>>

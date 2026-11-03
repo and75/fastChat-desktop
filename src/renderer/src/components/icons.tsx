@@ -73,3 +73,32 @@ export function PanelRightIcon(props: IconProps): React.JSX.Element {
     </Svg>
   )
 }
+
+/** lucide/copy */
+export function CopyIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </Svg>
+  )
+}
+
+/** lucide/check */
+export function CheckIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M20 6 9 17l-5-5" />
+    </Svg>
+  )
+}
+
+/** lucide/rotate-ccw */
+export function RegenerateIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+    </Svg>
+  )
+}

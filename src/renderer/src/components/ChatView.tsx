@@ -1,6 +1,8 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
+import { CopyAction } from './CopyButton'
+import { RegenerateIcon } from './icons'
 import { MessageBubble } from './MessageBubble'
 import { PlanModeToggle, ThinkToggle } from './ModelSettings'
 import { PlanChecklist, PlanLoading, PlanSummary } from './PlanChecklist'
@@ -166,7 +168,7 @@ export function ChatView(): React.JSX.Element {
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
         }}
       >
-        <div className="mx-auto flex max-w-3xl flex-col gap-5 px-4 py-6" data-testid="messages">
+        <div className="mx-auto flex max-w-3xl flex-col gap-10 px-4 py-6" data-testid="messages">
           {messages.length === 0 && !live && (
             <p className="text-center text-sm text-zinc-500">
               Scrivi il primo messaggio. Il brief nel pannello a destra viene inviato come system prompt.
@@ -180,14 +182,20 @@ export function ChatView(): React.JSX.Element {
                 thinking={m.thinking}
                 meta={m.role === 'assistant' ? m : undefined}
                 actions={
-                  canRegenerate && m === last && m.role === 'assistant' ? (
-                    <button
-                      type="button"
-                      className="hover:text-zinc-700 dark:hover:text-zinc-200"
-                      onClick={() => void regenerate()}
-                    >
-                      ↻ Rigenera
-                    </button>
+                  m.role === 'assistant' ? (
+                    <>
+                      {canRegenerate && m === last && (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 hover:text-zinc-700 dark:hover:text-zinc-200"
+                          onClick={() => void regenerate()}
+                        >
+                          <RegenerateIcon size={13} />
+                          Rigenera
+                        </button>
+                      )}
+                      {m.content && <CopyAction text={m.content} />}
+                    </>
                   ) : undefined
                 }
               />

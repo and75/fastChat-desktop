@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises'
-import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { BrowserWindow, clipboard, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import {
   IPC,
   type AppSettings,
@@ -105,6 +105,12 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
   handle(IPC.modelsCheck, (_e, url: string) => createOllamaClient(() => validOllamaUrl(url)).listModels())
 
   // ---- impostazioni
+  // ---- appunti
+  handle(IPC.clipboardWrite, (_e, text: string) => {
+    if (typeof text !== 'string') throw new Error('Testo non valido')
+    clipboard.writeText(text)
+  })
+
   handle(IPC.settingsGet, () => getSettings(db))
   handle(IPC.settingsSet, async (_e, patch: Partial<AppSettings>) => {
     if (patch.ollamaUrl !== undefined) patch.ollamaUrl = validOllamaUrl(patch.ollamaUrl)

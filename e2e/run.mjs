@@ -221,10 +221,33 @@ try {
     )
   })
 
+  await step('copia negli appunti: risposta intera (Markdown) e singolo blocco di codice', async () => {
+    const readClipboard = () => app.evaluate(({ clipboard }) => clipboard.readText())
+    const saved = page.getByTestId('message-assistant').last()
+
+    // blocco di codice: pulsante che compare al passaggio del mouse, copia solo il codice
+    await saved.locator('pre').hover()
+    await saved.getByRole('button', { name: 'Copia il codice' }).click()
+    await saved.getByRole('button', { name: 'Codice copiato' }).waitFor()
+    assert.equal(await readClipboard(), 'const x = 1')
+
+    // risposta intera: testo Markdown originale, non quello reso
+    await saved.getByRole('button', { name: 'Copia la risposta' }).click()
+    await saved.getByRole('button', { name: 'Risposta copiata' }).waitFor()
+    const text = await readClipboard()
+    assert.match(text, /^Ecco \*\*il codice\*\*:\n\n```ts\nconst x = 1\n```/)
+    assert.match(text, /parola3/)
+
+    // ogni risposta ha «Copia», «Rigenera» solo l'ultima
+    const answers = page.getByTestId('message-assistant')
+    assert.equal(await answers.first().getByRole('button', { name: 'Copia la risposta' }).count(), 1)
+    assert.equal(await answers.first().getByRole('button', { name: 'Rigenera', exact: true }).count(), 0)
+  })
+
   await step('rigenera l\'ultima risposta', async () => {
     await page.selectOption('#model-select', 'llama3.2:3b')
     const before = await page.getByTestId('message-assistant').count()
-    await page.getByRole('button', { name: '↻ Rigenera' }).click()
+    await page.getByRole('button', { name: 'Rigenera', exact: true }).click()
     await page.getByTestId('message-assistant').last().filter({ hasText: 'Ciao mondo!' }).waitFor()
     assert.equal(await page.getByTestId('message-assistant').count(), before)
     assert.equal(lastChat().messages.at(-1).content, 'Scrivi tanto')

@@ -198,6 +198,7 @@ export const IPC = {
   /** Eventi main → renderer. */
   chatStream: 'chat:stream',
   conversationUpdated: 'conversations:updated',
+  clipboardWrite: 'clipboard:write',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set'
 } as const
