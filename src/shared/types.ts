@@ -81,15 +81,54 @@ export interface ModelCapabilities {
   contextLength: number | null
 }
 
+/** Campi modificabili di una conversazione. */
+export type ConversationPatch = Partial<
+  Pick<
+    Conversation,
+    | 'title'
+    | 'model'
+    | 'role'
+    | 'context'
+    | 'goals'
+    | 'constraints'
+    | 'temperature'
+    | 'think'
+    | 'planMode'
+    | 'topP'
+    | 'numCtx'
+    | 'seed'
+    | 'archived'
+  >
+>
+
+export interface ConversationListQuery {
+  search?: string
+  archived?: boolean
+}
+
+export interface ConversationDetail {
+  conversation: Conversation
+  messages: Message[]
+}
+
+export interface SendResult {
+  streamId: string
+  /** Il messaggio utente appena salvato (assente in caso di rigenerazione). */
+  userMessage?: Message
+}
+
 export type StreamEventType = 'thinking' | 'content' | 'done' | 'error'
 
 export interface StreamEvent {
   streamId: string
+  conversationId: string
   type: StreamEventType
   delta?: string
   error?: string
-  /** Presente sull'evento 'done': il messaggio salvato. */
+  /** Sull'evento 'done': il messaggio dell'assistente salvato (assente se interrotto senza testo). */
   message?: Message
+  /** Sull'evento 'done': true se la generazione è stata interrotta dall'utente. */
+  aborted?: boolean
 }
 
 export interface AppSettings {
@@ -110,6 +149,16 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 export const IPC = {
   modelsList: 'models:list',
   modelsCapabilities: 'models:capabilities',
+  conversationsList: 'conversations:list',
+  conversationsGet: 'conversations:get',
+  conversationsCreate: 'conversations:create',
+  conversationsUpdate: 'conversations:update',
+  conversationsRemove: 'conversations:remove',
+  chatSend: 'chat:send',
+  chatRegenerate: 'chat:regenerate',
+  chatAbort: 'chat:abort',
+  /** Evento main → renderer. */
+  chatStream: 'chat:stream',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set'
 } as const

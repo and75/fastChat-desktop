@@ -22,3 +22,56 @@ body {
     sans-serif;
   @apply bg-white text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
 }
+
+/* Testo delle risposte (Markdown). */
+.markdown {
+  @apply leading-relaxed;
+}
+.markdown > * + * {
+  @apply mt-3;
+}
+.markdown h1 {
+  @apply text-xl font-semibold;
+}
+.markdown h2 {
+  @apply text-lg font-semibold;
+}
+.markdown h3,
+.markdown h4 {
+  @apply font-semibold;
+}
+.markdown ul {
+  @apply list-disc pl-6;
+}
+.markdown ol {
+  @apply list-decimal pl-6;
+}
+.markdown li + li {
+  @apply mt-1;
+}
+.markdown a {
+  @apply text-blue-600 underline dark:text-blue-400;
+}
+.markdown blockquote {
+  @apply border-l-4 border-zinc-300 pl-3 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400;
+}
+.markdown :not(pre) > code {
+  @apply rounded bg-zinc-100 px-1 py-0.5 text-[0.9em] dark:bg-zinc-800;
+}
+.markdown pre {
+  @apply overflow-x-auto rounded-lg text-sm;
+}
+.markdown pre code.hljs,
+.markdown pre > code {
+  @apply block rounded-lg bg-zinc-900 p-3 text-zinc-100;
+}
+.markdown table {
+  @apply w-full border-collapse text-sm;
+}
+.markdown th,
+.markdown td {
+  @apply border border-zinc-300 px-2 py-1 text-left dark:border-zinc-700;
+}
+.markdown hr {
+  @apply border-zinc-200 dark:border-zinc-800;
+}

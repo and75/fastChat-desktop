@@ -11,8 +11,18 @@ const root = resolve(import.meta.dirname, '..')
 const userData = mkdtempSync(join(tmpdir(), 'fastchat-e2e-'))
 const fake = await startFakeOllama([
   { name: 'qwen3:4b', capabilities: ['completion', 'thinking'] },
-  { name: 'llama3.2:3b', capabilities: ['completion', 'tools'] }
+  { name: 'llama3.2:3b', capabilities: ['completion', 'tools'] },
+  {
+    name: 'slow:1b',
+    capabilities: ['completion'],
+    delayMs: 60,
+    chunks: [
+      { content: 'Ecco **il codice**:\n\n```ts\nconst x = 1\n```\n\n' },
+      ...Array.from({ length: 60 }, (_, i) => ({ content: `parola${i} ` }))
+    ]
+  }
 ])
+const lastChat = () => fake.requests.filter((r) => r.path === '/api/chat').at(-1)?.body
 
 const steps = []
 async function step(name, fn) {
@@ -60,7 +70,7 @@ try {
     const select = page.locator('#model-select')
     await select.locator('option', { hasText: 'qwen3:4b' }).waitFor({ state: 'attached' })
     const options = await select.locator('option').allTextContents()
-    assert.deepEqual(options, ['llama3.2:3b', 'qwen3:4b'])
+    assert.deepEqual(options, ['llama3.2:3b', 'qwen3:4b', 'slow:1b'])
   })
 
   await step('capabilities: llama3.2 senza ragionamento, qwen3 con ragionamento', async () => {
@@ -87,11 +97,128 @@ try {
     await page.locator('#model-select option', { hasText: 'qwen3:4b' }).waitFor({ state: 'attached' })
   })
 
+  // ------------------------------------------------------------------ fase 2
+  const items = page.getByTestId('conversation-item')
+  const composer = page.getByLabel('Messaggio')
+
+  await step('nuova conversazione: compare in sidebar con il modello predefinito', async () => {
+    await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
+    await items.first().waitFor()
+    assert.equal(await items.count(), 1)
+    assert.equal(await page.locator('#model-select').inputValue(), 'qwen3:4b')
+    await page.selectOption('#model-select', 'llama3.2:3b')
+  })
+
+  await step('brief: si salva da solo e l\'anteprima mostra le sezioni in ordine', async () => {
+    const panel = page.getByTestId('brief-panel')
+    await panel.getByLabel('Vincoli').fill('Rispondi solo in italiano.')
+    await panel.getByLabel('Ruolo').fill('Sei un tutor paziente.')
+    await panel.getByTestId('brief-status').filter({ hasText: 'Salvato' }).waitFor()
+    await panel.locator('summary').click()
+    assert.equal(
+      await panel.getByTestId('system-preview').textContent(),
+      '# Ruolo\nSei un tutor paziente.\n\n# Vincoli\nRispondi solo in italiano.'
+    )
+  })
+
+  await step('invio: risposta in streaming e brief inviato come primo messaggio system', async () => {
+    await composer.fill('Ciao!')
+    await composer.press('Enter')
+    await page.getByTestId('message-user').filter({ hasText: 'Ciao!' }).waitFor()
+    await page.getByTestId('message-assistant').filter({ hasText: 'Ciao mondo!' }).waitFor()
+    const body = lastChat()
+    assert.equal(body.model, 'llama3.2:3b')
+    assert.deepEqual(body.messages, [
+      { role: 'system', content: '# Ruolo\nSei un tutor paziente.\n\n# Vincoli\nRispondi solo in italiano.' },
+      { role: 'user', content: 'Ciao!' }
+    ])
+    assert.equal('think' in body, false)
+    const meta = await page.getByTestId('message-assistant').last().textContent()
+    assert.match(meta, /42 token/)
+  })
+
+  await step('streaming visibile, Markdown con codice evidenziato, Interrompi salva il parziale', async () => {
+    await page.selectOption('#model-select', 'slow:1b')
+    await composer.fill('Scrivi tanto')
+    await composer.press('Enter')
+    const live = page.getByTestId('message-streaming')
+    await live.locator('code.hljs').waitFor()
+    await live.filter({ hasText: 'parola3' }).waitFor()
+    await page.getByRole('button', { name: 'Interrompi' }).click()
+    await live.waitFor({ state: 'detached' })
+    const saved = page.getByTestId('message-assistant').last()
+    const text = await saved.textContent()
+    assert.match(text, /parola3/)
+    assert.doesNotMatch(text, /parola59/)
+    // il secondo turno porta con sé lo storico
+    assert.deepEqual(
+      lastChat().messages.map((m) => m.role),
+      ['system', 'user', 'assistant', 'user']
+    )
+  })
+
+  await step('rigenera l\'ultima risposta', async () => {
+    await page.selectOption('#model-select', 'llama3.2:3b')
+    const before = await page.getByTestId('message-assistant').count()
+    await page.getByRole('button', { name: '↻ Rigenera' }).click()
+    await page.getByTestId('message-assistant').last().filter({ hasText: 'Ciao mondo!' }).waitFor()
+    assert.equal(await page.getByTestId('message-assistant').count(), before)
+    assert.equal(lastChat().messages.at(-1).content, 'Scrivi tanto')
+  })
+
+  await step('storico persistente: dopo il reload la conversazione e i messaggi ci sono', async () => {
+    await page.reload()
+    await items.first().waitFor()
+    await items.first().getByRole('button').first().click()
+    await page.getByTestId('message-user').filter({ hasText: 'Scrivi tanto' }).waitFor()
+    assert.equal(await page.getByTestId('message-assistant').count(), 2)
+    assert.equal(await page.getByTestId('brief-panel').getByLabel('Ruolo').inputValue(), 'Sei un tutor paziente.')
+  })
+
+  await step('sidebar: rinomina, ricerca, archivia, elimina', async () => {
+    // seconda conversazione
+    await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="conversation-item"]').length === 2)
+
+    // la più vecchia (in fondo) è quella con i messaggi
+    const first = items.filter({ hasText: 'Nuova conversazione' }).last()
+    await first.hover()
+    await first.getByTitle('Rinomina').click()
+    await page.getByLabel('Titolo conversazione').fill('Lezione di italiano')
+    await page.getByLabel('Titolo conversazione').press('Enter')
+    await items.filter({ hasText: 'Lezione di italiano' }).waitFor()
+
+    const search = page.getByLabel('Cerca conversazioni')
+    await search.fill('parola42') // cerca anche nel testo dei messaggi
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="conversation-item"]').length === 0)
+    await search.fill('Scrivi tanto')
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="conversation-item"]').length === 1)
+    await search.fill('')
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="conversation-item"]').length === 2)
+
+    const lesson = items.filter({ hasText: 'Lezione di italiano' })
+    await lesson.hover()
+    await lesson.getByTitle('Archivia').click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="conversation-item"]').length === 1)
+    await page.getByLabel('Mostra archiviate').check()
+    await items.filter({ hasText: 'Lezione di italiano' }).waitFor()
+    await page.getByLabel('Mostra archiviate').uncheck()
+
+    page.once('dialog', (d) => d.accept())
+    const other = items.first()
+    await other.hover()
+    await other.getByTitle('Elimina').click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="conversation-item"]').length === 0)
+  })
+
   await step('nessun errore JavaScript nel renderer', async () => {
     assert.deepEqual(errors, [])
   })
 
-  await page.screenshot({ path: join(root, 'test-results', 'e2e-phase1.png') })
+  await page.getByLabel('Mostra archiviate').check()
+  await items.first().getByRole('button').first().click()
+  await page.getByTestId('message-assistant').first().waitFor()
+  await page.screenshot({ path: join(root, 'test-results', 'e2e-phase2.png') })
 } catch (err) {
   failed = true
   console.error(err)

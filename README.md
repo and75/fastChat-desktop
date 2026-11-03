@@ -4,7 +4,7 @@ App desktop (Electron) per chattare con modelli locali serviti da [Ollama](https
 Ogni conversazione ha un proprio **brief** (ruolo, contesto, obiettivi, vincoli) e proprie impostazioni:
 temperatura, ragionamento on/off e plan mode. Lo storico resta in locale.
 
-> Stato: **fase 1** (scaffold, sicurezza, DB + migrazioni, client Ollama, selettore modello).
+> Stato: **fase 2** — conversazioni con brief, chat in streaming, sidebar con ricerca/rinomina/archivio. Prossime: temperatura e ragionamento (3), plan mode (4), template/export/packaging (5).
 
 ## Requisiti
 
@@ -16,7 +16,7 @@ temperatura, ragionamento on/off e plan mode. Lo storico resta in locale.
 ```bash
 npm install
 npm run dev          # avvio con HMR
-npm test             # Vitest: client Ollama (server NDJSON finto) + DB in memoria
+npm test             # Vitest: prompt, client Ollama (server NDJSON finto), servizio chat, DB in memoria
 npm run test:e2e     # build + Playwright _electron contro un Ollama finto
                      # (Linux senza display: xvfb-run -a npm run test:e2e)
 npm run db:generate  # rigenera le migrazioni dopo aver cambiato src/main/db/schema.ts
@@ -29,7 +29,7 @@ Variabili utili: `OLLAMA_URL` sovrascrive l'URL salvato; `FASTCHAT_USER_DATA` ca
 - `src/main` — processo principale: finestra, IPC, client Ollama (`ollama.ts`), database (`db/`).
 - `src/preload` — espone al renderer solo `window.api` (contratto in `src/shared/api.ts`).
 - `src/renderer` — React + Zustand + Tailwind.
-- `src/shared` — tipi e nomi dei canali IPC.
+- `src/shared` — tipi, canali IPC e `prompt.ts` (brief → system prompt, selezione dello storico nel contesto).
 - `drizzle/` — migrazioni SQL generate da drizzle-kit, applicate all'avvio.
 
 **Database.** SQLite in `userData/chats.db` tramite il modulo integrato `node:sqlite` (Electron 45 / Node 24)

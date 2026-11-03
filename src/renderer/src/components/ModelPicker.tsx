@@ -1,3 +1,6 @@
+import { useEffect } from 'react'
+import { useChat } from '../store/useChat'
+import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
 
 function formatSize(bytes: number): string {
@@ -6,10 +9,28 @@ function formatSize(bytes: number): string {
   return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`
 }
 
+/**
+ * Selettore del modello. Con una conversazione aperta cambia il modello di quella conversazione
+ * (e lo ricorda come predefinito per le nuove); altrimenti imposta solo il predefinito.
+ */
 export function ModelPicker(): React.JSX.Element {
-  const { models, selected, status, capabilities, select, refresh } = useModels()
-  const caps = selected ? capabilities[selected] : undefined
-  const current = models.find((m) => m.name === selected)
+  const { models, selected: defaultModel, status, capabilities, select, refresh, loadCapabilities } = useModels()
+  const conversation = useChat((s) => s.conversation)
+  const update = useConversations((s) => s.update)
+
+  const value = conversation ? conversation.model : defaultModel
+  const caps = value ? capabilities[value] : undefined
+  const current = models.find((m) => m.name === value)
+  const missing = !!value && status === 'ready' && !current
+
+  useEffect(() => {
+    if (value) void loadCapabilities(value)
+  }, [value, loadCapabilities])
+
+  const onChange = (name: string): void => {
+    void select(name)
+    if (conversation) void update(conversation.id, { model: name })
+  }
 
   return (
     <div className="flex items-center gap-2" data-testid="model-picker">
@@ -19,11 +40,15 @@ export function ModelPicker(): React.JSX.Element {
       <select
         id="model-select"
         className="min-w-48 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-        value={selected ?? ''}
+        value={value ?? ''}
         disabled={status !== 'ready' || models.length === 0}
-        onChange={(e) => void select(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
       >
-        {models.length === 0 && <option value="">{status === 'loading' ? 'Caricamento…' : 'Nessun modello'}</option>}
+        {(!value || missing) && (
+          <option value={value ?? ''} disabled>
+            {status === 'loading' ? 'Caricamento…' : missing ? `${value} (non installato)` : 'Scegli un modello'}
+          </option>
+        )}
         {models.map((m) => (
           <option key={m.name} value={m.name}>
             {m.name}

@@ -1,7 +1,18 @@
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { getSettings, setSettings } from '../src/main/db/repo'
+import {
+  addMessage,
+  createConversation,
+  getConversation,
+  getSettings,
+  listConversations,
+  listMessages,
+  removeConversation,
+  removeMessage,
+  setSettings,
+  updateConversation
+} from '../src/main/db/repo'
 import { conversations, messages } from '../src/main/db/schema'
 import { DEFAULT_SETTINGS } from '../src/shared/types'
 import { eq } from 'drizzle-orm'
@@ -39,6 +50,74 @@ describe('settings', () => {
     expect(after).toEqual({ ...DEFAULT_SETTINGS, ollamaUrl: 'http://localhost:9999', defaultModel: 'llama3.2' })
     const keys = h.raw.prepare('select key from settings order by key').all() as Array<{ key: string }>
     expect(keys.map((k) => k.key)).toEqual(['defaultModel', 'ollamaUrl'])
+  })
+})
+
+describe('conversazioni e messaggi', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+  it('crea con i default e un id univoco', async () => {
+    const a = await createConversation(h.db, { model: 'qwen3' })
+    const b = await createConversation(h.db)
+    expect(a.id).not.toBe(b.id)
+    expect(a).toMatchObject({ model: 'qwen3', title: 'Nuova conversazione', temperature: 0.7, think: false, archived: false })
+    expect(b.model).toBe('')
+  })
+
+  it('lista ordinata per updated_at, e un nuovo messaggio porta la conversazione in cima', async () => {
+    const a = await createConversation(h.db, { title: 'A' })
+    await sleep(3)
+    const b = await createConversation(h.db, { title: 'B' })
+    expect((await listConversations(h.db)).map((c) => c.title)).toEqual(['B', 'A'])
+    await sleep(3)
+    await addMessage(h.db, { conversationId: a.id, role: 'user', content: 'ciao' })
+    expect((await listConversations(h.db)).map((c) => c.title)).toEqual(['A', 'B'])
+    expect(b).toBeTruthy()
+  })
+
+  it('ricerca su titolo e contenuto dei messaggi, con caratteri speciali', async () => {
+    const a = await createConversation(h.db, { title: 'Ricette' })
+    const b = await createConversation(h.db, { title: 'Lavoro' })
+    await addMessage(h.db, { conversationId: b.id, role: 'user', content: 'sconto del 50% sul piano' })
+    expect((await listConversations(h.db, { search: 'ricet' })).map((c) => c.id)).toEqual([a.id])
+    expect((await listConversations(h.db, { search: 'piano' })).map((c) => c.id)).toEqual([b.id])
+    expect((await listConversations(h.db, { search: '50%' })).map((c) => c.id)).toEqual([b.id])
+    expect(await listConversations(h.db, { search: '%' })).toHaveLength(1)
+    expect(await listConversations(h.db, { search: '_' })).toHaveLength(0)
+  })
+
+  it('archiviate separate dalle attive', async () => {
+    const a = await createConversation(h.db, { title: 'A' })
+    await updateConversation(h.db, a.id, { archived: true })
+    expect(await listConversations(h.db)).toHaveLength(0)
+    expect((await listConversations(h.db, { archived: true })).map((c) => c.id)).toEqual([a.id])
+  })
+
+  it('update: solo campi ammessi, temperatura limitata, titolo ripulito', async () => {
+    const a = await createConversation(h.db)
+    const up = await updateConversation(h.db, a.id, {
+      role: 'Sei un tutor',
+      temperature: 5,
+      title: '   ',
+      ...({ id: 'hack', createdAt: 0 } as object)
+    })
+    expect(up).toMatchObject({ id: a.id, role: 'Sei un tutor', temperature: 2, title: 'Nuova conversazione' })
+    expect(up.createdAt).toBe(a.createdAt)
+    await expect(updateConversation(h.db, 'nope', { title: 'x' })).rejects.toThrow('non trovata')
+  })
+
+  it('messaggi in ordine di inserimento e rimozione', async () => {
+    const a = await createConversation(h.db)
+    const m1 = await addMessage(h.db, { conversationId: a.id, role: 'user', content: '1' })
+    await addMessage(h.db, { conversationId: a.id, role: 'assistant', content: '2', thinking: '', evalCount: 3 })
+    await addMessage(h.db, { conversationId: a.id, role: 'user', content: '3' })
+    const all = await listMessages(h.db, a.id)
+    expect(all.map((m) => m.content)).toEqual(['1', '2', '3'])
+    expect(all[1]).toMatchObject({ thinking: null, evalCount: 3 })
+    await removeMessage(h.db, m1.id)
+    expect((await listMessages(h.db, a.id)).map((m) => m.content)).toEqual(['2', '3'])
+    await removeConversation(h.db, a.id)
+    expect(await getConversation(h.db, a.id)).toBeNull()
   })
 })
 
