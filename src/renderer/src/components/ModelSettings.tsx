@@ -1,28 +1,36 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import type { Conversation, ConversationPatch } from '@shared/types'
+import { OLLAMA_DEFAULTS, type Conversation, type ConversationPatch } from '@shared/types'
 import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
+import { registerPendingSave } from '../store/pendingSaves'
 
-/** Salvataggio con debounce, per slider e campi numerici. */
+/** Salvataggio con debounce, per slider e campi numerici. Viene scritto comunque prima di ogni invio. */
 function useDebouncedPatch(convId: string, delay = 300): (patch: ConversationPatch) => void {
   const update = useConversations((s) => s.update)
   const pending = useRef<ConversationPatch>({})
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const flushRef = useRef<() => Promise<void>>(async () => undefined)
 
-  const flush = (): void => {
+  flushRef.current = async () => {
     clearTimeout(timer.current)
     const patch = pending.current
     pending.current = {}
-    if (Object.keys(patch).length) void update(convId, patch)
+    if (Object.keys(patch).length) await update(convId, patch)
   }
-  // Alla chiusura del pannello o al cambio conversazione non si perde nulla.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => flush, [convId])
+
+  useEffect(() => {
+    const unregister = registerPendingSave(() => flushRef.current())
+    // Alla chiusura del pannello o al cambio conversazione non si perde nulla.
+    return () => {
+      unregister()
+      void flushRef.current()
+    }
+  }, [convId])
 
   return (patch) => {
     Object.assign(pending.current, patch)
     clearTimeout(timer.current)
-    timer.current = setTimeout(flush, delay)
+    timer.current = setTimeout(() => void flushRef.current(), delay)
   }
 }
 
@@ -175,10 +183,121 @@ function NumberField(props: {
   )
 }
 
-const fmt = (n: number): string => n.toLocaleString('it-IT')
+// Separatore delle migliaia anche a 4 cifre (4.096 come 32.768), per coerenza tra i valori.
+const fmt = (n: number): string => n.toLocaleString('it-IT', { useGrouping: 'always' })
 
 /** Un token è circa ¾ di parola: conversione indicativa per chi non conosce i token. */
 const approxWords = (tokens: number): string => `≈ ${fmt(Math.round((tokens * 0.75) / 100) * 100)} parole`
+
+/**
+ * Cursore per un parametro facoltativo: "Automatico" (null) usa il valore del modello, mostrato come
+ * posizione del cursore; muovendolo si fissa un valore; "Automatico" lo ripristina.
+ * Con `steps` il cursore scorre su un elenco di valori (es. potenze di 2), altrimenti su min/max/step.
+ */
+function OptionalSlider(props: {
+  label: string
+  technical: string
+  description: string
+  value: number | null
+  /** Valore effettivo quando è automatico (predefinito del modello o di Ollama). */
+  autoValue: number
+  /** Da dove viene il valore automatico, es. "consigliato dal modello". */
+  autoSource: string
+  format(v: number): string
+  /** Nota aggiuntiva sul valore, es. "≈ 6.100 parole". */
+  extra?(v: number): string | null
+  steps?: number[]
+  min?: number
+  max?: number
+  step?: number
+  onChange(v: number | null): void
+}): React.JSX.Element {
+  const [local, setLocal] = useState(props.value)
+  const descId = useId()
+  const current = local ?? props.autoValue
+  const extra = props.extra?.(current)
+  const valueText = (local == null ? `Automatico, ${props.format(current)}` : props.format(current)) + (extra ? ` (${extra})` : '')
+
+  // Con un elenco di valori il cursore lavora sugli indici.
+  const indexed = !!props.steps
+  const steps = props.steps ?? []
+  const nearest = (v: number): number =>
+    steps.reduce((best, s, i) => (Math.abs(s - v) < Math.abs(steps[best] - v) ? i : best), 0)
+  const min = indexed ? 0 : (props.min ?? 0)
+  const max = indexed ? steps.length - 1 : (props.max ?? 1)
+  const pos = indexed ? nearest(current) : Math.min(max, Math.max(min, current))
+
+  const set = (v: number | null): void => {
+    setLocal(v)
+    props.onChange(v)
+  }
+
+  return (
+    <div className="flex flex-col gap-1 text-sm">
+      <span className="flex items-baseline justify-between gap-2">
+        <span className="font-medium text-zinc-700 dark:text-zinc-300">{props.label}</span>
+        <code className="text-[11px] text-zinc-400" title="Nome del parametro in Ollama">
+          {props.technical}
+        </code>
+      </span>
+      <span id={descId} className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+        {props.description}
+      </span>
+      <div className="mt-1 flex items-baseline justify-between gap-2">
+        <span className="tabular-nums" data-testid={`${props.technical}-value`}>
+          {local == null ? (
+            <span className="text-zinc-500">
+              Automatico · {props.format(current)} <span className="text-xs">({props.autoSource})</span>
+            </span>
+          ) : (
+            <span className="font-medium">{props.format(current)}</span>
+          )}
+          {extra && <span className="ml-1 text-xs text-zinc-500">{extra}</span>}
+        </span>
+        {local != null && (
+          <button
+            type="button"
+            onClick={() => set(null)}
+            aria-label={`Torna al valore automatico: ${props.label}`}
+            className="shrink-0 rounded px-1.5 text-xs text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950"
+          >
+            ↺ Automatico
+          </button>
+        )}
+      </div>
+      <input
+        type="range"
+        aria-label={props.label}
+        aria-describedby={descId}
+        aria-valuetext={valueText}
+        min={min}
+        max={max}
+        step={indexed ? 1 : props.step}
+        value={pos}
+        className={'accent-blue-600 ' + (local == null ? 'opacity-60' : '')}
+        onChange={(e) => {
+          const raw = Number(e.target.value)
+          set(indexed ? steps[raw] : raw)
+        }}
+      />
+      <span className="flex justify-between text-xs text-zinc-400">
+        <span>{props.format(indexed ? steps[0] : min)}</span>
+        <span>{props.format(indexed ? steps[steps.length - 1] : max)}</span>
+      </span>
+    </div>
+  )
+}
+
+/** Valori del cursore della memoria: potenze di 2 da 1.024 al massimo del modello (incluso). */
+export function contextSteps(max: number): number[] {
+  const steps: number[] = []
+  for (let v = 1024; v < max; v *= 2) steps.push(v)
+  steps.push(max)
+  return steps
+}
+
+/** Massimo usato se il modello non dichiara la lunghezza del contesto. */
+const FALLBACK_MAX_CTX = 32768
 
 /** Impostazioni del modello per la conversazione: temperatura, ragionamento e parametri avanzati. */
 export function ModelSettings({ conversation }: { conversation: Conversation }): React.JSX.Element {
@@ -190,6 +309,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
   useEffect(() => setTemperature(conversation.temperature), [conversation.id])
 
   const advancedSet = conversation.topP != null || conversation.numCtx != null || conversation.seed != null
+  const ctxSteps = contextSteps(caps?.contextLength ?? FALLBACK_MAX_CTX)
 
   return (
     <section className="flex flex-col gap-3" aria-label="Impostazioni del modello" data-testid="model-settings">
@@ -202,6 +322,9 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
         </span>
         <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
           Quanto le risposte possono essere fantasiose. Bassa per fatti e codice, alta per idee e testi creativi.
+          {caps?.defaults.temperature != null && (
+            <> Il modello consiglia {caps.defaults.temperature.toLocaleString('it-IT')}.</>
+          )}
         </span>
         <input
           type="range"
@@ -232,29 +355,32 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
           Facoltative: lasciale vuote e il modello usa i suoi valori consigliati.
         </p>
         <div className="mt-3 flex flex-col gap-4">
-          <NumberField
+          <OptionalSlider
             label="Varietà delle parole"
             technical="top_p"
-            description="Quante parole alternative il modello considera a ogni passo. Più basso: risposte più prevedibili e ripetitive; più alto: più varie."
-            hint="da 0 a 1"
-            min={0}
+            description="Quante parole alternative il modello considera a ogni passo. Più a sinistra: risposte più prevedibili e ripetitive; più a destra: più varie."
+            value={conversation.topP}
+            autoValue={caps?.defaults.topP ?? OLLAMA_DEFAULTS.topP}
+            autoSource={caps?.defaults.topP != null ? 'consigliato dal modello' : 'predefinito di Ollama'}
+            min={0.05}
             max={1}
             step={0.05}
-            value={conversation.topP}
-            placeholder="automatico"
+            format={(v) => v.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             onChange={(v) => save({ topP: v })}
           />
-          <NumberField
+          <OptionalSlider
             label="Memoria della conversazione"
             technical="num_ctx"
-            description="Quanto testo il modello tiene a mente, misurato in token (circa ¾ di parola ciascuno). Più alto: ricorda messaggi più vecchi, ma usa più memoria ed è più lento."
-            hint={caps?.contextLength ? `max ${fmt(caps.contextLength)}` : undefined}
-            note={conversation.numCtx ? approxWords(conversation.numCtx) : null}
-            min={256}
-            max={caps?.contextLength ?? undefined}
-            step={1024}
+            description={
+              'Quanto testo il modello tiene a mente, in token (circa ¾ di parola ciascuno). Più a destra: ricorda messaggi più vecchi, ma usa più memoria ed è più lento.' +
+              (caps?.contextLength ? '' : ' Il massimo di questo modello non è noto.')
+            }
             value={conversation.numCtx}
-            placeholder="automatico"
+            autoValue={caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx}
+            autoSource={caps?.defaults.numCtx != null ? 'consigliato dal modello' : 'predefinito di Ollama'}
+            steps={ctxSteps}
+            format={(v) => `${fmt(v)} token`}
+            extra={approxWords}
             onChange={(v) => save({ numCtx: v })}
           />
           <NumberField

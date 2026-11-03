@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { flushPendingSaves } from './pendingSaves'
 import type { Conversation, Message, Plan, PlanStep, Result, SendResult, StreamEvent, StreamKind } from '@shared/types'
 
 export interface LiveStream {
@@ -54,6 +55,9 @@ export const useChat = create<ChatState>((set, get) => {
     call: (conv: Conversation) => Promise<Result<SendResult>>,
     before?: () => void
   ): Promise<boolean> => {
+    if (!get().conversation) return false
+    // Prima scriviamo impostazioni e brief appena modificati, così l'invio li usa.
+    await flushPendingSaves()
     const conv = get().conversation
     if (!conv || get().streams[conv.id]) return false
     set({ error: null, errorKind: null })
@@ -121,6 +125,7 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     async approvePlan(planId, steps) {
+      await flushPendingSaves()
       const conv = get().conversation
       if (!conv || get().streams[conv.id]) return
       const up = await window.api.plans.update(planId, { steps })

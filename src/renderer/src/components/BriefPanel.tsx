@@ -3,6 +3,7 @@ import { buildSystemPrompt } from '@shared/prompt'
 import type { Brief, Conversation } from '@shared/types'
 import { useConversations } from '../store/useConversations'
 import { useTemplates } from '../store/useTemplates'
+import { registerPendingSave } from '../store/pendingSaves'
 import { ModelSettings } from './ModelSettings'
 
 const FIELDS: Array<{ key: keyof Brief; label: string; placeholder: string; rows: number }> = [
@@ -86,6 +87,7 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const convId = conversation.id
 
+  const flushRef = useRef<() => Promise<void>>(async () => undefined)
   const flush = async (): Promise<void> => {
     clearTimeout(timer.current)
     const patch = dirty.current
@@ -94,13 +96,17 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
     await update(convId, patch)
     setSaved(true)
   }
+  flushRef.current = flush
 
   // Cambio conversazione: salva le modifiche in sospeso della precedente e ricarica il brief.
   useEffect(() => {
     setDraft(pickBrief(conversation))
     setSaved(true)
+    // Le modifiche al brief vanno scritte anche prima di un invio immediato.
+    const unregister = registerPendingSave(() => flushRef.current())
     return () => {
-      void flush()
+      unregister()
+      void flushRef.current()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convId])

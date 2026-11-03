@@ -1,6 +1,14 @@
 import { resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { buildChatMessages, buildOptions, cleanTitle, createChatService, fallbackTitle } from '../src/main/chat'
+import {
+  buildChatMessages,
+  buildOptions,
+  cleanTitle,
+  contextBudget,
+  createChatService,
+  fallbackTitle,
+  withModelLimits
+} from '../src/main/chat'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
 import { createConversation, getConversation, getPlan, listMessages, listPlans, updateConversation, updatePlan } from '../src/main/db/repo'
 import { createOllamaClient } from '../src/main/ollama'
@@ -16,6 +24,7 @@ beforeAll(async () => {
   fake = await startFakeOllama([
     { name: 'qwen3', capabilities: ['completion', 'thinking'] },
     { name: 'llama3.2', capabilities: ['completion'] },
+    { name: 'small', capabilities: ['completion'], contextLength: 4096, parameters: 'num_ctx 2048' },
     { name: 'slow', capabilities: ['completion'], delayMs: 20, chunks: Array.from({ length: 40 }, (_, i) => ({ content: `${i} ` })) },
     { name: 'badplan', capabilities: ['completion'], plan: 'scusa, non so fare piani' }
   ])
@@ -373,5 +382,35 @@ describe('titolo automatico', () => {
     expect(cleanTitle('x '.repeat(50)).length).toBeLessThanOrEqual(61)
     expect(fallbackTitle('\n  Breve  \nsecondo')).toBe('Breve')
     expect(fallbackTitle('   ')).toBe('Nuova conversazione')
+  })
+})
+
+describe('limiti del modello', () => {
+  const caps = {
+    capabilities: [],
+    thinking: false,
+    contextLength: 4096,
+    defaults: { temperature: null, topP: null, numCtx: 2048 }
+  }
+  const conv = { numCtx: null } as Conversation
+
+  it('withModelLimits: num_ctx oltre il massimo del modello viene ridotto', () => {
+    expect(withModelLimits({ ...conv, numCtx: 32768 }, caps).numCtx).toBe(4096)
+    expect(withModelLimits({ ...conv, numCtx: 1024 }, caps).numCtx).toBe(1024)
+    expect(withModelLimits(conv, caps).numCtx).toBeNull()
+    expect(withModelLimits({ ...conv, numCtx: 32768 }, null).numCtx).toBe(32768)
+  })
+
+  it('contextBudget: scelta dell\'utente, poi predefinito del modello, poi 8192', () => {
+    expect(contextBudget({ ...conv, numCtx: 3000 }, caps)).toBe(3000)
+    expect(contextBudget(conv, caps)).toBe(2048)
+    expect(contextBudget(conv, null)).toBe(8192)
+  })
+
+  it('nella richiesta a Ollama num_ctx non supera il massimo del modello', async () => {
+    const c = await createConversation(h.db, { model: 'small', numCtx: 65536 })
+    const chat = service()
+    await chat.wait((await chat.send(target, c.id, 'ciao')).streamId)
+    expect(lastChatBody().options.num_ctx).toBe(4096)
   })
 })

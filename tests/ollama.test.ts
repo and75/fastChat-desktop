@@ -1,12 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createOllamaClient, OllamaError } from '../src/main/ollama'
+import { createOllamaClient, OllamaError, parseModelDefaults } from '../src/main/ollama'
 import { startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
 
 let fake: FakeOllama
 
 beforeAll(async () => {
   fake = await startFakeOllama([
-    { name: 'qwen3:4b', capabilities: ['completion', 'thinking'], contextLength: 40960 },
+    {
+      name: 'qwen3:4b',
+      capabilities: ['completion', 'thinking'],
+      contextLength: 40960,
+      parameters: 'repeat_penalty 1\nstop "<|im_start|>"\nstop "<|im_end|>"\ntemperature 0.6\ntop_k 20\ntop_p 0.95\nnum_ctx 8192'
+    },
     { name: 'llama3.2:3b', capabilities: ['completion', 'tools'] },
     {
       name: 'slow',
@@ -45,9 +50,12 @@ describe('showModel', () => {
     expect(await c.showModel('qwen3:4b')).toEqual({
       capabilities: ['completion', 'thinking'],
       thinking: true,
-      contextLength: 40960
+      contextLength: 40960,
+      defaults: { temperature: 0.6, topP: 0.95, numCtx: 8192 }
     })
-    expect((await c.showModel('llama3.2:3b')).thinking).toBe(false)
+    const llama = await c.showModel('llama3.2:3b')
+    expect(llama.thinking).toBe(false)
+    expect(llama.defaults).toEqual({ temperature: null, topP: null, numCtx: null })
   })
 
   it('tiene in cache le capabilities', async () => {
@@ -144,5 +152,19 @@ describe('chatStream', () => {
     const res = await createOllamaClient(() => 'http://x', fetchImpl).chatStream({ model: 'm', messages: [] }, {})
     expect(res.content).toBe('Ciao!')
     expect(res.evalCount).toBe(2)
+  })
+})
+
+describe('parseModelDefaults', () => {
+  it('legge temperature, top_p e num_ctx dal formato Modelfile', () => {
+    expect(parseModelDefaults('temperature   0.7\n  top_p 0.8\nnum_ctx 2048.0\nstop "x"')).toEqual({
+      temperature: 0.7,
+      topP: 0.8,
+      numCtx: 2048
+    })
+  })
+  it('valori assenti o non numerici → null', () => {
+    expect(parseModelDefaults(undefined)).toEqual({ temperature: null, topP: null, numCtx: null })
+    expect(parseModelDefaults('top_p abc\nnum_ctx')).toEqual({ temperature: null, topP: null, numCtx: null })
   })
 })

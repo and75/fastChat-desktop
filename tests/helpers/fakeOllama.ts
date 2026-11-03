@@ -9,6 +9,8 @@ export interface FakeModel {
   name: string
   capabilities: string[]
   contextLength?: number
+  /** Testo del campo `parameters` di /api/show (formato Modelfile), es. "top_p 0.95\nnum_ctx 8192". */
+  parameters?: string
   /** Chunk da inviare su /api/chat. Default: un breve pensiero + risposta. */
   chunks?: Array<{ thinking?: string; content?: string }>
   /** Ritardo tra un chunk e l'altro, ms. */
@@ -71,7 +73,8 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
       if (!model) return json(res, 404, { error: `model '${modelName}' not found` })
       return json(res, 200, {
         capabilities: model.capabilities,
-        model_info: { 'fake.context_length': model.contextLength ?? 8192 }
+        model_info: { 'fake.context_length': model.contextLength ?? 8192 },
+        ...(model.parameters ? { parameters: model.parameters } : {})
       })
     }
 

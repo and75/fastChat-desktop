@@ -77,12 +77,24 @@ export interface OllamaModel {
   quantization: string | null
 }
 
+/** Valori predefiniti del modello (dal Modelfile, campo `parameters` di /api/show); null se non indicati. */
+export interface ModelDefaults {
+  temperature: number | null
+  topP: number | null
+  numCtx: number | null
+}
+
 export interface ModelCapabilities {
   /** Elenco grezzo restituito da /api/show, es. ["completion", "thinking", "tools"]. */
   capabilities: string[]
   thinking: boolean
+  /** Lunghezza massima del contesto con cui il modello è stato addestrato (token). */
   contextLength: number | null
+  defaults: ModelDefaults
 }
+
+/** Valori usati da Ollama quando né la conversazione né il modello indicano nulla. */
+export const OLLAMA_DEFAULTS = { topP: 0.9, numCtx: 4096 } as const
 
 /** Campi modificabili di una conversazione. */
 export type ConversationPatch = Partial<

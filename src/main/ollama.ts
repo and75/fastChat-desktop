@@ -1,4 +1,4 @@
-import type { ModelCapabilities, OllamaModel } from '@shared/types'
+import type { ModelCapabilities, ModelDefaults, OllamaModel } from '@shared/types'
 
 export type OllamaErrorCode = 'unreachable' | 'http' | 'model' | 'parse'
 
@@ -67,6 +67,25 @@ export interface OllamaClient {
   clearCache(): void
 }
 
+/**
+ * Legge i parametri predefiniti dal campo `parameters` di /api/show, che è testo nel formato del
+ * Modelfile: una riga per parametro, es. "temperature 0.6" o "stop \"<|im_end|>\"".
+ */
+export function parseModelDefaults(parameters: unknown): ModelDefaults {
+  const out: ModelDefaults = { temperature: null, topP: null, numCtx: null }
+  if (typeof parameters !== 'string') return out
+  for (const line of parameters.split('\n')) {
+    const match = line.trim().match(/^(\w+)\s+(.+)$/)
+    if (!match) continue
+    const value = Number(match[2].trim().replace(/^"|"$/g, ''))
+    if (!Number.isFinite(value)) continue
+    if (match[1] === 'temperature') out.temperature = value
+    else if (match[1] === 'top_p') out.topP = value
+    else if (match[1] === 'num_ctx') out.numCtx = Math.round(value)
+  }
+  return out
+}
+
 const isAbort = (err: unknown): boolean =>
   err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
 
@@ -128,13 +147,18 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     if (cached) return cached
 
     const res = await request('/api/show', { method: 'POST', body: JSON.stringify({ model: name }) })
-    const body = (await res.json()) as { capabilities?: string[]; model_info?: Record<string, unknown> }
+    const body = (await res.json()) as {
+      capabilities?: string[]
+      model_info?: Record<string, unknown>
+      parameters?: unknown
+    }
     const capabilities = body.capabilities ?? []
     const ctxEntry = Object.entries(body.model_info ?? {}).find(([k]) => k.endsWith('.context_length'))
     const caps: ModelCapabilities = {
       capabilities,
       thinking: capabilities.includes('thinking'),
-      contextLength: typeof ctxEntry?.[1] === 'number' ? ctxEntry[1] : null
+      contextLength: typeof ctxEntry?.[1] === 'number' ? ctxEntry[1] : null,
+      defaults: parseModelDefaults(body.parameters)
     }
     capsCache.set(key, caps)
     return caps

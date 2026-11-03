@@ -15,6 +15,8 @@ const fake = await startFakeOllama([
   {
     name: 'thinker:8b',
     capabilities: ['completion', 'thinking'],
+    contextLength: 32768,
+    parameters: 'temperature 0.6\ntop_p 0.95\nnum_ctx 4096',
     delayMs: 80,
     chunks: [
       ...Array.from({ length: 12 }, (_, i) => ({ thinking: `passo${i} ` })),
@@ -49,6 +51,15 @@ async function setSwitch(scope, name, on) {
   )
 }
 
+/** Attende (con polling lato Node) che una condizione asincrona diventi vera. */
+async function waitUntil(check, timeout = 10_000) {
+  const end = Date.now() + timeout
+  while (!(await check())) {
+    if (Date.now() > end) throw new Error('waitUntil: condizione non verificata in tempo')
+    await new Promise((r) => setTimeout(r, 50))
+  }
+}
+
 const steps = []
 async function step(name, fn) {
   try {
@@ -70,6 +81,10 @@ const app = await electron.launch({
     NODE_ENV: 'production'
   }
 })
+
+/** La conversazione aggiornata più di recente, letta dal main. */
+const latestConversation = async () =>
+  (await app.windows()[0].evaluate(() => window.api.conversations.list())).data[0]
 
 let failed = false
 try {
@@ -280,7 +295,19 @@ try {
     await settings.getByLabel('Temperatura').fill('1.2')
     await page.getByTestId('temperature-value').filter({ hasText: '1.20' }).waitFor()
     await settings.getByText('Impostazioni avanzate').click()
+
+    // cursori in automatico: posizione e valori presi dal modello (parameters + context_length)
+    await settings.getByTestId('top_p-value').filter({ hasText: 'Automatico · 0,95 (consigliato dal modello)' }).waitFor()
+    await settings.getByTestId('num_ctx-value').filter({ hasText: /Automatico · 4\.?096 token \(consigliato dal modello\)/ }).waitFor()
+    await settings.getByText('32.768 token').waitFor() // estremo destro = massimo del modello
+    await settings.getByText('Il modello consiglia 0,6.').waitFor()
+
     await settings.getByLabel('Varietà delle parole').fill('0.9')
+    await settings.getByTestId('top_p-value').filter({ hasText: /^0,90$/ }).waitFor()
+    const memory = settings.getByLabel('Memoria della conversazione')
+    await memory.focus()
+    await memory.press('End')
+    await settings.getByTestId('num_ctx-value').filter({ hasText: '32.768 token' }).waitFor()
     await settings.getByLabel('Risposte ripetibili').fill('7')
     await page.getByTestId('composer-temperature').filter({ hasText: '1.20' }).waitFor()
     await page.waitForTimeout(400) // debounce del salvataggio
@@ -290,6 +317,7 @@ try {
     })
     assert.equal(conv.temperature, 1.2)
     assert.equal(conv.topP, 0.9)
+    assert.equal(conv.numCtx, 32768)
     assert.equal(conv.seed, 7)
     assert.equal(conv.think, true)
   })
@@ -312,16 +340,24 @@ try {
 
     const body = lastChat()
     assert.equal(body.think, true)
-    assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, seed: 7 })
+    assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, num_ctx: 32768, seed: 7 })
+  })
+
+  await step('cursore della memoria: "↺ Automatico" toglie il valore e num_ctx non viene più inviato', async () => {
+    const settings = page.getByTestId('model-settings')
+    await settings.getByRole('button', { name: 'Torna al valore automatico: Memoria della conversazione' }).click()
+    await settings.getByTestId('num_ctx-value').filter({ hasText: 'Automatico' }).waitFor()
+    await waitUntil(async () => (await latestConversation()).numCtx === null)
   })
 
   await step('ragionamento spento: think=false e nessun blocco', async () => {
     await setSwitch(page.getByTestId('model-settings'), 'Ragionamento', false)
-    await page.waitForFunction(async () => (await window.api.conversations.list()).data[0].think === false)
+    await waitUntil(async () => (await latestConversation()).think === false)
     await composer.fill('Rispondi subito')
     await composer.press('Enter')
     await page.getByTestId('message-assistant').nth(1).waitFor()
     assert.equal(lastChat().think, false)
+    assert.equal('num_ctx' in lastChat().options, false)
     assert.equal(await page.getByTestId('message-assistant').nth(1).getByTestId('thinking-block').count(), 0)
   })
 
@@ -330,6 +366,7 @@ try {
   })
 
   await page.getByTestId('message-assistant').first().getByTestId('thinking-text').waitFor()
+  await page.getByTestId('model-settings').getByText('Impostazioni avanzate').scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(root, 'test-results', 'e2e-phase3.png') })
 
   // ------------------------------------------------------------------ fase 4

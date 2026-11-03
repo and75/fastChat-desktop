@@ -8,7 +8,7 @@ import {
   PLAN_SCHEMA,
   selectHistory
 } from '@shared/prompt'
-import { DEFAULT_TITLE, type Conversation, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
+import { DEFAULT_TITLE, type Conversation, type ModelCapabilities, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
 import type { Db } from './db/client'
 import {
   addMessage,
@@ -66,12 +66,10 @@ export function buildOptions(conv: Conversation): ChatOptions {
 export function buildChatMessages(
   conv: Conversation,
   history: Message[],
-  system: string = buildSystemPrompt(conv)
+  system: string = buildSystemPrompt(conv),
+  maxTokens: number = conv.numCtx ?? DEFAULT_HISTORY_LIMITS.maxTokens
 ): ChatMessage[] {
-  const picked = selectHistory(history, system, {
-    ...DEFAULT_HISTORY_LIMITS,
-    maxTokens: conv.numCtx ?? DEFAULT_HISTORY_LIMITS.maxTokens
-  })
+  const picked = selectHistory(history, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens })
   const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
   for (const m of picked) out.push({ role: m.role, content: m.content })
   return out
@@ -99,6 +97,20 @@ export function cleanTitle(raw: string): string {
 export function fallbackTitle(question: string): string {
   const line = question.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
   return line.length > 50 ? line.slice(0, 50).replace(/\s+\S*$/, '') + '…' : line || DEFAULT_TITLE
+}
+
+/**
+ * Adatta la conversazione ai limiti del modello: la memoria (num_ctx) non può superare il contesto
+ * massimo del modello (può succedere dopo un cambio di modello).
+ */
+export function withModelLimits(conv: Conversation, caps: ModelCapabilities | null): Conversation {
+  const max = caps?.contextLength
+  return conv.numCtx != null && max && conv.numCtx > max ? { ...conv, numCtx: max } : conv
+}
+
+/** Token di contesto su cui dimensionare lo storico: quello scelto, altrimenti il predefinito del modello. */
+export function contextBudget(conv: Conversation, caps: ModelCapabilities | null): number {
+  return conv.numCtx ?? caps?.defaults.numCtx ?? DEFAULT_HISTORY_LIMITS.maxTokens
 }
 
 function systemFor(conv: Conversation, mode: Mode): string {
@@ -134,14 +146,18 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
     }
   }
 
+  async function capsOf(conv: Conversation): Promise<ModelCapabilities | null> {
+    try {
+      return await ollama.showModel(conv.model)
+    } catch {
+      return null
+    }
+  }
+
   /** Il parametro `think` va inviato solo ai modelli che lo supportano, altrimenti Ollama risponde con un errore. */
   async function thinkParam(conv: Conversation): Promise<boolean | undefined> {
-    try {
-      const caps = await ollama.showModel(conv.model)
-      return caps.thinking ? conv.think : undefined
-    } catch {
-      return undefined
-    }
+    const caps = await capsOf(conv)
+    return caps?.thinking ? conv.think : undefined
   }
 
   /**
@@ -216,18 +232,19 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
     return out
   }
 
-  async function startStream(target: StreamTarget, conv: Conversation, mode: Mode): Promise<string> {
+  async function startStream(target: StreamTarget, original: Conversation, mode: Mode): Promise<string> {
     const streamId = randomUUID()
     const controller = new AbortController()
+    const caps = await capsOf(original)
+    const conv = withModelLimits(original, caps)
     const history = await listMessages(db, conv.id)
     const request: ChatRequest = {
       model: conv.model,
-      messages: buildChatMessages(conv, history, systemFor(conv, mode)),
+      messages: buildChatMessages(conv, history, systemFor(conv, mode), contextBudget(conv, caps)),
       options: buildOptions(conv)
     }
     if (mode.kind === 'plan') request.format = PLAN_SCHEMA as unknown as Record<string, unknown>
-    const think = await thinkParam(conv)
-    if (think !== undefined) request.think = think
+    if (caps?.thinking) request.think = conv.think
 
     const kind: StreamKind = mode.kind === 'plan' ? 'plan' : 'chat'
     const base = { streamId, conversationId: conv.id, kind }
