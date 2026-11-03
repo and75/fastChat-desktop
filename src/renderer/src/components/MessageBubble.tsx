@@ -1,9 +1,11 @@
 import type { Message } from '@shared/types'
 import { Markdown } from './Markdown'
+import { ThinkingBlock } from './ThinkingBlock'
 
 interface Props {
   role: Message['role']
   content: string
+  thinking?: string | null
   /** Statistiche mostrate sotto le risposte salvate. */
   meta?: Pick<Message, 'model' | 'evalCount' | 'durationMs'>
   streaming?: boolean
@@ -19,7 +21,7 @@ function formatMeta(meta: NonNullable<Props['meta']>): string {
   return parts.join(' · ')
 }
 
-export function MessageBubble({ role, content, meta, streaming, actions }: Props): React.JSX.Element {
+export function MessageBubble({ role, content, thinking, meta, streaming, actions }: Props): React.JSX.Element {
   if (role === 'user') {
     return (
       <div className="flex justify-end" data-testid="message-user">
@@ -31,9 +33,11 @@ export function MessageBubble({ role, content, meta, streaming, actions }: Props
   }
 
   return (
-    <div className="group flex flex-col gap-1" data-testid={streaming ? 'message-streaming' : 'message-assistant'}>
+    <div className="group flex flex-col gap-2" data-testid={streaming ? 'message-streaming' : 'message-assistant'}>
+      {/* Durante lo streaming il ragionamento resta aperto finché non inizia la risposta. */}
+      {thinking && <ThinkingBlock text={thinking} live={!!streaming && !content} />}
       <div className="max-w-full text-zinc-900 dark:text-zinc-100">
-        {content ? <Markdown text={content} /> : streaming ? <span className="text-zinc-400">…</span> : null}
+        {content ? <Markdown text={content} /> : streaming && !thinking ? <span className="text-zinc-400">…</span> : null}
         {streaming && content && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-zinc-400 align-middle" />}
       </div>
       {!streaming && (

@@ -63,8 +63,25 @@ export function sanitizePatch(patch: ConversationPatch): ConversationPatch {
     if (patch[key] !== undefined) out[key] = patch[key]
   }
   if (typeof out.title === 'string') out.title = out.title.trim().slice(0, 200) || 'Nuova conversazione'
-  if (typeof out.temperature === 'number') out.temperature = Math.min(2, Math.max(0, out.temperature))
+  if ('temperature' in out) out.temperature = clampNumber(out.temperature, 0, 2) ?? 0.7
+  if ('topP' in out) out.topP = clampNumber(out.topP, 0, 1)
+  if ('numCtx' in out) out.numCtx = toInt(out.numCtx, 256, 1_048_576)
+  if ('seed' in out) out.seed = toInt(out.seed, -2_147_483_648, 2_147_483_647)
+  for (const key of ['think', 'planMode', 'archived'] as const) {
+    if (key in out) out[key] = out[key] === true
+  }
   return out as ConversationPatch
+}
+
+/** Numero limitato all'intervallo; null se non è un numero finito (= "usa il default di Ollama"). */
+function clampNumber(v: unknown, min: number, max: number): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null
+  return Math.min(max, Math.max(min, v))
+}
+
+function toInt(v: unknown, min: number, max: number): number | null {
+  const n = clampNumber(v, min, max)
+  return n == null ? null : Math.round(n)
 }
 
 export async function listConversations(db: Db, query: ConversationListQuery = {}): Promise<Conversation[]> {

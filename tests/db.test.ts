@@ -106,6 +106,18 @@ describe('conversazioni e messaggi', () => {
     await expect(updateConversation(h.db, 'nope', { title: 'x' })).rejects.toThrow('non trovata')
   })
 
+  it('parametri del modello: limiti, interi, null = default di Ollama', async () => {
+    const a = await createConversation(h.db)
+    let up = await updateConversation(h.db, a.id, { topP: 1.5, numCtx: 4096.6, seed: 42, temperature: -1 })
+    expect(up).toMatchObject({ topP: 1, numCtx: 4097, seed: 42, temperature: 0 })
+    up = await updateConversation(h.db, a.id, { topP: null, numCtx: 10, seed: null })
+    expect(up).toMatchObject({ topP: null, numCtx: 256, seed: null })
+    up = await updateConversation(h.db, a.id, { numCtx: Number.NaN as number, think: 'si' as unknown as boolean })
+    expect(up).toMatchObject({ numCtx: null, think: false })
+    up = await updateConversation(h.db, a.id, { think: true })
+    expect(up.think).toBe(true)
+  })
+
   it('messaggi in ordine di inserimento e rimozione', async () => {
     const a = await createConversation(h.db)
     const m1 = await addMessage(h.db, { conversationId: a.id, role: 'user', content: '1' })

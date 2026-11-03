@@ -4,7 +4,7 @@ App desktop (Electron) per chattare con modelli locali serviti da [Ollama](https
 Ogni conversazione ha un proprio **brief** (ruolo, contesto, obiettivi, vincoli) e proprie impostazioni:
 temperatura, ragionamento on/off e plan mode. Lo storico resta in locale.
 
-> Stato: **fase 2** — conversazioni con brief, chat in streaming, sidebar con ricerca/rinomina/archivio. Prossime: temperatura e ragionamento (3), plan mode (4), template/export/packaging (5).
+> Stato: **fase 3** — conversazioni con brief, chat in streaming, sidebar, temperatura e parametri avanzati, ragionamento on/off con blocco dedicato. Prossime: plan mode (4), template/export/packaging (5).
 
 ## Requisiti
 

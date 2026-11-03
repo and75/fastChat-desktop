@@ -1,0 +1,199 @@
+import { useEffect, useRef, useState } from 'react'
+import type { Conversation, ConversationPatch } from '@shared/types'
+import { useConversations } from '../store/useConversations'
+import { useModels } from '../store/useModels'
+
+/** Salvataggio con debounce, per slider e campi numerici. */
+function useDebouncedPatch(convId: string, delay = 300): (patch: ConversationPatch) => void {
+  const update = useConversations((s) => s.update)
+  const pending = useRef<ConversationPatch>({})
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  const flush = (): void => {
+    clearTimeout(timer.current)
+    const patch = pending.current
+    pending.current = {}
+    if (Object.keys(patch).length) void update(convId, patch)
+  }
+  // Alla chiusura del pannello o al cambio conversazione non si perde nulla.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => flush, [convId])
+
+  return (patch) => {
+    Object.assign(pending.current, patch)
+    clearTimeout(timer.current)
+    timer.current = setTimeout(flush, delay)
+  }
+}
+
+/** Interruttore del ragionamento: disabilitato se il modello non ha la capability "thinking". */
+export function ThinkToggle({ conversation, compact = false }: { conversation: Conversation; compact?: boolean }): React.JSX.Element {
+  const update = useConversations((s) => s.update)
+  const caps = useModels((s) => s.capabilities[conversation.model])
+  const supported = caps?.thinking === true
+  const on = supported && conversation.think
+  const reason = !conversation.model
+    ? 'Nessun modello selezionato'
+    : !caps
+      ? 'Verifica delle capacità del modello…'
+      : supported
+        ? 'Il modello ragiona prima di rispondere (più lento, spesso più accurato)'
+        : `${conversation.model} non supporta il ragionamento`
+
+  return (
+    <label
+      title={reason}
+      className={
+        'flex select-none items-center gap-2 ' +
+        (compact ? 'text-xs ' : 'text-sm ') +
+        (supported ? 'cursor-pointer' : 'cursor-not-allowed opacity-50')
+      }
+    >
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label="Ragionamento"
+        className="peer sr-only"
+        checked={on}
+        disabled={!supported}
+        onChange={(e) => void update(conversation.id, { think: e.target.checked })}
+      />
+      <span
+        aria-hidden
+        className={
+          'relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 ' +
+          (on ? 'bg-violet-600' : 'bg-zinc-300 dark:bg-zinc-700')
+        }
+      >
+        <span className={'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ' + (on ? 'left-4.5' : 'left-0.5')} />
+      </span>
+      <span>Ragionamento</span>
+    </label>
+  )
+}
+
+function NumberField(props: {
+  label: string
+  hint: string
+  value: number | null
+  placeholder: string
+  step?: number
+  min?: number
+  max?: number
+  onChange(v: number | null): void
+}): React.JSX.Element {
+  const [text, setText] = useState(props.value == null ? '' : String(props.value))
+  const focused = useRef(false)
+  // Riallinea al valore salvato (es. limitato dal main), ma mai mentre l'utente sta scrivendo.
+  useEffect(() => {
+    if (!focused.current) setText(props.value == null ? '' : String(props.value))
+  }, [props.value])
+
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="flex items-baseline justify-between">
+        <span className="font-medium text-zinc-700 dark:text-zinc-300">{props.label}</span>
+        <span className="text-xs text-zinc-400">{props.hint}</span>
+      </span>
+      <input
+        type="number"
+        inputMode="decimal"
+        step={props.step}
+        min={props.min}
+        max={props.max}
+        value={text}
+        placeholder={props.placeholder}
+        className="rounded-lg border border-zinc-300 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+        onFocus={() => (focused.current = true)}
+        onBlur={() => {
+          focused.current = false
+          setText(props.value == null ? '' : String(props.value))
+        }}
+        onChange={(e) => {
+          setText(e.target.value)
+          const n = e.target.value === '' ? null : Number(e.target.value)
+          if (n === null || Number.isFinite(n)) props.onChange(n)
+        }}
+      />
+    </label>
+  )
+}
+
+/** Impostazioni del modello per la conversazione: temperatura, ragionamento e parametri avanzati. */
+export function ModelSettings({ conversation }: { conversation: Conversation }): React.JSX.Element {
+  const save = useDebouncedPatch(conversation.id)
+  const caps = useModels((s) => s.capabilities[conversation.model])
+  const [temperature, setTemperature] = useState(conversation.temperature)
+  // Lo slider è la fonte di verità mentre si trascina: si riallinea solo cambiando conversazione.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setTemperature(conversation.temperature), [conversation.id])
+
+  const advancedSet = conversation.topP != null || conversation.numCtx != null || conversation.seed != null
+
+  return (
+    <section className="flex flex-col gap-3" aria-label="Impostazioni del modello" data-testid="model-settings">
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="flex items-baseline justify-between">
+          <span className="font-medium text-zinc-700 dark:text-zinc-300">Temperatura</span>
+          <span className="tabular-nums text-zinc-500" data-testid="temperature-value">
+            {temperature.toFixed(2)}
+          </span>
+        </span>
+        <input
+          type="range"
+          aria-label="Temperatura"
+          min={0}
+          max={2}
+          step={0.05}
+          value={temperature}
+          className="accent-blue-600"
+          onChange={(e) => {
+            const v = Number(e.target.value)
+            setTemperature(v)
+            save({ temperature: v })
+          }}
+        />
+        <span className="flex justify-between text-xs text-zinc-400">
+          <span>precisa</span>
+          <span>creativa</span>
+        </span>
+      </label>
+
+      <ThinkToggle conversation={conversation} />
+
+      <details className="text-sm" open={advancedSet}>
+        <summary className="cursor-pointer text-zinc-500">Parametri avanzati</summary>
+        <div className="mt-2 flex flex-col gap-3">
+          <NumberField
+            label="top_p"
+            hint="0–1"
+            min={0}
+            max={1}
+            step={0.05}
+            value={conversation.topP}
+            placeholder="default del modello"
+            onChange={(v) => save({ topP: v })}
+          />
+          <NumberField
+            label="num_ctx"
+            hint={caps?.contextLength ? `max ${caps.contextLength.toLocaleString('it-IT')}` : 'token di contesto'}
+            min={256}
+            max={caps?.contextLength ?? undefined}
+            step={1024}
+            value={conversation.numCtx}
+            placeholder="default di Ollama"
+            onChange={(v) => save({ numCtx: v })}
+          />
+          <NumberField
+            label="seed"
+            hint="risposte riproducibili"
+            step={1}
+            value={conversation.seed}
+            placeholder="casuale"
+            onChange={(v) => save({ seed: v })}
+          />
+        </div>
+      </details>
+    </section>
+  )
+}

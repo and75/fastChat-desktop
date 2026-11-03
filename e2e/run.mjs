@@ -13,6 +13,15 @@ const fake = await startFakeOllama([
   { name: 'qwen3:4b', capabilities: ['completion', 'thinking'] },
   { name: 'llama3.2:3b', capabilities: ['completion', 'tools'] },
   {
+    name: 'thinker:8b',
+    capabilities: ['completion', 'thinking'],
+    delayMs: 80,
+    chunks: [
+      ...Array.from({ length: 12 }, (_, i) => ({ thinking: `passo${i} ` })),
+      ...Array.from({ length: 30 }, (_, i) => ({ content: `risposta${i} ` }))
+    ]
+  },
+  {
     name: 'slow:1b',
     capabilities: ['completion'],
     delayMs: 60,
@@ -70,7 +79,7 @@ try {
     const select = page.locator('#model-select')
     await select.locator('option', { hasText: 'qwen3:4b' }).waitFor({ state: 'attached' })
     const options = await select.locator('option').allTextContents()
-    assert.deepEqual(options, ['llama3.2:3b', 'qwen3:4b', 'slow:1b'])
+    assert.deepEqual(options, ['llama3.2:3b', 'qwen3:4b', 'slow:1b', 'thinker:8b'])
   })
 
   await step('capabilities: llama3.2 senza ragionamento, qwen3 con ragionamento', async () => {
@@ -114,7 +123,7 @@ try {
     await panel.getByLabel('Vincoli').fill('Rispondi solo in italiano.')
     await panel.getByLabel('Ruolo').fill('Sei un tutor paziente.')
     await panel.getByTestId('brief-status').filter({ hasText: 'Salvato' }).waitFor()
-    await panel.locator('summary').click()
+    await panel.getByText('Anteprima system prompt').click()
     assert.equal(
       await panel.getByTestId('system-preview').textContent(),
       '# Ruolo\nSei un tutor paziente.\n\n# Vincoli\nRispondi solo in italiano.'
@@ -219,6 +228,79 @@ try {
   await items.first().getByRole('button').first().click()
   await page.getByTestId('message-assistant').first().waitFor()
   await page.screenshot({ path: join(root, 'test-results', 'e2e-phase2.png') })
+
+  // ------------------------------------------------------------------ fase 3
+  await step('ragionamento: interruttore disabilitato se il modello non lo supporta', async () => {
+    await page.getByLabel('Mostra archiviate').uncheck()
+    await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
+    await page.getByTestId('model-settings').waitFor()
+    await page.selectOption('#model-select', 'llama3.2:3b')
+    const toggle = page.getByTestId('model-settings').getByRole('switch', { name: 'Ragionamento' })
+    await page.getByTestId('thinking-capability').filter({ hasText: 'senza ragionamento' }).waitFor()
+    assert.equal(await toggle.isDisabled(), true)
+    await page.selectOption('#model-select', 'thinker:8b')
+    await page.getByTestId('thinking-capability').filter({ hasText: /^ragionamento$/ }).waitFor()
+    assert.equal(await toggle.isDisabled(), false)
+    assert.equal(await toggle.isChecked(), false)
+  })
+
+  await step('temperatura e parametri avanzati arrivano a Ollama in options', async () => {
+    const settings = page.getByTestId('model-settings')
+    await settings.getByRole('switch', { name: 'Ragionamento' }).check({ force: true })
+    await settings.getByLabel('Temperatura').fill('1.2')
+    await page.getByTestId('temperature-value').filter({ hasText: '1.20' }).waitFor()
+    await settings.getByText('Parametri avanzati').click()
+    await settings.getByLabel('top_p').fill('0.9')
+    await settings.getByLabel('seed').fill('7')
+    await page.getByTestId('composer-temperature').filter({ hasText: '1.20' }).waitFor()
+    await page.waitForTimeout(400) // debounce del salvataggio
+    const conv = await page.evaluate(async () => {
+      const list = await window.api.conversations.list()
+      return list.data[0]
+    })
+    assert.equal(conv.temperature, 1.2)
+    assert.equal(conv.topP, 0.9)
+    assert.equal(conv.seed, 7)
+    assert.equal(conv.think, true)
+  })
+
+  await step('ThinkingBlock: ragionamento in streaming, poi si richiude e si riapre', async () => {
+    await composer.fill('Ragiona su questo')
+    await composer.press('Enter')
+    const live = page.getByTestId('message-streaming')
+    await live.getByText('Sta ragionando…').waitFor()
+    await live.getByTestId('thinking-text').filter({ hasText: 'passo2' }).waitFor()
+    // all'arrivo della risposta il blocco si chiude
+    await live.filter({ hasText: 'risposta1' }).waitFor()
+    assert.equal(await live.getByTestId('thinking-text').count(), 0)
+    await live.waitFor({ state: 'detached' })
+
+    const msg = page.getByTestId('message-assistant').last()
+    await msg.getByText('Ragionamento · 12 parole').click()
+    assert.match(await msg.getByTestId('thinking-text').textContent(), /passo0 passo1 .* passo11/)
+    assert.doesNotMatch(await msg.locator('.markdown').textContent(), /passo/)
+
+    const body = lastChat()
+    assert.equal(body.think, true)
+    assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, seed: 7 })
+  })
+
+  await step('ragionamento spento: think=false e nessun blocco', async () => {
+    await page.getByTestId('model-settings').getByRole('switch', { name: 'Ragionamento' }).uncheck({ force: true })
+    await page.waitForFunction(async () => (await window.api.conversations.list()).data[0].think === false)
+    await composer.fill('Rispondi subito')
+    await composer.press('Enter')
+    await page.getByTestId('message-assistant').nth(1).waitFor()
+    assert.equal(lastChat().think, false)
+    assert.equal(await page.getByTestId('message-assistant').nth(1).getByTestId('thinking-block').count(), 0)
+  })
+
+  await step('nessun errore JavaScript nel renderer (fase 3)', async () => {
+    assert.deepEqual(errors, [])
+  })
+
+  await page.getByTestId('message-assistant').first().getByTestId('thinking-text').waitFor()
+  await page.screenshot({ path: join(root, 'test-results', 'e2e-phase3.png') })
 } catch (err) {
   failed = true
   console.error(err)

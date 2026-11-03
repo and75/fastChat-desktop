@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { buildSystemPrompt } from '@shared/prompt'
 import type { Brief, Conversation } from '@shared/types'
 import { useConversations } from '../store/useConversations'
+import { ModelSettings } from './ModelSettings'
 
 const FIELDS: Array<{ key: keyof Brief; label: string; placeholder: string; rows: number }> = [
   { key: 'role', label: 'Ruolo', placeholder: 'Es. Sei un revisore di codice TypeScript esperto.', rows: 2 },
@@ -54,6 +55,9 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
 
   return (
     <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-zinc-200 p-4 dark:border-zinc-800" data-testid="brief-panel">
+      <h2 className="mb-3 font-semibold">Modello</h2>
+      <ModelSettings conversation={conversation} />
+      <hr className="my-4 border-zinc-200 dark:border-zinc-800" />
       <div className="mb-3 flex items-baseline justify-between">
         <h2 className="font-semibold">Brief</h2>
         <span className="text-xs text-zinc-400" data-testid="brief-status">

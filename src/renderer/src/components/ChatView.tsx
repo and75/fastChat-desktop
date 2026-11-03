@@ -2,12 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { MessageBubble } from './MessageBubble'
+import { ThinkToggle } from './ModelSettings'
 
 function Composer({ disabled, streaming }: { disabled: boolean; streaming: boolean }): React.JSX.Element {
   const [text, setText] = useState('')
   const send = useChat((s) => s.send)
   const abort = useChat((s) => s.abort)
-  const conversationId = useChat((s) => s.conversation?.id)
+  const conversation = useChat((s) => s.conversation)
+  const conversationId = conversation?.id
   const ref = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -72,6 +74,12 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
           </button>
         )}
       </div>
+      {conversation && (
+        <div className="mt-2 flex items-center gap-4 px-1 text-xs text-zinc-500">
+          <ThinkToggle conversation={conversation} compact />
+          <span data-testid="composer-temperature">Temperatura {conversation.temperature.toFixed(2)}</span>
+        </div>
+      )}
     </form>
   )
 }
@@ -132,6 +140,7 @@ export function ChatView(): React.JSX.Element {
               key={m.id}
               role={m.role}
               content={m.content}
+              thinking={m.thinking}
               meta={m.role === 'assistant' ? m : undefined}
               actions={
                 canRegenerate && m === last && m.role === 'assistant' ? (
@@ -142,7 +151,7 @@ export function ChatView(): React.JSX.Element {
               }
             />
           ))}
-          {live && <MessageBubble role="assistant" content={live.content} streaming />}
+          {live && <MessageBubble role="assistant" content={live.content} thinking={live.thinking} streaming />}
           {error && (
             <div
               role="alert"
