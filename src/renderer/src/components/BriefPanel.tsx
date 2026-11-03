@@ -4,6 +4,7 @@ import type { Brief, Conversation } from '@shared/types'
 import { useConversations } from '../store/useConversations'
 import { useTemplates } from '../store/useTemplates'
 import { registerPendingSave } from '../store/pendingSaves'
+import { BrainIcon, IdCardIcon } from './icons'
 import { ModelSettings } from './ModelSettings'
 
 const FIELDS: Array<{ key: keyof Brief; label: string; placeholder: string; rows: number }> = [
@@ -71,6 +72,29 @@ function SaveAsTemplate({ conversation, beforeSave }: { conversation: Conversati
   )
 }
 
+type PanelTab = 'model' | 'brief'
+const TAB_KEY = 'fastchat.panelTab'
+
+/** Scheda del pannello, ricordata tra una conversazione e l'altra e dopo il riavvio. */
+function usePanelTab(): [PanelTab, (t: PanelTab) => void] {
+  const [tab, setTab] = useState<PanelTab>(() => {
+    try {
+      return localStorage.getItem(TAB_KEY) === 'model' ? 'model' : 'brief'
+    } catch {
+      return 'brief'
+    }
+  })
+  const choose = (t: PanelTab): void => {
+    setTab(t)
+    try {
+      localStorage.setItem(TAB_KEY, t)
+    } catch {
+      /* storage non disponibile: la scelta vale solo per questa sessione */
+    }
+  }
+  return [tab, choose]
+}
+
 const pickBrief = (c: Conversation): Brief => ({
   role: c.role,
   context: c.context,
@@ -120,40 +144,102 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
   }
 
   const preview = buildSystemPrompt(draft)
+  const [tab, setTab] = usePanelTab()
+
+  const tabs: Array<{ id: PanelTab; label: string; icon: React.ReactNode; filled?: boolean }> = [
+    { id: 'model', label: 'Modello', icon: <BrainIcon /> },
+    { id: 'brief', label: 'Brief', icon: <IdCardIcon />, filled: preview !== '' }
+  ]
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-zinc-200 p-4 dark:border-zinc-800" data-testid="brief-panel">
-      <h2 className="mb-3 font-semibold">Modello</h2>
-      <ModelSettings conversation={conversation} />
-      <hr className="my-4 border-zinc-200 dark:border-zinc-800" />
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="font-semibold">Brief</h2>
-        <span className="text-xs text-zinc-400" data-testid="brief-status">
-          {saved ? 'Salvato' : 'Modifiche…'}
-        </span>
+    <aside className="flex w-80 shrink-0 flex-col border-l border-zinc-200 dark:border-zinc-800" data-testid="brief-panel">
+      <div
+        role="tablist"
+        aria-label="Pannello della conversazione"
+        className="flex shrink-0 border-b border-zinc-200 px-2 dark:border-zinc-800"
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+          e.preventDefault()
+          const next = tab === 'model' ? 'brief' : 'model'
+          setTab(next)
+          document.getElementById(`panel-tab-${next}`)?.focus()
+        }}
+      >
+        {tabs.map((t) => {
+          const active = tab === t.id
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              id={`panel-tab-${t.id}`}
+              aria-selected={active}
+              aria-controls={`panel-${t.id}`}
+              aria-label={t.filled ? `${t.label} (compilato)` : t.label}
+              tabIndex={active ? 0 : -1}
+              onClick={() => setTab(t.id)}
+              className={
+                '-mb-px flex flex-1 items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ' +
+                (active
+                  ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200')
+              }
+            >
+              {t.icon}
+              <span>{t.label}</span>
+              {t.filled && <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-blue-500" data-testid="brief-filled" />}
+            </button>
+          )
+        })}
       </div>
-      <div className="flex flex-col gap-3">
-        {FIELDS.map((f) => (
-          <label key={f.key} className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">{f.label}</span>
-            <textarea
-              rows={f.rows}
-              value={draft[f.key]}
-              placeholder={f.placeholder}
-              onChange={(e) => change(f.key, e.target.value)}
-              onBlur={() => void flush()}
-              className="resize-y rounded-lg border border-zinc-300 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900"
-            />
-          </label>
-        ))}
+
+      {/* Entrambe le schede restano montate: salvataggi in sospeso e stato locale non si perdono. */}
+      <div
+        role="tabpanel"
+        id="panel-model"
+        aria-labelledby="panel-tab-model"
+        hidden={tab !== 'model'}
+        className="min-h-0 flex-1 overflow-y-auto p-4"
+      >
+        <ModelSettings conversation={conversation} />
       </div>
-      <SaveAsTemplate conversation={conversation} beforeSave={flush} />
-      <details className="mt-4 text-sm">
-        <summary className="cursor-pointer text-zinc-500">Anteprima system prompt</summary>
-        <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-zinc-100 p-2 text-xs dark:bg-zinc-900" data-testid="system-preview">
-          {preview || '(vuoto: nessun system prompt)'}
-        </pre>
-      </details>
+
+      <div
+        role="tabpanel"
+        id="panel-brief"
+        aria-labelledby="panel-tab-brief"
+        hidden={tab !== 'brief'}
+        className="min-h-0 flex-1 overflow-y-auto p-4"
+      >
+        <div className="mb-3 flex items-baseline justify-between">
+          <p className="text-xs text-zinc-500">Inviato al modello come system prompt.</p>
+          <span className="text-xs text-zinc-400" data-testid="brief-status">
+            {saved ? 'Salvato' : 'Modifiche…'}
+          </span>
+        </div>
+        <div className="flex flex-col gap-3">
+          {FIELDS.map((f) => (
+            <label key={f.key} className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-zinc-700 dark:text-zinc-300">{f.label}</span>
+              <textarea
+                rows={f.rows}
+                value={draft[f.key]}
+                placeholder={f.placeholder}
+                onChange={(e) => change(f.key, e.target.value)}
+                onBlur={() => void flush()}
+                className="resize-y rounded-lg border border-zinc-300 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900"
+              />
+            </label>
+          ))}
+        </div>
+        <SaveAsTemplate conversation={conversation} beforeSave={flush} />
+        <details className="mt-4 text-sm">
+          <summary className="cursor-pointer text-zinc-500">Anteprima system prompt</summary>
+          <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-zinc-100 p-2 text-xs dark:bg-zinc-900" data-testid="system-preview">
+            {preview || '(vuoto: nessun system prompt)'}
+          </pre>
+        </details>
+      </div>
     </aside>
   )
 }

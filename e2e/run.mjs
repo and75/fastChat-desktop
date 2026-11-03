@@ -89,6 +89,15 @@ const latestConversation = async () =>
 let failed = false
 try {
   const page = await app.firstWindow()
+  /** Apre una scheda del pannello di destra (Modello / Brief) e attende che sia attiva. */
+  const openTab = async (name) => {
+    const tab = page.getByRole('tab', { name })
+    await tab.click()
+    await page.waitForFunction((n) => {
+      const t = [...document.querySelectorAll('[role="tab"]')].find((el) => el.textContent.includes(n))
+      return t?.getAttribute('aria-selected') === 'true'
+    }, name)
+  }
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
 
@@ -156,6 +165,7 @@ try {
   })
 
   await step('brief: si salva da solo e l\'anteprima mostra le sezioni in ordine', async () => {
+    await openTab('Brief')
     const panel = page.getByTestId('brief-panel')
     await panel.getByLabel('Vincoli').fill('Rispondi solo in italiano.')
     await panel.getByLabel('Ruolo').fill('Sei un tutor paziente.')
@@ -278,7 +288,7 @@ try {
   await step('ragionamento: interruttore disabilitato se il modello non lo supporta', async () => {
     await page.getByLabel('Mostra archiviate').uncheck()
     await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
-    await page.getByTestId('model-settings').waitFor()
+    await openTab('Modello')
     await page.selectOption('#model-select', 'llama3.2:3b')
     const toggle = page.getByTestId('model-settings').getByRole('switch', { name: 'Ragionamento' })
     await page.getByTestId('thinking-capability').filter({ hasText: 'senza ragionamento' }).waitFor()
@@ -374,10 +384,12 @@ try {
 
   await step('plan mode: il modello propone un piano (format = JSON schema)', async () => {
     await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
-    await page.getByTestId('model-settings').waitFor()
+    await openTab('Modello')
     await page.selectOption('#model-select', 'thinker:8b')
+    await openTab('Brief')
     await page.getByTestId('brief-panel').getByLabel('Vincoli').fill('Usa esempi con la pizza.')
     await page.getByTestId('brief-panel').getByTestId('brief-status').filter({ hasText: 'Salvato' }).waitFor()
+    await openTab('Modello')
     await setSwitch(page.getByTestId('model-settings'), 'Plan mode', true)
     await page.getByRole('button', { name: 'Pianifica' }).waitFor()
 
@@ -460,6 +472,7 @@ try {
   })
 
   await step('plan mode spento: si torna a "Invia"', async () => {
+    await openTab('Modello')
     await setSwitch(page.getByTestId('model-settings'), 'Plan mode', false)
     await page.getByRole('button', { name: 'Invia' }).waitFor()
   })
@@ -489,6 +502,7 @@ try {
   })
 
   await step('salva come template e crea una conversazione dal template', async () => {
+    await openTab('Brief')
     const panel = page.getByTestId('brief-panel')
     await panel.getByRole('button', { name: 'Salva come template' }).click()
     await panel.getByLabel('Nome del template').fill('Tutor pizza')
@@ -573,6 +587,38 @@ try {
       ].map((el) => getComputedStyle(el).scrollbarWidth)
     )
     assert.deepEqual(scrollbars, ['none', 'none', 'none', 'none'])
+  })
+
+  await step('pannello a schede: Modello / Brief, indicatore del brief, tastiera, scheda ricordata', async () => {
+    const modelPanel = page.locator('#panel-model')
+    const briefPanel = page.locator('#panel-brief')
+    await openTab('Modello')
+    assert.equal(await modelPanel.isVisible(), true)
+    assert.equal(await briefPanel.isVisible(), false)
+
+    await openTab('Brief')
+    assert.equal(await briefPanel.isVisible(), true)
+    assert.equal(await modelPanel.isVisible(), false)
+    // brief vuoto: nessun indicatore; compilando un campo compare il •
+    const role = briefPanel.getByLabel('Ruolo')
+    await role.fill('')
+    await page.getByTestId('brief-filled').waitFor({ state: 'detached' })
+    await role.fill('Sei un assistente')
+    await page.getByTestId('brief-filled').waitFor()
+    await page.getByRole('tab', { name: 'Brief (compilato)' }).waitFor()
+
+    // frecce: dalla scheda Brief si passa a Modello
+    await page.getByRole('tab', { name: 'Brief' }).focus()
+    await page.keyboard.press('ArrowLeft')
+    await page.waitForFunction(() => document.getElementById('panel-tab-model')?.getAttribute('aria-selected') === 'true')
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'panel-tab-model')
+
+    // dopo il riavvio della pagina si riapre l'ultima scheda scelta (Modello)
+    await page.reload()
+    await items.first().waitFor()
+    await items.first().getByRole('button').first().click()
+    await page.waitForFunction(() => document.getElementById('panel-tab-model')?.getAttribute('aria-selected') === 'true')
+    assert.equal(await page.locator('#panel-model').isVisible(), true)
   })
 
   await step('nessun errore JavaScript nel renderer (fase 5)', async () => {
