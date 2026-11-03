@@ -1,0 +1,31 @@
+# Packaging: npm run build && npm run dist
+appId: com.fastchat.desktop
+productName: FastChat
+copyright: Copyright © 2026 Andrea Porcella
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - drizzle/**
+  - package.json
+asar: true
+# Nessun modulo nativo (SQLite è node:sqlite, integrato in Electron): niente rebuild.
+npmRebuild: false
+mac:
+  target: dmg
+  category: public.app-category.productivity
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-Setup-${version}.${ext}
+linux:
+  target: AppImage
+  category: Utility
+  maintainer: Andrea Porcella
+appImage:
+  artifactName: ${productName}-${version}-${arch}.${ext}

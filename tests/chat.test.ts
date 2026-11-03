@@ -1,8 +1,8 @@
 import { resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { buildChatMessages, buildOptions, createChatService } from '../src/main/chat'
+import { buildChatMessages, buildOptions, cleanTitle, createChatService, fallbackTitle } from '../src/main/chat'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { createConversation, getPlan, listMessages, listPlans, updateConversation, updatePlan } from '../src/main/db/repo'
+import { createConversation, getConversation, getPlan, listMessages, listPlans, updateConversation, updatePlan } from '../src/main/db/repo'
 import { createOllamaClient } from '../src/main/ollama'
 import type { Conversation, StreamEvent } from '../src/shared/types'
 import { startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
@@ -26,14 +26,25 @@ beforeEach(async () => {
   h = openDatabase(':memory:')
   await runMigrations(h, resolve(__dirname, '../drizzle'))
   events = []
+  updated = []
 })
 afterEach(() => h.close())
 
+let updated: Conversation[]
 const service = () =>
-  createChatService({ db: h.db, ollama: createOllamaClient(() => fake.url), emit: (_t, e) => events.push(e) })
+  createChatService({
+    db: h.db,
+    ollama: createOllamaClient(() => fake.url),
+    emit: (_t, e) => events.push(e),
+    onConversationUpdated: (_t, c) => updated.push(c)
+  })
+
+/** Richiesta di generazione del titolo (dopo il primo scambio). */
+const isTitleRequest = (body: unknown) =>
+  ((body as { messages?: Array<{ content: string }> }).messages?.[0]?.content ?? '').startsWith('Genera un titolo')
 
 const lastChatBody = () =>
-  fake.requests.filter((r) => r.path === '/api/chat').at(-1)?.body as {
+  fake.requests.filter((r) => r.path === '/api/chat' && !isTitleRequest(r.body)).at(-1)?.body as {
     messages: Array<{ role: string; content: string }>
     think?: boolean
     format?: unknown
@@ -308,5 +319,59 @@ describe('plan mode', () => {
     await expect(updatePlan(h.db, plan.id, { status: 'approved' })).rejects.toThrow('Transizione non ammessa')
     await expect(updatePlan(h.db, plan.id, { steps: [{ title: 'a', detail: '' }] })).rejects.toThrow('non è più modificabile')
     await expect(chat.executePlan(target, plan.id)).rejects.toThrow('non si può eseguire')
+  })
+})
+
+describe('titolo automatico', () => {
+  it('dopo il primo scambio genera il titolo con il modello (think=false) e lo notifica', async () => {
+    const conv = await createConversation(h.db, { model: 'qwen3', think: true })
+    const chat = service()
+    await chat.wait((await chat.send(target, conv.id, 'Parlami di Roma')).streamId)
+    const req = fake.requests.filter((r) => r.path === '/api/chat' && isTitleRequest(r.body)).at(-1)?.body as {
+      messages: Array<{ content: string }>
+      think?: boolean
+      options: Record<string, unknown>
+    }
+    expect(req.think).toBe(false)
+    expect(req.options).toEqual({ temperature: 0.3, num_predict: 32 })
+    expect(req.messages[1].content).toContain('Parlami di Roma')
+    expect((await getConversation(h.db, conv.id))?.title).toBe('Ciao mondo!')
+    expect(updated.map((c) => c.title)).toEqual(['Ciao mondo!'])
+
+    // al secondo scambio non si rigenera
+    await chat.wait((await chat.send(target, conv.id, 'Altro')).streamId)
+    expect(updated).toHaveLength(1)
+  })
+
+  it('non tocca un titolo scelto dall\'utente', async () => {
+    const conv = await createConversation(h.db, { model: 'llama3.2', title: 'Mio titolo' })
+    const chat = service()
+    await chat.wait((await chat.send(target, conv.id, 'ciao')).streamId)
+    expect((await getConversation(h.db, conv.id))?.title).toBe('Mio titolo')
+    expect(updated).toEqual([])
+  })
+
+  it('se la generazione fallisce usa l\'inizio della domanda', async () => {
+    const conv = await createConversation(h.db, { model: 'llama3.2' })
+    // la risposta arriva dal server finto; quando lo stream è finito Ollama "sparisce"
+    let url = fake.url
+    const chat = createChatService({
+      db: h.db,
+      ollama: createOllamaClient(() => url),
+      emit: (_t, e) => {
+        if (e.type === 'done') url = 'http://127.0.0.1:1'
+      }
+    })
+    await chat.wait((await chat.send(target, conv.id, 'Come si prepara il ragù alla bolognese tradizionale con il latte?')).streamId)
+    expect((await getConversation(h.db, conv.id))?.title).toBe('Come si prepara il ragù alla bolognese…')
+  })
+
+  it('cleanTitle e fallbackTitle', () => {
+    expect(cleanTitle('"Storia di Roma."')).toBe('Storia di Roma')
+    expect(cleanTitle('<think>boh</think>\n\n**Titolo:** Viaggio a Lisbona')).toBe('Viaggio a Lisbona')
+    expect(cleanTitle('# «Ricette veloci»\nAltro testo')).toBe('Ricette veloci')
+    expect(cleanTitle('x '.repeat(50)).length).toBeLessThanOrEqual(61)
+    expect(fallbackTitle('\n  Breve  \nsecondo')).toBe('Breve')
+    expect(fallbackTitle('   ')).toBe('Nuova conversazione')
   })
 })

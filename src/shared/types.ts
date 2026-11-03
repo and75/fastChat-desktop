@@ -16,6 +16,9 @@ export interface ConversationSettings {
   seed: number | null
 }
 
+/** Titolo delle conversazioni appena create: finché resta questo, dopo il primo scambio se ne genera uno. */
+export const DEFAULT_TITLE = 'Nuova conversazione'
+
 export interface Conversation extends Brief, ConversationSettings {
   id: string
   title: string
@@ -163,6 +166,7 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 export const IPC = {
   modelsList: 'models:list',
   modelsCapabilities: 'models:capabilities',
+  modelsCheck: 'models:check',
   conversationsList: 'conversations:list',
   conversationsGet: 'conversations:get',
   conversationsCreate: 'conversations:create',
@@ -175,8 +179,13 @@ export const IPC = {
   plansRegenerate: 'plans:regenerate',
   plansUpdate: 'plans:update',
   plansExecute: 'plans:execute',
-  /** Evento main → renderer. */
+  conversationsExport: 'conversations:export',
+  templatesList: 'templates:list',
+  templatesCreate: 'templates:create',
+  templatesRemove: 'templates:remove',
+  /** Eventi main → renderer. */
   chatStream: 'chat:stream',
+  conversationUpdated: 'conversations:updated',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set'
 } as const

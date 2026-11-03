@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { buildSystemPrompt } from '@shared/prompt'
 import type { Brief, Conversation } from '@shared/types'
 import { useConversations } from '../store/useConversations'
+import { useTemplates } from '../store/useTemplates'
 import { ModelSettings } from './ModelSettings'
 
 const FIELDS: Array<{ key: keyof Brief; label: string; placeholder: string; rows: number }> = [
@@ -10,6 +11,64 @@ const FIELDS: Array<{ key: keyof Brief; label: string; placeholder: string; rows
   { key: 'goals', label: 'Obiettivi', placeholder: 'Cosa deve ottenere questa conversazione.', rows: 3 },
   { key: 'constraints', label: 'Vincoli', placeholder: 'Es. Rispondi sempre in italiano, massimo 5 frasi.', rows: 3 }
 ]
+
+/** "Salva come template": nome inline (window.prompt non esiste in Electron). */
+function SaveAsTemplate({ conversation, beforeSave }: { conversation: Conversation; beforeSave(): Promise<void> }): React.JSX.Element {
+  const saveFrom = useTemplates((s) => s.saveFrom)
+  const error = useTemplates((s) => s.error)
+  const [name, setName] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  if (name === null) {
+    return (
+      <div className="mt-4 flex items-center gap-3 text-sm">
+        <button
+          type="button"
+          onClick={() => {
+            setSaved(false)
+            setName(conversation.title === 'Nuova conversazione' ? '' : conversation.title)
+          }}
+          className="rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          Salva come template
+        </button>
+        {saved && <span className="text-green-700 dark:text-green-400">Template salvato</span>}
+      </div>
+    )
+  }
+
+  return (
+    <form
+      className="mt-4 flex flex-col gap-2 text-sm"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        await beforeSave()
+        if (await saveFrom(conversation.id, name)) {
+          setName(null)
+          setSaved(true)
+        }
+      }}
+    >
+      <input
+        autoFocus
+        aria-label="Nome del template"
+        placeholder="Nome del template"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900"
+      />
+      {error && <span className="text-red-700 dark:text-red-400">{error}</span>}
+      <div className="flex gap-2">
+        <button type="submit" disabled={!name.trim()} className="rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white disabled:opacity-40">
+          Salva
+        </button>
+        <button type="button" onClick={() => setName(null)} className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+          Annulla
+        </button>
+      </div>
+    </form>
+  )
+}
 
 const pickBrief = (c: Conversation): Brief => ({
   role: c.role,
@@ -27,19 +86,22 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const convId = conversation.id
 
-  const flush = (): void => {
+  const flush = async (): Promise<void> => {
     clearTimeout(timer.current)
     const patch = dirty.current
     dirty.current = {}
     if (Object.keys(patch).length === 0) return
-    void update(convId, patch).then(() => setSaved(true))
+    await update(convId, patch)
+    setSaved(true)
   }
 
   // Cambio conversazione: salva le modifiche in sospeso della precedente e ricarica il brief.
   useEffect(() => {
     setDraft(pickBrief(conversation))
     setSaved(true)
-    return flush
+    return () => {
+      void flush()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convId])
 
@@ -73,12 +135,13 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
               value={draft[f.key]}
               placeholder={f.placeholder}
               onChange={(e) => change(f.key, e.target.value)}
-              onBlur={flush}
+              onBlur={() => void flush()}
               className="resize-y rounded-lg border border-zinc-300 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900"
             />
           </label>
         ))}
       </div>
+      <SaveAsTemplate conversation={conversation} beforeSave={flush} />
       <details className="mt-4 text-sm">
         <summary className="cursor-pointer text-zinc-500">Anteprima system prompt</summary>
         <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-zinc-100 p-2 text-xs dark:bg-zinc-900" data-testid="system-preview">

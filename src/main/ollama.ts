@@ -23,6 +23,8 @@ export interface ChatOptions {
   top_p?: number
   num_ctx?: number
   seed?: number
+  /** Numero massimo di token generati. */
+  num_predict?: number
 }
 
 export interface ChatRequest {

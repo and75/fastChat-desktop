@@ -12,7 +12,8 @@ interface ConversationsState {
   refresh(): Promise<void>
   setSearch(search: string): void
   setShowArchived(value: boolean): void
-  create(): Promise<void>
+  /** Nuova conversazione, vuota o da un template. */
+  create(fromTemplateId?: string): Promise<void>
   select(id: string | null): Promise<void>
   update(id: string, patch: ConversationPatch): Promise<Conversation | null>
   remove(id: string): Promise<void>
@@ -46,8 +47,8 @@ export const useConversations = create<ConversationsState>((set, get) => ({
     void get().refresh()
   },
 
-  async create() {
-    const res = await window.api.conversations.create()
+  async create(fromTemplateId) {
+    const res = await window.api.conversations.create(fromTemplateId)
     if (!res.ok) return set({ error: res.error })
     set({ search: '', showArchived: false })
     await get().refresh()

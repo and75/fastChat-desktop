@@ -1,4 +1,5 @@
-import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { writeFile } from 'node:fs/promises'
+import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import {
   IPC,
   type AppSettings,
@@ -12,18 +13,24 @@ import { normalizeSteps } from '@shared/prompt'
 import { createChatService } from './chat'
 import type { Db } from './db/client'
 import {
+  conversationFromTemplate,
   createConversation,
+  createTemplateFromConversation,
   getConversation,
+  getTemplate,
   getSettings,
   listConversations,
   listMessages,
   listPlans,
+  listTemplates,
   removeConversation,
+  removeTemplate,
   setSettings,
   updateConversation,
   updatePlan
 } from './db/repo'
-import { OllamaError, type OllamaClient } from './ollama'
+import { suggestedFileName, toJson, toMarkdown, type ExportFormat } from './export'
+import { createOllamaClient, OllamaError, type OllamaClient } from './ollama'
 
 export interface IpcDeps {
   db: Db
@@ -52,6 +59,17 @@ function handle<A extends unknown[], T>(
   })
 }
 
+function validOllamaUrl(url: unknown): string {
+  let parsed: URL
+  try {
+    parsed = new URL(String(url).trim())
+  } catch {
+    throw new Error('URL di Ollama non valido')
+  }
+  if (!/^https?:$/.test(parsed.protocol)) throw new Error('URL di Ollama non valido: usa http:// o https://')
+  return parsed.origin + parsed.pathname.replace(/\/+$/, '')
+}
+
 const requireId = (id: unknown): string => {
   if (typeof id !== 'string' || !id) throw new Error('Id mancante')
   return id
@@ -65,6 +83,10 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
     emit: (target, event) => {
       const wc = target as WebContents
       if (!wc.isDestroyed()) wc.send(IPC.chatStream, event)
+    },
+    onConversationUpdated: (target, conversation) => {
+      const wc = target as WebContents
+      if (!wc.isDestroyed()) wc.send(IPC.conversationUpdated, conversation)
     }
   })
 
@@ -80,14 +102,12 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
   // ---- modelli
   handle(IPC.modelsList, () => ollama.listModels())
   handle(IPC.modelsCapabilities, (_e, name: string) => ollama.showModel(requireId(name)))
+  handle(IPC.modelsCheck, (_e, url: string) => createOllamaClient(() => validOllamaUrl(url)).listModels())
 
   // ---- impostazioni
   handle(IPC.settingsGet, () => getSettings(db))
   handle(IPC.settingsSet, async (_e, patch: Partial<AppSettings>) => {
-    if (patch.ollamaUrl !== undefined) {
-      const parsed = new URL(patch.ollamaUrl) // lancia se non valido
-      if (!/^https?:$/.test(parsed.protocol)) throw new Error('URL di Ollama non valido')
-    }
+    if (patch.ollamaUrl !== undefined) patch.ollamaUrl = validOllamaUrl(patch.ollamaUrl)
     const next = await setSettings(db, patch)
     if (patch.ollamaUrl !== undefined) {
       setOllamaUrl(next.ollamaUrl)
@@ -109,9 +129,53 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
     }
   })
 
-  handle(IPC.conversationsCreate, async () => {
+  /** Modello per una nuova conversazione: il predefinito, altrimenti il primo installato (prima installazione). */
+  const initialModel = async (): Promise<string> => {
     const { defaultModel } = await getSettings(db)
-    return createConversation(db, { model: defaultModel ?? '' })
+    if (defaultModel) return defaultModel
+    try {
+      return (await ollama.listModels())[0]?.name ?? ''
+    } catch {
+      return ''
+    }
+  }
+
+  handle(IPC.conversationsCreate, async (_e, fromTemplateId?: string) => {
+    const model = await initialModel()
+    if (!fromTemplateId) return createConversation(db, { model })
+    const template = await getTemplate(db, requireId(fromTemplateId))
+    if (!template) throw new Error('Template non trovato')
+    return createConversation(db, conversationFromTemplate(template, model))
+  })
+
+  handle(IPC.conversationsExport, async (e, id: string, format: ExportFormat): Promise<string | null> => {
+    if (format !== 'md' && format !== 'json') throw new Error('Formato non supportato')
+    const conversation = await getConversation(db, requireId(id))
+    if (!conversation) throw new Error('Conversazione non trovata')
+    const data = {
+      conversation,
+      messages: await listMessages(db, conversation.id),
+      plans: await listPlans(db, conversation.id)
+    }
+    const options = {
+      title: 'Esporta conversazione',
+      defaultPath: suggestedFileName(conversation.title, format),
+      filters:
+        format === 'md'
+          ? [{ name: 'Markdown', extensions: ['md'] }]
+          : [{ name: 'JSON', extensions: ['json'] }]
+    }
+    // Per i test end-to-end: salta la finestra di dialogo e scrive nel percorso indicato.
+    const forced = process.env.FASTCHAT_EXPORT_PATH
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const { canceled, filePath } = forced
+      ? { canceled: false, filePath: `${forced}.${format}` }
+      : win
+        ? await dialog.showSaveDialog(win, options)
+        : await dialog.showSaveDialog(options)
+    if (canceled || !filePath) return null
+    await writeFile(filePath, format === 'md' ? toMarkdown(data) : toJson(data), 'utf8')
+    return filePath
   })
 
   handle(IPC.conversationsUpdate, (_e, id: string, patch: ConversationPatch) =>
@@ -131,6 +195,14 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
   })
   handle(IPC.chatRegenerate, (e, id: string) => chat.regenerate(watch(e.sender), requireId(id)))
   handle(IPC.chatAbort, (_e, streamId: string) => chat.abort(requireId(streamId)))
+
+  // ---- template del brief
+  handle(IPC.templatesList, () => listTemplates(db))
+  handle(IPC.templatesCreate, (_e, conversationId: string, name: string) => {
+    if (typeof name !== 'string') throw new Error('Nome non valido')
+    return createTemplateFromConversation(db, requireId(conversationId), name)
+  })
+  handle(IPC.templatesRemove, (_e, id: string) => removeTemplate(db, requireId(id)))
 
   // ---- plan mode
   handle(IPC.plansPropose, (e, id: string, text: string) => {

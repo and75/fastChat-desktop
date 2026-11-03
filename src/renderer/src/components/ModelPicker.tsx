@@ -33,14 +33,15 @@ export function ModelPicker(): React.JSX.Element {
   }
 
   return (
-    <div className="flex items-center gap-2" data-testid="model-picker">
+    <div className="flex shrink-0 items-center gap-2" data-testid="model-picker">
       <label htmlFor="model-select" className="text-sm text-zinc-500">
         Modello
       </label>
       <select
         id="model-select"
-        className="min-w-48 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        className="w-48 min-w-0 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
         value={value ?? ''}
+        title={current ? [current.name, current.parameterSize, current.quantization, formatSize(current.size)].filter(Boolean).join(' · ') : undefined}
         disabled={status !== 'ready' || models.length === 0}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -57,7 +58,7 @@ export function ModelPicker(): React.JSX.Element {
       </select>
 
       {current && (
-        <span className="text-xs text-zinc-500">
+        <span className="hidden whitespace-nowrap text-xs text-zinc-500 2xl:inline">
           {[current.parameterSize, current.quantization, formatSize(current.size)].filter(Boolean).join(' · ')}
         </span>
       )}
@@ -66,7 +67,7 @@ export function ModelPicker(): React.JSX.Element {
         <span
           data-testid="thinking-capability"
           className={
-            'rounded-full px-2 py-0.5 text-xs ' +
+            'whitespace-nowrap rounded-full px-2 py-0.5 text-xs ' +
             (caps.thinking
               ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200'
               : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400')

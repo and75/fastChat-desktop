@@ -3,12 +3,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
 import {
   addMessage,
+  conversationFromTemplate,
   createConversation,
+  createTemplateFromConversation,
   getConversation,
   getSettings,
   listConversations,
   listMessages,
+  listTemplates,
   removeConversation,
+  removeTemplate,
   removeMessage,
   setSettings,
   updateConversation
@@ -147,5 +151,45 @@ describe('schema via Drizzle su node:sqlite', () => {
     await h.db.insert(messages).values({ id: 'm1', conversationId: 'c1', role: 'user', content: 'ciao' })
     await h.db.delete(conversations).where(eq(conversations.id, 'c1'))
     expect(await h.db.select().from(messages)).toEqual([])
+  })
+})
+
+describe('template del brief', () => {
+  it('salva brief e impostazioni, li applica a una nuova conversazione', async () => {
+    const src = await createConversation(h.db, {
+      model: 'qwen3',
+      role: 'Sei un tutor',
+      constraints: 'Solo italiano',
+      temperature: 0.2,
+      think: true,
+      planMode: true,
+      seed: 5
+    })
+    const t = await createTemplateFromConversation(h.db, src.id, '  Tutor  ')
+    expect(t).toMatchObject({ name: 'Tutor', model: 'qwen3', role: 'Sei un tutor', temperature: 0.2, think: true, planMode: true })
+
+    const conv = await createConversation(h.db, conversationFromTemplate(t, 'llama3.2'))
+    expect(conv).toMatchObject({
+      title: 'Nuova conversazione',
+      model: 'qwen3',
+      role: 'Sei un tutor',
+      constraints: 'Solo italiano',
+      temperature: 0.2,
+      think: true,
+      planMode: true,
+      seed: null
+    })
+    // template senza modello: si usa il predefinito
+    expect(conversationFromTemplate({ ...t, model: null }, 'llama3.2').model).toBe('llama3.2')
+  })
+
+  it('lista ordinata per nome, rimozione, nome obbligatorio', async () => {
+    const c = await createConversation(h.db)
+    await createTemplateFromConversation(h.db, c.id, 'beta')
+    const a = await createTemplateFromConversation(h.db, c.id, 'Alfa')
+    expect((await listTemplates(h.db)).map((t) => t.name)).toEqual(['Alfa', 'beta'])
+    await removeTemplate(h.db, a.id)
+    expect((await listTemplates(h.db)).map((t) => t.name)).toEqual(['beta'])
+    await expect(createTemplateFromConversation(h.db, c.id, '  ')).rejects.toThrow('nome')
   })
 })

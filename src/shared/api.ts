@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  BriefTemplate,
   Conversation,
   ConversationDetail,
   ConversationListQuery,
@@ -18,12 +19,25 @@ export interface Api {
   models: {
     list(): Promise<Result<OllamaModel[]>>
     capabilities(name: string): Promise<Result<ModelCapabilities>>
+    /** Prova un URL di Ollama senza salvarlo: restituisce i modelli trovati. */
+    check(url: string): Promise<Result<OllamaModel[]>>
   }
   conversations: {
     list(query?: ConversationListQuery): Promise<Result<Conversation[]>>
     get(id: string): Promise<Result<ConversationDetail>>
-    create(): Promise<Result<Conversation>>
+    /** Nuova conversazione, vuota o con brief e impostazioni di un template. */
+    create(fromTemplateId?: string): Promise<Result<Conversation>>
     update(id: string, patch: ConversationPatch): Promise<Result<Conversation>>
+    remove(id: string): Promise<Result<void>>
+    /** Chiede dove salvare e scrive il file; restituisce il percorso, o null se annullato. */
+    export(id: string, format: 'md' | 'json'): Promise<Result<string | null>>
+    /** Conversazioni modificate dal main (es. titolo generato automaticamente). */
+    onUpdated(cb: (conversation: Conversation) => void): () => void
+  }
+  templates: {
+    list(): Promise<Result<BriefTemplate[]>>
+    /** Salva brief e impostazioni della conversazione come template. */
+    create(conversationId: string, name: string): Promise<Result<BriefTemplate>>
     remove(id: string): Promise<Result<void>>
   }
   chat: {

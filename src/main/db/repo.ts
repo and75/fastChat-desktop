@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import {
   DEFAULT_SETTINGS,
   type AppSettings,
+  type BriefTemplate,
   type Conversation,
   type ConversationListQuery,
   type ConversationPatch,
@@ -13,7 +14,7 @@ import {
   type PlanStep
 } from '@shared/types'
 import type { Db } from './client'
-import { conversations, messages, plans, settings } from './schema'
+import { briefTemplates, conversations, messages, plans, settings } from './schema'
 
 // ---------------------------------------------------------------- impostazioni
 
@@ -248,4 +249,56 @@ export async function planToFollow(db: Db, userMessageId: string): Promise<Plan 
     .orderBy(desc(plans.createdAt))
     .limit(1)
   return row ?? null
+}
+
+// ---------------------------------------------------------------- template del brief
+
+export async function listTemplates(db: Db): Promise<BriefTemplate[]> {
+  return db.select().from(briefTemplates).orderBy(asc(sql`lower(${briefTemplates.name})`))
+}
+
+export async function getTemplate(db: Db, id: string): Promise<BriefTemplate | null> {
+  const [row] = await db.select().from(briefTemplates).where(eq(briefTemplates.id, id))
+  return row ?? null
+}
+
+/** Salva il brief e le impostazioni di una conversazione come template riutilizzabile. */
+export async function createTemplateFromConversation(db: Db, conversationId: string, name: string): Promise<BriefTemplate> {
+  const conv = await getConversation(db, conversationId)
+  if (!conv) throw new Error('Conversazione non trovata')
+  const clean = name.trim().slice(0, 100)
+  if (!clean) throw new Error('Il template ha bisogno di un nome')
+  const row: BriefTemplate = {
+    id: randomUUID(),
+    name: clean,
+    role: conv.role,
+    context: conv.context,
+    goals: conv.goals,
+    constraints: conv.constraints,
+    model: conv.model || null,
+    temperature: conv.temperature,
+    think: conv.think,
+    planMode: conv.planMode,
+    createdAt: Date.now()
+  }
+  await db.insert(briefTemplates).values(row)
+  return row
+}
+
+export async function removeTemplate(db: Db, id: string): Promise<void> {
+  await db.delete(briefTemplates).where(eq(briefTemplates.id, id))
+}
+
+/** Valori iniziali di una conversazione creata da un template. */
+export function conversationFromTemplate(t: BriefTemplate, fallbackModel: string): ConversationPatch {
+  return {
+    model: t.model || fallbackModel,
+    role: t.role,
+    context: t.context,
+    goals: t.goals,
+    constraints: t.constraints,
+    temperature: t.temperature,
+    think: t.think,
+    planMode: t.planMode
+  }
 }

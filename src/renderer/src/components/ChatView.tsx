@@ -52,7 +52,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
               ? 'Seleziona un modello per iniziare'
               : conversation?.planMode
                 ? 'Descrivi la richiesta: il modello proporrà prima un piano…'
-                : 'Scrivi un messaggio… (Invio per inviare, Maiusc+Invio per andare a capo)'
+                : 'Scrivi un messaggio… (Maiusc+Invio per andare a capo)'
           }
           className="max-h-60 flex-1 resize-none bg-transparent px-1 py-1 outline-none disabled:cursor-not-allowed"
           onChange={(e) => setText(e.target.value)}

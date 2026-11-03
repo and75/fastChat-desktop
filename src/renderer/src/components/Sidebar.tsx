@@ -2,6 +2,52 @@ import { useEffect, useRef, useState } from 'react'
 import type { Conversation } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
+import { useTemplates } from '../store/useTemplates'
+
+/** Elenco dei template: un clic crea una conversazione con quel brief e quelle impostazioni. */
+function TemplateMenu({ onDone }: { onDone(): void }): React.JSX.Element {
+  const { templates, refresh, remove } = useTemplates()
+  const create = useConversations((s) => s.create)
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  return (
+    <div
+      data-testid="template-menu"
+      className="flex flex-col gap-0.5 rounded-lg border border-zinc-200 bg-white p-1 text-sm shadow-sm dark:border-zinc-700 dark:bg-zinc-900"
+    >
+      {templates.length === 0 && (
+        <p className="px-2 py-2 text-zinc-500">Nessun template. Usa «Salva come template» nel pannello del brief.</p>
+      )}
+      {templates.map((t) => (
+        <div key={t.id} className="group flex items-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
+          <button
+            type="button"
+            className="min-w-0 flex-1 truncate px-2 py-1.5 text-left"
+            title={[t.role, t.goals].filter(Boolean).join(' · ') || t.name}
+            onClick={() => {
+              onDone()
+              void create(t.id)
+            }}
+          >
+            {t.name}
+          </button>
+          <button
+            type="button"
+            aria-label={`Elimina il template ${t.name}`}
+            className="hidden px-2 text-zinc-400 hover:text-red-600 group-hover:block"
+            onClick={() => {
+              if (window.confirm(`Eliminare il template "${t.name}"?`)) void remove(t.id)
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 const dateFmt = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short' })
 const timeFmt = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit' })
@@ -98,9 +144,10 @@ function Item({ conv, active }: { conv: Conversation; active: boolean }): React.
   )
 }
 
-export function Sidebar(): React.JSX.Element {
+export function Sidebar({ onOpenSettings }: { onOpenSettings(): void }): React.JSX.Element {
   const { conversations, activeId, search, showArchived, setSearch, setShowArchived, create } = useConversations()
   const [query, setQuery] = useState(search)
+  const [templatesOpen, setTemplatesOpen] = useState(false)
 
   // Ricerca con debounce.
   useEffect(() => {
@@ -113,13 +160,26 @@ export function Sidebar(): React.JSX.Element {
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex flex-col gap-2 p-3">
-        <button
-          type="button"
-          onClick={() => void create()}
-          className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          + Nuova conversazione
-        </button>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => void create()}
+            className="flex-1 whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            + Nuova conversazione
+          </button>
+          <button
+            type="button"
+            aria-expanded={templatesOpen}
+            aria-label="Nuova da template"
+            title="Nuova conversazione da un template"
+            onClick={() => setTemplatesOpen((o) => !o)}
+            className="rounded-lg border border-zinc-300 px-2.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            ▾
+          </button>
+        </div>
+        {templatesOpen && <TemplateMenu onDone={() => setTemplatesOpen(false)} />}
         <input
           type="search"
           aria-label="Cerca conversazioni"
@@ -139,10 +199,21 @@ export function Sidebar(): React.JSX.Element {
           </li>
         )}
       </ul>
-      <label className="flex items-center gap-2 border-t border-zinc-200 px-3 py-2 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
-        <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-        Mostra archiviate
-      </label>
+      <div className="flex items-center justify-between border-t border-zinc-200 px-3 py-2 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+        <label className="flex items-center gap-2 whitespace-nowrap">
+          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+          Mostra archiviate
+        </label>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          aria-label="Impostazioni"
+          className="rounded px-2 py-1 text-base hover:bg-zinc-200 dark:hover:bg-zinc-800"
+          title="Impostazioni"
+        >
+          ⚙
+        </button>
+      </div>
     </aside>
   )
 }

@@ -16,6 +16,8 @@ interface ModelsState {
   select(name: string): Promise<void>
   loadCapabilities(name: string): Promise<ModelCapabilities | null>
   setOllamaUrl(url: string): Promise<boolean>
+  /** Salva le impostazioni generali; se cambia l'URL ricarica i modelli. */
+  saveSettings(patch: Partial<AppSettings>): Promise<string | null>
 }
 
 export const useModels = create<ModelsState>((set, get) => ({
@@ -60,6 +62,19 @@ export const useModels = create<ModelsState>((set, get) => ({
     if (!res.ok) return null
     set((s) => ({ capabilities: { ...s.capabilities, [name]: res.data } }))
     return res.data
+  },
+
+  async saveSettings(patch) {
+    const before = get().settings
+    const res = await window.api.settings.set(patch)
+    if (!res.ok) return res.error
+    set({ settings: res.data })
+    if (patch.defaultModel !== undefined) set({ selected: res.data.defaultModel })
+    if (patch.ollamaUrl !== undefined && patch.ollamaUrl !== before?.ollamaUrl) {
+      set({ capabilities: {} })
+      await get().refresh()
+    }
+    return null
   },
 
   async setOllamaUrl(url) {

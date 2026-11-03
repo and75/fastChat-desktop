@@ -1,7 +1,7 @@
 // Test end-to-end: avvia l'app buildata (out/) con Playwright `_electron`, contro un Ollama finto.
 // Uso: npm run test:e2e   (su Linux senza display: xvfb-run -a npm run test:e2e)
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { _electron as electron } from 'playwright-core'
@@ -31,7 +31,10 @@ const fake = await startFakeOllama([
     ]
   }
 ])
-const lastChat = () => fake.requests.filter((r) => r.path === '/api/chat').at(-1)?.body
+// Le richieste di generazione del titolo (dopo il primo scambio) non contano come "ultima chat".
+const isTitleRequest = (body) => body?.messages?.[0]?.content?.startsWith('Genera un titolo')
+const chatRequests = () => fake.requests.filter((r) => r.path === '/api/chat' && !isTitleRequest(r.body))
+const lastChat = () => chatRequests().at(-1)?.body
 
 
 /** Attiva/disattiva un interruttore cliccando l'etichetta visibile (l'input è nascosto) e attende lo stato. */
@@ -59,7 +62,13 @@ async function step(name, fn) {
 
 const app = await electron.launch({
   args: [root, '--no-sandbox'],
-  env: { ...process.env, OLLAMA_URL: fake.url, FASTCHAT_USER_DATA: userData, NODE_ENV: 'production' }
+  env: {
+    ...process.env,
+    OLLAMA_URL: fake.url,
+    FASTCHAT_USER_DATA: userData,
+    FASTCHAT_EXPORT_PATH: join(userData, 'export'),
+    NODE_ENV: 'production'
+  }
 })
 
 let failed = false
@@ -159,6 +168,14 @@ try {
     assert.match(meta, /42 token/)
   })
 
+  await step('titolo automatico dopo il primo scambio (sidebar e intestazione)', async () => {
+    await items.filter({ hasText: 'Ciao mondo!' }).waitFor()
+    await page.locator('header h1', { hasText: 'Ciao mondo!' }).waitFor()
+    const titleReq = fake.requests.filter((r) => r.path === '/api/chat' && isTitleRequest(r.body))
+    assert.equal(titleReq.length, 1)
+    assert.match(titleReq[0].body.messages[1].content, /Domanda:\nCiao!/)
+  })
+
   await step('streaming visibile, Markdown con codice evidenziato, Interrompi salva il parziale', async () => {
     await page.selectOption('#model-select', 'slow:1b')
     await composer.fill('Scrivi tanto')
@@ -202,8 +219,8 @@ try {
     await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
     await page.waitForFunction(() => document.querySelectorAll('[data-testid="conversation-item"]').length === 2)
 
-    // la più vecchia (in fondo) è quella con i messaggi
-    const first = items.filter({ hasText: 'Nuova conversazione' }).last()
+    // quella con i messaggi ha già il titolo generato dopo il primo scambio
+    const first = items.filter({ hasText: 'Ciao mondo!' })
     await first.hover()
     await first.getByTitle('Rinomina').click()
     await page.getByLabel('Titolo conversazione').fill('Lezione di italiano')
@@ -415,6 +432,74 @@ try {
   })
   await page.getByTestId('plan-summary').first().locator('summary').click()
   await page.screenshot({ path: join(root, 'test-results', 'e2e-phase4.png') })
+
+  // ------------------------------------------------------------------ fase 5
+  await step('export Markdown e JSON (brief, messaggi, piani)', async () => {
+    await page.getByTitle('Esporta in Markdown').click()
+    await page.getByTestId('export-status').filter({ hasText: 'Salvata in' }).waitFor()
+    const md = readFileSync(join(userData, 'export.md'), 'utf8')
+    assert.match(md, /^# .+\n\n- Modello: thinker:8b\n/)
+    assert.match(md, /## Brief\n\n### Vincoli\nUsa esempi con la pizza\./)
+    assert.match(md, /### Utente · .+\n\nSpiegami le frazioni\n\n#### Piano \(eseguito\)\n\n1\. Cos'è una frazione/)
+    assert.match(md, /#### Piano \(annullato\)/)
+
+    await page.getByTitle('Esporta in JSON').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="export-status"]')?.textContent?.includes('.json'))
+    const json = JSON.parse(readFileSync(join(userData, 'export.json'), 'utf8'))
+    assert.equal(json.format, 'fastchat-conversation')
+    assert.equal(json.messages.length, 3)
+    assert.deepEqual(json.plans.map((p) => p.status), ['executed', 'rejected'])
+  })
+
+  await step('salva come template e crea una conversazione dal template', async () => {
+    const panel = page.getByTestId('brief-panel')
+    await panel.getByRole('button', { name: 'Salva come template' }).click()
+    await panel.getByLabel('Nome del template').fill('Tutor pizza')
+    await panel.getByRole('button', { name: 'Salva', exact: true }).click()
+    await panel.getByText('Template salvato').waitFor()
+
+    await page.getByRole('button', { name: 'Nuova da template' }).click()
+    await page.getByTestId('template-menu').getByRole('button', { name: 'Tutor pizza' }).click()
+    await page.locator('header h1', { hasText: 'Nuova conversazione' }).waitFor()
+    assert.equal(await page.getByTestId('brief-panel').getByLabel('Vincoli').inputValue(), 'Usa esempi con la pizza.')
+    assert.equal(await page.locator('#model-select').inputValue(), 'thinker:8b')
+    assert.equal(await page.getByTestId('messages').getByTestId('message-user').count(), 0)
+  })
+
+  await step('impostazioni: verifica URL, tema scuro, modello predefinito', async () => {
+    await page.getByRole('button', { name: 'Impostazioni' }).click()
+    const dialog = page.getByTestId('settings-dialog')
+    await dialog.waitFor()
+    const url = dialog.getByLabel('URL di Ollama')
+    assert.equal(await url.inputValue(), fake.url)
+    await dialog.getByRole('button', { name: 'Verifica' }).click()
+    await dialog.getByTestId('settings-check').filter({ hasText: 'Connesso · 4 modelli' }).waitFor()
+    await url.fill('http://127.0.0.1:1')
+    await dialog.getByRole('button', { name: 'Verifica' }).click()
+    await dialog.getByTestId('settings-check').filter({ hasText: 'non raggiungibile' }).waitFor()
+    // la verifica non salva nulla
+    assert.equal((await page.evaluate(() => window.api.settings.get())).data.ollamaUrl, fake.url)
+    await url.fill(fake.url)
+    await dialog.getByLabel('Tema').selectOption('dark')
+    await dialog.getByLabel('Modello predefinito').selectOption('llama3.2:3b')
+    await dialog.getByRole('button', { name: 'Salva' }).click()
+    await dialog.waitFor({ state: 'detached' })
+    await page.waitForFunction(() => document.documentElement.classList.contains('dark'))
+    const saved = (await page.evaluate(() => window.api.settings.get())).data
+    assert.equal(saved.theme, 'dark')
+    assert.equal(saved.defaultModel, 'llama3.2:3b')
+    await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
+    await page.waitForFunction(() => document.querySelector('#model-select')?.value === 'llama3.2:3b')
+  })
+
+  await step('nessun errore JavaScript nel renderer (fase 5)', async () => {
+    assert.deepEqual(errors, [])
+  })
+
+  await items.filter({ hasText: 'Ciao mondo!' }).first().waitFor({ state: 'attached' }).catch(() => {})
+  await items.nth(2).getByRole('button').first().click()
+  await page.getByTestId('message-assistant').first().waitFor()
+  await page.screenshot({ path: join(root, 'test-results', 'e2e-phase5-dark.png') })
 } catch (err) {
   failed = true
   console.error(err)

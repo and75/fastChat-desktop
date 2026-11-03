@@ -8,7 +8,7 @@ import {
   PLAN_SCHEMA,
   selectHistory
 } from '@shared/prompt'
-import type { Conversation, Message, Plan, SendResult, StreamEvent, StreamKind } from '@shared/types'
+import { DEFAULT_TITLE, type Conversation, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
 import type { Db } from './db/client'
 import {
   addMessage,
@@ -20,6 +20,7 @@ import {
   listPlans,
   removeMessage,
   removePlan,
+  updateConversation,
   updatePlan
 } from './db/repo'
 import type { ChatMessage, ChatOptions, ChatRequest, OllamaClient } from './ollama'
@@ -31,6 +32,8 @@ export interface ChatServiceDeps {
   db: Db
   ollama: OllamaClient
   emit(target: StreamTarget, event: StreamEvent): void
+  /** Notifica una conversazione modificata dal main (es. titolo generato). */
+  onConversationUpdated?(target: StreamTarget, conversation: Conversation): void
 }
 
 interface ActiveStream {
@@ -74,6 +77,30 @@ export function buildChatMessages(
   return out
 }
 
+const TITLE_PROMPT = `Genera un titolo breve (da 2 a 6 parole) per la conversazione che segue.
+Usa la lingua della conversazione. Niente virgolette, niente punto finale, niente spiegazioni: rispondi solo con il titolo.`
+
+/** Ripulisce il titolo proposto dal modello: prima riga utile, niente virgolette/markdown/prefissi, max 60 caratteri. */
+export function cleanTitle(raw: string): string {
+  const text = raw.replace(/<think>[\s\S]*?<\/think>/gi, '')
+  const line = text.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
+  let t = line
+    .replace(/^(#+|\*+|-)\s*/, '')
+    .replace(/^(titolo|title)\s*:\s*/i, '')
+    .replace(/\*\*/g, '')
+    .replace(/^["'«“`]+|["'»”`]+$/g, '')
+    .replace(/[.:;,\s]+$/, '')
+    .trim()
+  if (t.length > 60) t = t.slice(0, 60).replace(/\s+\S*$/, '') + '…'
+  return t
+}
+
+/** Titolo di riserva: l'inizio della prima domanda. */
+export function fallbackTitle(question: string): string {
+  const line = question.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
+  return line.length > 50 ? line.slice(0, 50).replace(/\s+\S*$/, '') + '…' : line || DEFAULT_TITLE
+}
+
 function systemFor(conv: Conversation, mode: Mode): string {
   switch (mode.kind) {
     case 'plan':
@@ -85,7 +112,7 @@ function systemFor(conv: Conversation, mode: Mode): string {
   }
 }
 
-export function createChatService({ db, ollama, emit }: ChatServiceDeps) {
+export function createChatService({ db, ollama, emit, onConversationUpdated }: ChatServiceDeps) {
   const streams = new Map<string, ActiveStream>()
 
   const isBusy = (conversationId: string): boolean =>
@@ -115,6 +142,46 @@ export function createChatService({ db, ollama, emit }: ChatServiceDeps) {
     } catch {
       return undefined
     }
+  }
+
+  /**
+   * Dopo il primo scambio, se la conversazione ha ancora il titolo predefinito, ne genera uno con il modello.
+   * Se il modello non risponde usa l'inizio della domanda. Non sovrascrive mai un titolo scelto dall'utente.
+   */
+  async function maybeAutoTitle(target: StreamTarget, conversationId: string): Promise<void> {
+    const conv = await getConversation(db, conversationId)
+    if (!conv || conv.title !== DEFAULT_TITLE) return
+    const history = await listMessages(db, conversationId)
+    const question = history.find((m) => m.role === 'user')
+    const answer = history.find((m) => m.role === 'assistant')
+    if (!question || !answer || history.filter((m) => m.role === 'assistant').length !== 1) return
+
+    let title = ''
+    try {
+      const request: ChatRequest = {
+        model: conv.model,
+        messages: [
+          { role: 'system', content: TITLE_PROMPT },
+          {
+            role: 'user',
+            content: `Domanda:\n${question.content.slice(0, 1500)}\n\nRisposta:\n${answer.content.slice(0, 1500)}`
+          }
+        ],
+        options: { temperature: 0.3, num_predict: 32 }
+      }
+      if ((await thinkParam(conv)) !== undefined) request.think = false
+      title = cleanTitle((await ollama.chatStream(request, {})).content)
+    } catch {
+      /* si usa il titolo di riserva */
+    }
+    if (!title) title = fallbackTitle(question.content)
+
+    // L'utente potrebbe averla rinominata nel frattempo.
+    const current = await getConversation(db, conversationId)
+    if (!current || current.title !== DEFAULT_TITLE) return
+    // Prima si salva, poi si notifica: con `fn?.(await …)` il salvataggio verrebbe saltato se fn manca.
+    const saved = await updateConversation(db, conversationId, { title })
+    onConversationUpdated?.(target, saved)
   }
 
   /** Conclude uno stream: salva ciò che serve e costruisce l'evento 'done'. */
@@ -165,6 +232,7 @@ export function createChatService({ db, ollama, emit }: ChatServiceDeps) {
     const kind: StreamKind = mode.kind === 'plan' ? 'plan' : 'chat'
     const base = { streamId, conversationId: conv.id, kind }
     const run = async (): Promise<void> => {
+      let answered = false
       try {
         const result = await ollama.chatStream(
           request,
@@ -174,12 +242,16 @@ export function createChatService({ db, ollama, emit }: ChatServiceDeps) {
           },
           controller.signal
         )
-        emit(target, { ...base, type: 'done', ...(await finish(conv, mode, result)) })
+        const done = await finish(conv, mode, result)
+        answered = !!done.message
+        emit(target, { ...base, type: 'done', ...done })
       } catch (err) {
         emit(target, { ...base, type: 'error', error: err instanceof Error ? err.message : String(err) })
       } finally {
+        // La conversazione è di nuovo libera prima di generare il titolo.
         streams.delete(streamId)
       }
+      if (answered) await maybeAutoTitle(target, conv.id).catch(() => undefined)
     }
 
     const active: ActiveStream = { conversationId: conv.id, target, controller, done: Promise.resolve() }

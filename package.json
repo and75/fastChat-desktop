@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "description": "App desktop per chattare con modelli locali Ollama, con brief per conversazione e plan mode",
   "main": "./out/main/index.js",
-  "author": "Andrea Porcella",
+  "author": {
+    "name": "Andrea Porcella",
+    "email": "andreaporcella@gmail.com"
+  },
   "license": "MIT",
   "private": true,
   "scripts": {
@@ -17,8 +20,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "dist": "electron-vite build && electron-builder",
-    "test:e2e": "npm run build && node e2e/run.mjs"
+    "dist": "electron-builder",
+    "test:e2e": "npm run build && node e2e/run.mjs",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "test:packaged": "node e2e/packaged.mjs"
   },
   "dependencies": {
     "@electron-toolkit/utils": "4.0.0",
@@ -46,5 +53,7 @@
     "vite": "8.3.5",
     "vitest": "5.1.0",
     "zustand": "5.0.16"
-  }
+  },
+  "homepage": "https://github.com/and75/fastChat-desktop",
+  "desktopName": "fastchat.desktop"
 }
