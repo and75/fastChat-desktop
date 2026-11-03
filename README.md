@@ -51,3 +51,19 @@ navigazione e nuove finestre bloccate (i link esterni si aprono nel browser). Le
 
 **Packaging.** `electron-builder.yml`; icona in `build/icon.png`. Gli installer non sono firmati:
 su macOS serve la firma/notarizzazione per distribuirli senza avvisi di Gatekeeper.
+
+## Release
+
+Il workflow `.github/workflows/release.yml` compila gli installer su macOS (dmg arm64 + x64),
+Windows (nsis x64) e Linux (AppImage x64) e li pubblica in una Release GitHub.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+- La versione dell'app viene presa dal tag (non serve modificare `package.json`).
+- Un tag con trattino (es. `v0.2.0-beta.1`) crea una pre-release.
+- Prima della build girano typecheck e test unitari; se falliscono, nessuna release.
+- Da *Actions → Release → Run workflow* si compila senza pubblicare: gli installer restano
+  scaricabili come artifact del run per 14 giorni.
