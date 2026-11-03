@@ -157,6 +157,7 @@ export interface NewMessage {
   thinking?: string | null
   model?: string | null
   evalCount?: number | null
+  promptEvalCount?: number | null
   durationMs?: number | null
 }
 
@@ -169,6 +170,7 @@ export async function addMessage(db: Db, msg: NewMessage): Promise<Message> {
     thinking: msg.thinking || null,
     model: msg.model ?? null,
     evalCount: msg.evalCount ?? null,
+    promptEvalCount: msg.promptEvalCount ?? null,
     durationMs: msg.durationMs ?? null,
     createdAt: Date.now()
   }

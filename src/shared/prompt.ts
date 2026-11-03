@@ -166,3 +166,76 @@ export function parsePlan(content: string): PlanStep[] {
     throw new Error('Il modello non ha restituito un piano valido')
   }
 }
+
+// ---------------------------------------------------------------- uso del contesto
+
+export interface ContextUsage {
+  /** Token occupati: dall'ultima risposta (prompt + risposta) più i messaggi successivi, o stimati. */
+  used: number
+  /** Token disponibili (memoria della conversazione). */
+  total: number
+  /** used / total, 0–1 (può superare 1: lo storico più vecchio verrà tagliato). */
+  ratio: number
+  /** true se il numero è una stima (nessuna risposta con conteggio di Ollama). */
+  estimated: boolean
+}
+
+export interface ContextUsageInput {
+  brief: Brief
+  messages: Array<{ role: 'user' | 'assistant'; content: string; promptEvalCount?: number | null; evalCount?: number | null }>
+  /** Memoria scelta per la conversazione (num_ctx), null = automatica. */
+  numCtx: number | null
+  /** Predefinito del modello, se noto. */
+  modelNumCtx: number | null
+  /** Contesto massimo del modello, se noto. */
+  modelMaxCtx: number | null
+  /** Usato quando né la conversazione né il modello indicano la memoria. */
+  fallbackNumCtx: number
+}
+
+/**
+ * Quanta parte della memoria della conversazione è occupata.
+ * Se l'ultima risposta ha i conteggi di Ollama si usano quelli (prompt + risposta) più una stima dei
+ * messaggi arrivati dopo; altrimenti si stima tutto (brief + storico) con ~4 caratteri per token.
+ */
+export function computeContextUsage(input: ContextUsageInput): ContextUsage {
+  let total = input.numCtx ?? input.modelNumCtx ?? input.fallbackNumCtx
+  if (input.modelMaxCtx && total > input.modelMaxCtx) total = input.modelMaxCtx
+
+  const system = buildSystemPrompt(input.brief)
+  const estimateAll = (system ? estimateTokens(system) : 0) + input.messages.reduce((n, m) => n + estimateTokens(m.content), 0)
+
+  let lastIdx = -1
+  for (let i = input.messages.length - 1; i >= 0; i--) {
+    if (input.messages[i].role === 'assistant' && input.messages[i].promptEvalCount != null) {
+      lastIdx = i
+      break
+    }
+  }
+
+  let used = estimateAll
+  let estimated = true
+  if (lastIdx >= 0) {
+    const last = input.messages[lastIdx]
+    const real = (last.promptEvalCount ?? 0) + (last.evalCount ?? estimateTokens(last.content))
+    const after = input.messages.slice(lastIdx + 1).reduce((n, m) => n + estimateTokens(m.content), 0)
+    // Con la cache dei prompt Ollama può riportare solo i token rivalutati: se il numero è molto più
+    // basso della stima, non è attendibile e si resta sulla stima.
+    const estimateUpToLast =
+      (system ? estimateTokens(system) : 0) +
+      input.messages.slice(0, lastIdx + 1).reduce((n, m) => n + estimateTokens(m.content), 0)
+    if (real >= estimateUpToLast * 0.5) {
+      used = real + after
+      estimated = after > 0
+    }
+  }
+
+  return { used, total, ratio: total > 0 ? used / total : 0, estimated }
+}
+
+/** Formato compatto in migliaia: 850 → "850", 3200 → "3,2k", 40960 → "41k". */
+export function formatTokensK(n: number): string {
+  if (n < 1000) return String(Math.round(n))
+  const k = n / 1000
+  return (k < 10 ? k.toLocaleString('it-IT', { maximumFractionDigits: 1 }) : Math.round(k).toLocaleString('it-IT')) + 'k'
+}

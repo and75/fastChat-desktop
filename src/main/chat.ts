@@ -204,7 +204,14 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
   async function finish(
     conv: Conversation,
     mode: Mode,
-    result: { content: string; thinking: string; evalCount: number | null; durationMs: number | null; aborted: boolean }
+    result: {
+      content: string
+      thinking: string
+      evalCount: number | null
+      promptEvalCount: number | null
+      durationMs: number | null
+      aborted: boolean
+    }
   ): Promise<Partial<StreamEvent>> {
     if (mode.kind === 'plan') {
       if (result.aborted) return { aborted: true }
@@ -222,6 +229,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
         thinking: result.thinking,
         model: conv.model,
         evalCount: result.evalCount,
+        promptEvalCount: result.promptEvalCount,
         durationMs: result.durationMs
       })
     }

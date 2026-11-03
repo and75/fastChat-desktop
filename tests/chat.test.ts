@@ -115,6 +115,8 @@ describe('chat service', () => {
     expect(events.every((e) => e.streamId === streamId && e.conversationId === conv.id)).toBe(true)
     const done = events.at(-1)!
     expect(done.message).toMatchObject({ role: 'assistant', content: 'Ciao mondo!', evalCount: 42, durationMs: 1500, model: 'llama3.2' })
+    // i token del prompt riportati da Ollama vengono salvati con la risposta
+    expect(done.message?.promptEvalCount).toBeGreaterThan(0)
 
     const saved = await listMessages(h.db, conv.id)
     expect(saved.map((m) => [m.role, m.content])).toEqual([

@@ -111,6 +111,7 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
           done: true,
           done_reason: 'stop',
           eval_count: 42,
+          prompt_eval_count: Math.max(1, Math.ceil(JSON.stringify((body as { messages?: unknown }).messages ?? []).length / 4)),
           total_duration: 1_500_000_000
         }) + '\n'
       )

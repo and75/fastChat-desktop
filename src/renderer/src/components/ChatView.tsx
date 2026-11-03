@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
+import { ContextMeter } from './ContextMeter'
 import { CopyAction } from './CopyButton'
 import { RegenerateIcon } from './icons'
 import { MessageBubble } from './MessageBubble'
@@ -117,6 +118,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
           <ThinkToggle conversation={conversation} compact />
           <PlanModeToggle conversation={conversation} compact />
           <span data-testid="composer-temperature">Temperatura {conversation.temperature.toFixed(2)}</span>
+          <ContextMeter />
         </div>
       )}
     </form>

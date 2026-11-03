@@ -38,6 +38,37 @@ describe('migrazioni', () => {
     expect(rows.map((r) => r.name)).toEqual(['brief_templates', 'conversations', 'messages', 'plans', 'settings'])
   })
 
+  it('la seconda migrazione aggiunge prompt_eval_count ai messaggi', () => {
+    const cols = h.raw.prepare("select name from pragma_table_info('messages')").all() as Array<{ name: string }>
+    expect(cols.map((c) => c.name)).toContain('prompt_eval_count')
+  })
+
+  it('aggiornano un database creato da una versione precedente, senza perdere dati', async () => {
+    const { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    // cartella di migrazioni "vecchia": solo la prima
+    const dir = mkdtempSync(join(tmpdir(), 'fastchat-mig-'))
+    cpSync(resolve(__dirname, '../drizzle'), dir, { recursive: true })
+    const journalPath = join(dir, 'meta', '_journal.json')
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8'))
+    journal.entries = journal.entries.slice(0, 1)
+    writeFileSync(journalPath, JSON.stringify(journal))
+
+    const old = openDatabase(':memory:')
+    try {
+      await runMigrations(old, dir)
+      old.raw.exec("insert into conversations (id, model) values ('c1', 'm')")
+      old.raw.exec("insert into messages (id, conversation_id, role, content) values ('m1', 'c1', 'user', 'ciao')")
+      await runMigrations(old, resolve(__dirname, '../drizzle'))
+      const row = old.raw.prepare("select content, prompt_eval_count from messages where id = 'm1'").get() as Record<string, unknown>
+      expect(row).toEqual({ content: 'ciao', prompt_eval_count: null })
+    } finally {
+      old.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('sono idempotenti', async () => {
     await expect(runMigrations(h, resolve(__dirname, '../drizzle'))).resolves.toBeUndefined()
   })

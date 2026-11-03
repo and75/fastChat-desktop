@@ -161,6 +161,8 @@ try {
     await items.first().waitFor()
     assert.equal(await items.count(), 1)
     assert.equal(await page.locator('#model-select').inputValue(), 'qwen3:4b')
+    // conversazione vuota: stima (≈) del solo brief, quindi pochi token
+    await page.getByTestId('context-usage').filter({ hasText: /^Contesto ≈\d+ \/ / }).waitFor()
     await page.selectOption('#model-select', 'llama3.2:3b')
   })
 
@@ -191,6 +193,16 @@ try {
     assert.equal('think' in body, false)
     const meta = await page.getByTestId('message-assistant').last().textContent()
     assert.match(meta, /42 token/)
+  })
+
+  await step('contatore del contesto: conteggio di Ollama dopo la risposta, su memoria del modello', async () => {
+    const meter = page.getByTestId('context-usage')
+    // llama3.2 nel server finto non dichiara num_ctx: memoria predefinita di Ollama (4.096 token)
+    await meter.filter({ hasText: /^Contesto [\d,]+k? \/ 4,1k · \d+%$/ }).waitFor()
+    const text = await meter.textContent()
+    assert.doesNotMatch(text, /≈/, 'dopo una risposta il numero viene da Ollama, non è una stima')
+    const title = await meter.getAttribute('title')
+    assert.match(title, /token usati su 4\.096 disponibili \(conteggio di Ollama/)
   })
 
   await step('titolo automatico dopo il primo scambio (sidebar e intestazione)', async () => {

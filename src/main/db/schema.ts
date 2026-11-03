@@ -39,6 +39,8 @@ export const messages = sqliteTable(
     thinking: text('thinking'),
     model: text('model'),
     evalCount: integer('eval_count'),
+    /** Token del prompt della richiesta che ha prodotto questa risposta (da Ollama). */
+    promptEvalCount: integer('prompt_eval_count'),
     durationMs: integer('duration_ms'),
     createdAt: integer('created_at').notNull().default(now)
   },

@@ -45,6 +45,8 @@ export interface ChatResult {
   content: string
   thinking: string
   evalCount: number | null
+  /** Token del prompt valutati da Ollama (system + storico + domanda). */
+  promptEvalCount: number | null
   durationMs: number | null
   /** true se la generazione è stata interrotta: content/thinking contengono il parziale. */
   aborted: boolean
@@ -56,6 +58,7 @@ interface ChatChunk {
   message?: { role?: string; content?: string; thinking?: string }
   done?: boolean
   eval_count?: number
+  prompt_eval_count?: number
   total_duration?: number
   error?: string
 }
@@ -169,7 +172,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     handlers: ChatHandlers,
     signal?: AbortSignal
   ): Promise<ChatResult> {
-    const result: ChatResult = { content: '', thinking: '', evalCount: null, durationMs: null, aborted: false }
+    const result: ChatResult = { content: '', thinking: '', evalCount: null, promptEvalCount: null, durationMs: null, aborted: false }
 
     const handleLine = (line: string): void => {
       if (!line.trim()) return
@@ -192,6 +195,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       }
       if (chunk.done) {
         result.evalCount = chunk.eval_count ?? null
+        result.promptEvalCount = chunk.prompt_eval_count ?? null
         result.durationMs = chunk.total_duration != null ? Math.round(chunk.total_duration / 1e6) : null
       }
     }

@@ -3,7 +3,9 @@ import {
   buildExecutePrompt,
   buildPlanPrompt,
   buildSystemPrompt,
+  computeContextUsage,
   estimateTokens,
+  formatTokensK,
   normalizeSteps,
   parsePlan,
   PLAN_SCHEMA,
@@ -141,5 +143,55 @@ describe('plan mode: parsing e normalizzazione', () => {
     expect(out).toHaveLength(20)
     expect(out[0].detail).toHaveLength(2000)
     expect(() => normalizeSteps('x')).toThrow()
+  })
+})
+
+describe('uso del contesto', () => {
+  const base = {
+    brief: brief({}),
+    numCtx: null,
+    modelNumCtx: null,
+    modelMaxCtx: null,
+    fallbackNumCtx: 4096
+  }
+  const u = (content: string) => ({ role: 'user' as const, content })
+
+  it('senza risposte: stima su brief + messaggi, memoria di riserva', () => {
+    const r = computeContextUsage({ ...base, brief: brief({ role: 'x'.repeat(400) }), messages: [u('y'.repeat(396))] })
+    // brief "# Ruolo\n" + 400 = 408 caratteri → 106 token; messaggio 396 → 103
+    expect(r).toMatchObject({ used: 106 + 103, total: 4096, estimated: true })
+    expect(r.ratio).toBeCloseTo(209 / 4096)
+  })
+
+  it('con il conteggio di Ollama: prompt + risposta, più la stima dei messaggi successivi', () => {
+    const msgs = [u('ciao'), { role: 'assistant' as const, content: 'risposta', promptEvalCount: 30, evalCount: 12 }]
+    expect(computeContextUsage({ ...base, messages: msgs })).toMatchObject({ used: 42, estimated: false })
+    const withNext = computeContextUsage({ ...base, messages: [...msgs, u('x'.repeat(40))] })
+    expect(withNext).toMatchObject({ used: 42 + 14, estimated: true })
+  })
+
+  it('conteggio troppo basso (cache dei prompt di Ollama) → resta la stima', () => {
+    const msgs = [u('x'.repeat(4000)), { role: 'assistant' as const, content: 'ok', promptEvalCount: 3, evalCount: 1 }]
+    const r = computeContextUsage({ ...base, messages: msgs })
+    expect(r.estimated).toBe(true)
+    expect(r.used).toBe(1004 + 5)
+  })
+
+  it('memoria: scelta della conversazione, poi predefinito del modello, sempre entro il massimo', () => {
+    expect(computeContextUsage({ ...base, messages: [], numCtx: 2048, modelNumCtx: 8192 }).total).toBe(2048)
+    expect(computeContextUsage({ ...base, messages: [], modelNumCtx: 8192 }).total).toBe(8192)
+    expect(computeContextUsage({ ...base, messages: [], numCtx: 65536, modelMaxCtx: 32768 }).total).toBe(32768)
+  })
+
+  it('oltre il limite il rapporto supera 1', () => {
+    expect(computeContextUsage({ ...base, messages: [u('x'.repeat(40000))] }).ratio).toBeGreaterThan(1)
+  })
+
+  it('formatTokensK', () => {
+    expect(formatTokensK(850)).toBe('850')
+    expect(formatTokensK(3200)).toBe('3,2k')
+    expect(formatTokensK(8192)).toBe('8,2k')
+    expect(formatTokensK(40960)).toBe('41k')
+    expect(formatTokensK(4000)).toBe('4k')
   })
 })

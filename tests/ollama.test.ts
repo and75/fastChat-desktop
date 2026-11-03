@@ -84,9 +84,11 @@ describe('chatStream', () => {
     )
     expect(thinking).toEqual(['Ci penso. '])
     expect(content).toEqual(['Ciao', ' mondo!'])
-    expect(res).toEqual({
+    expect(res.promptEvalCount).toBeGreaterThan(0)
+    expect({ ...res, promptEvalCount: undefined }).toEqual({
       content: 'Ciao mondo!',
       thinking: 'Ci penso. ',
+      promptEvalCount: undefined,
       evalCount: 42,
       durationMs: 1500,
       aborted: false

@@ -38,6 +38,8 @@ export interface Message {
   thinking: string | null
   model: string | null
   evalCount: number | null
+  /** Token del prompt (system + storico + domanda) usati per generare la risposta, da Ollama. */
+  promptEvalCount: number | null
   durationMs: number | null
   createdAt: number
 }

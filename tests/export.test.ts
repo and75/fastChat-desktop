@@ -24,8 +24,8 @@ const conv: Conversation = {
 const data: ExportData = {
   conversation: conv,
   messages: [
-    { id: 'u1', conversationId: 'c1', role: 'user', content: 'Cos\'è 1/2?', thinking: null, model: null, evalCount: null, durationMs: null, createdAt: Date.UTC(2026, 0, 1, 10) },
-    { id: 'a1', conversationId: 'c1', role: 'assistant', content: 'Metà.', thinking: 'Facile.', model: 'qwen3', evalCount: 3, durationMs: 100, createdAt: Date.UTC(2026, 0, 1, 10, 1) }
+    { id: 'u1', conversationId: 'c1', role: 'user', content: 'Cos\'è 1/2?', thinking: null, model: null, evalCount: null, promptEvalCount: null, durationMs: null, createdAt: Date.UTC(2026, 0, 1, 10) },
+    { id: 'a1', conversationId: 'c1', role: 'assistant', content: 'Metà.', thinking: 'Facile.', model: 'qwen3', evalCount: 3, promptEvalCount: 20, durationMs: 100, createdAt: Date.UTC(2026, 0, 1, 10, 1) }
   ],
   plans: [
     { id: 'p1', conversationId: 'c1', userMessageId: 'u1', steps: [{ title: 'Definire', detail: 'Breve' }], status: 'executed', createdAt: 0 }
