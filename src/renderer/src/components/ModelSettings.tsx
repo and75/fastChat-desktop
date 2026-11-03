@@ -353,9 +353,6 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
         <h3 id="advanced-title" className="font-medium text-zinc-700 dark:text-zinc-300">
           Impostazioni avanzate
         </h3>
-        <p className="mt-1 text-xs text-zinc-500">
-          Facoltative: lasciale vuote e il modello usa i suoi valori consigliati.
-        </p>
         <div className="mt-3 flex flex-col gap-4">
           <OptionalSlider
             label="Varietà delle parole"
