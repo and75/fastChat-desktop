@@ -75,7 +75,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
         void submit()
       }}
     >
-      <div className="flex items-end gap-2 rounded-xl border border-zinc-300 bg-white p-2 focus-within:border-blue-500 dark:border-zinc-700 dark:bg-zinc-900">
+      <div className="flex items-end gap-2 rounded-xl border border-zinc-300 bg-white p-2 focus-within:border-brand-500 dark:border-zinc-700 dark:bg-zinc-900">
         <textarea
           ref={ref}
           rows={1}
@@ -104,7 +104,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
           <button
             type="submit"
             disabled={disabled || !text.trim()}
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+            className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
           >
             {conversation?.planMode ? 'Pianifica' : 'Invia'}
           </button>
@@ -145,7 +145,7 @@ export function ChatView(): React.JSX.Element {
         <button
           type="button"
           onClick={() => void create()}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
         >
           Nuova conversazione
         </button>

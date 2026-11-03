@@ -34,7 +34,7 @@ function SaveAsTemplate({ conversation, beforeSave }: { conversation: Conversati
         >
           Salva come template
         </button>
-        {saved && <span className="text-green-700 dark:text-green-400">Template salvato</span>}
+        {saved && <span className="text-brand-700 dark:text-brand-400">Template salvato</span>}
       </div>
     )
   }
@@ -61,7 +61,7 @@ function SaveAsTemplate({ conversation, beforeSave }: { conversation: Conversati
       />
       {error && <span className="text-red-700 dark:text-red-400">{error}</span>}
       <div className="flex gap-2">
-        <button type="submit" disabled={!name.trim()} className="rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white disabled:opacity-40">
+        <button type="submit" disabled={!name.trim()} className="rounded-lg bg-brand-600 px-3 py-1.5 font-medium text-white disabled:opacity-40">
           Salva
         </button>
         <button type="button" onClick={() => setName(null)} className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800">
@@ -185,13 +185,13 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
               className={
                 '-mb-px flex flex-1 items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ' +
                 (active
-                  ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300'
+                  ? 'border-brand-600 text-brand-700 dark:border-brand-400 dark:text-brand-300'
                   : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200')
               }
             >
               {t.icon}
               <span>{t.label}</span>
-              {t.filled && <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-blue-500" data-testid="brief-filled" />}
+              {t.filled && <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-brand-500" data-testid="brief-filled" />}
             </button>
           )
         })}

@@ -88,7 +88,7 @@ function Item({ conv, active }: { conv: Conversation; active: boolean }): React.
         <input
           ref={input}
           aria-label="Titolo conversazione"
-          className="min-w-0 flex-1 rounded border border-blue-500 bg-white px-1 dark:bg-zinc-900"
+          className="min-w-0 flex-1 rounded border border-brand-500 bg-white px-1 dark:bg-zinc-900"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={commit}
@@ -108,7 +108,7 @@ function Item({ conv, active }: { conv: Conversation; active: boolean }): React.
           onDoubleClick={() => setEditing(true)}
           title={conv.title}
         >
-          {streaming && <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />}
+          {streaming && <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-brand-500" />}
           <span className="truncate">{conv.title}</span>
         </button>
       )}
@@ -164,7 +164,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings(): void }): React.J
           <button
             type="button"
             onClick={() => void create()}
-            className="flex-1 whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="flex-1 whitespace-nowrap rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700"
           >
             + Nuova conversazione
           </button>

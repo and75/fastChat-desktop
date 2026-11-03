@@ -48,7 +48,7 @@ function Switch(props: {
     <span
       aria-hidden
       className={
-        'relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 ' +
+        'relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 ' +
         (checked ? color : 'bg-zinc-300 dark:bg-zinc-700')
       }
     >
@@ -110,7 +110,7 @@ export function ThinkToggle({ conversation, compact = false }: { conversation: C
       disabled={!supported}
       title={title}
       compact={compact}
-      color="bg-violet-600"
+      color="bg-brand-600"
       onChange={(think) => void update(conversation.id, { think })}
     />
   )
@@ -125,7 +125,7 @@ export function PlanModeToggle({ conversation, compact = false }: { conversation
       checked={conversation.planMode}
       title="Prima il piano, poi l'esecuzione: il modello propone i passi, tu li approvi o li modifichi"
       compact={compact}
-      color="bg-amber-500"
+      color="bg-brand-500"
       onChange={(planMode) => void update(conversation.id, { planMode })}
     />
   )
@@ -273,7 +273,7 @@ function OptionalSlider(props: {
             type="button"
             onClick={() => set(null)}
             aria-label={`Torna al valore automatico: ${props.label}`}
-            className="shrink-0 rounded px-1.5 text-xs text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950"
+            className="shrink-0 rounded px-1.5 text-xs text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-950"
           >
             ↺ Automatico
           </button>
@@ -288,7 +288,7 @@ function OptionalSlider(props: {
         max={max}
         step={indexed ? 1 : props.step}
         value={pos}
-        className={'accent-blue-600 ' + (local == null ? 'opacity-60' : '')}
+        className={'accent-brand-600 ' + (local == null ? 'opacity-60' : '')}
         onChange={(e) => {
           const raw = Number(e.target.value)
           set(indexed ? steps[raw] : raw)
@@ -346,7 +346,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
           max={2}
           step={0.05}
           value={temperature}
-          className="accent-blue-600"
+          className="accent-brand-600"
           onChange={(e) => {
             const v = Number(e.target.value)
             setTemperature(v)

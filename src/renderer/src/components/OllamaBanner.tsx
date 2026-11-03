@@ -16,10 +16,10 @@ export function OllamaBanner(): React.JSX.Element | null {
     <div
       role="alert"
       data-testid="ollama-banner"
-      className="flex flex-wrap items-center gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100"
+      className="flex flex-wrap items-center gap-2 border-b border-red-300 bg-red-50 px-4 py-2 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/50 dark:text-red-100"
     >
       <span className="font-medium">Ollama non risponde.</span>
-      <span className="text-amber-800 dark:text-amber-200">{error}</span>
+      <span className="text-red-800 dark:text-red-200">{error}</span>
       <form
         className="ml-auto flex items-center gap-2"
         onSubmit={(e) => {
@@ -30,11 +30,11 @@ export function OllamaBanner(): React.JSX.Element | null {
       >
         <input
           aria-label="URL di Ollama"
-          className="w-64 rounded border border-amber-300 bg-white px-2 py-1 text-zinc-900 dark:border-amber-700 dark:bg-zinc-900 dark:text-zinc-100"
+          className="w-64 rounded border border-red-300 bg-white px-2 py-1 text-zinc-900 dark:border-red-700 dark:bg-zinc-900 dark:text-zinc-100"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
-        <button type="submit" className="rounded bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-700">
+        <button type="submit" className="rounded bg-red-600 px-3 py-1 font-medium text-white hover:bg-red-700">
           Riprova
         </button>
       </form>

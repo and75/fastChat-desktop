@@ -2,8 +2,33 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Colore d'accento unico dell'interfaccia (viola). Tutti gli elementi evidenziati usano `brand-*`
+ * e le sue sfumature; per cambiarlo basta modificare questa mappa. Il rosso resta solo per gli errori.
+ */
+@theme inline {
+  --color-brand-50: var(--color-violet-50);
+  --color-brand-100: var(--color-violet-100);
+  --color-brand-200: var(--color-violet-200);
+  --color-brand-300: var(--color-violet-300);
+  --color-brand-400: var(--color-violet-400);
+  --color-brand-500: var(--color-violet-500);
+  --color-brand-600: var(--color-violet-600);
+  --color-brand-700: var(--color-violet-700);
+  --color-brand-800: var(--color-violet-800);
+  --color-brand-900: var(--color-violet-900);
+  --color-brand-950: var(--color-violet-950);
+}
+
 :root {
   color-scheme: light dark;
+  /* Anche i controlli nativi (checkbox, range) usano l'accento viola. */
+  accent-color: var(--color-brand-600);
+}
+
+/* Contorno di focus da tastiera nel colore d'accento, al posto del blu di sistema. */
+:focus-visible {
+  outline-color: var(--color-brand-500);
 }
 
 html,
@@ -58,7 +83,7 @@ body {
   @apply mt-1;
 }
 .markdown a {
-  @apply text-blue-600 underline dark:text-blue-400;
+  @apply text-brand-600 underline dark:text-brand-400;
 }
 .markdown blockquote {
   @apply border-l-4 border-zinc-300 pl-3 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400;

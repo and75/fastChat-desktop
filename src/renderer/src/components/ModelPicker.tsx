@@ -69,7 +69,7 @@ export function ModelPicker(): React.JSX.Element {
           className={
             'whitespace-nowrap rounded-full px-2 py-0.5 text-xs ' +
             (caps.thinking
-              ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200'
+              ? 'bg-brand-100 text-brand-800 dark:bg-brand-900/40 dark:text-brand-200'
               : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400')
           }
           title={caps.capabilities.join(', ')}

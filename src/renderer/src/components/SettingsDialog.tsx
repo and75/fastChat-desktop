@@ -77,7 +77,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }): React.JSX.Elem
           <span className="text-xs" data-testid="settings-check">
             {check.state === 'checking' && <span className="text-zinc-500">Verifica in corso…</span>}
             {check.state === 'ok' && (
-              <span className="text-green-700 dark:text-green-400">
+              <span className="text-brand-700 dark:text-brand-400">
                 Connesso · {check.count} {check.count === 1 ? 'modello' : 'modelli'}
               </span>
             )}
@@ -131,7 +131,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }): React.JSX.Elem
           <button
             type="submit"
             disabled={saving}
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
           >
             Salva
           </button>
