@@ -308,7 +308,6 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => setTemperature(conversation.temperature), [conversation.id])
 
-  const advancedSet = conversation.topP != null || conversation.numCtx != null || conversation.seed != null
   const ctxSteps = contextSteps(caps?.contextLength ?? FALLBACK_MAX_CTX)
 
   return (
@@ -349,8 +348,11 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
       <ThinkToggle conversation={conversation} />
       <PlanModeToggle conversation={conversation} />
 
-      <details className="text-sm" open={advancedSet}>
-        <summary className="cursor-pointer text-zinc-500">Impostazioni avanzate</summary>
+      {/* Sempre visibili: niente apri/chiudi. */}
+      <section aria-labelledby="advanced-title" className="mt-2 border-t border-zinc-200 pt-4 text-sm dark:border-zinc-800">
+        <h3 id="advanced-title" className="font-medium text-zinc-700 dark:text-zinc-300">
+          Impostazioni avanzate
+        </h3>
         <p className="mt-1 text-xs text-zinc-500">
           Facoltative: lasciale vuote e il modello usa i suoi valori consigliati.
         </p>
@@ -393,7 +395,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
             onChange={(v) => save({ seed: v })}
           />
         </div>
-      </details>
+      </section>
     </section>
   )
 }
