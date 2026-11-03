@@ -68,7 +68,8 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
 
   return (
     <form
-      className="border-t border-zinc-200 p-3 dark:border-zinc-800"
+      // Stessa colonna dei messaggi (max-w-3xl, px-4), senza linea di separazione.
+      className="mx-auto w-full max-w-3xl px-4 pb-3 pt-1"
       onSubmit={(e) => {
         e.preventDefault()
         void submit()
