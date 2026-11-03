@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { Conversation, ConversationPatch } from '@shared/types'
 import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
@@ -111,7 +111,14 @@ export function PlanModeToggle({ conversation, compact = false }: { conversation
 
 function NumberField(props: {
   label: string
-  hint: string
+  /** Spiegazione in linguaggio semplice, sempre visibile sotto il campo. */
+  description: string
+  /** Nome del parametro in Ollama, mostrato in piccolo per chi lo conosce. */
+  technical: string
+  /** Indicazione breve a destra dell'etichetta (es. l'intervallo ammesso). */
+  hint?: string
+  /** Nota dinamica sotto il campo (es. la conversione in parole). */
+  note?: string | null
   value: number | null
   placeholder: string
   step?: number
@@ -121,40 +128,57 @@ function NumberField(props: {
 }): React.JSX.Element {
   const [text, setText] = useState(props.value == null ? '' : String(props.value))
   const focused = useRef(false)
+  const descId = useId()
   // Riallinea al valore salvato (es. limitato dal main), ma mai mentre l'utente sta scrivendo.
   useEffect(() => {
     if (!focused.current) setText(props.value == null ? '' : String(props.value))
   }, [props.value])
 
   return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="flex items-baseline justify-between">
+    <div className="flex flex-col gap-1 text-sm">
+      <span className="flex items-baseline justify-between gap-2">
         <span className="font-medium text-zinc-700 dark:text-zinc-300">{props.label}</span>
-        <span className="text-xs text-zinc-400">{props.hint}</span>
+        <code className="text-[11px] text-zinc-400" title="Nome del parametro in Ollama">
+          {props.technical}
+        </code>
       </span>
-      <input
-        type="number"
-        inputMode="decimal"
-        step={props.step}
-        min={props.min}
-        max={props.max}
-        value={text}
-        placeholder={props.placeholder}
-        className="rounded-lg border border-zinc-300 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
-        onFocus={() => (focused.current = true)}
-        onBlur={() => {
-          focused.current = false
-          setText(props.value == null ? '' : String(props.value))
-        }}
-        onChange={(e) => {
-          setText(e.target.value)
-          const n = e.target.value === '' ? null : Number(e.target.value)
-          if (n === null || Number.isFinite(n)) props.onChange(n)
-        }}
-      />
-    </label>
+      <span id={descId} className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+        {props.description}
+      </span>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          inputMode="decimal"
+          aria-label={props.label}
+          aria-describedby={descId}
+          step={props.step}
+          min={props.min}
+          max={props.max}
+          value={text}
+          placeholder={props.placeholder}
+          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900"
+          onFocus={() => (focused.current = true)}
+          onBlur={() => {
+            focused.current = false
+            setText(props.value == null ? '' : String(props.value))
+          }}
+          onChange={(e) => {
+            setText(e.target.value)
+            const n = e.target.value === '' ? null : Number(e.target.value)
+            if (n === null || Number.isFinite(n)) props.onChange(n)
+          }}
+        />
+        {props.hint && <span className="shrink-0 text-xs text-zinc-400">{props.hint}</span>}
+      </div>
+      {props.note && <span className="text-xs text-zinc-500">{props.note}</span>}
+    </div>
   )
 }
+
+const fmt = (n: number): string => n.toLocaleString('it-IT')
+
+/** Un token è circa ¾ di parola: conversione indicativa per chi non conosce i token. */
+const approxWords = (tokens: number): string => `≈ ${fmt(Math.round((tokens * 0.75) / 100) * 100)} parole`
 
 /** Impostazioni del modello per la conversazione: temperatura, ragionamento e parametri avanzati. */
 export function ModelSettings({ conversation }: { conversation: Conversation }): React.JSX.Element {
@@ -175,6 +199,9 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
           <span className="tabular-nums text-zinc-500" data-testid="temperature-value">
             {temperature.toFixed(2)}
           </span>
+        </span>
+        <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+          Quanto le risposte possono essere fantasiose. Bassa per fatti e codice, alta per idee e testi creativi.
         </span>
         <input
           type="range"
@@ -200,34 +227,43 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
       <PlanModeToggle conversation={conversation} />
 
       <details className="text-sm" open={advancedSet}>
-        <summary className="cursor-pointer text-zinc-500">Parametri avanzati</summary>
-        <div className="mt-2 flex flex-col gap-3">
+        <summary className="cursor-pointer text-zinc-500">Impostazioni avanzate</summary>
+        <p className="mt-1 text-xs text-zinc-500">
+          Facoltative: lasciale vuote e il modello usa i suoi valori consigliati.
+        </p>
+        <div className="mt-3 flex flex-col gap-4">
           <NumberField
-            label="top_p"
-            hint="0–1"
+            label="Varietà delle parole"
+            technical="top_p"
+            description="Quante parole alternative il modello considera a ogni passo. Più basso: risposte più prevedibili e ripetitive; più alto: più varie."
+            hint="da 0 a 1"
             min={0}
             max={1}
             step={0.05}
             value={conversation.topP}
-            placeholder="default del modello"
+            placeholder="automatico"
             onChange={(v) => save({ topP: v })}
           />
           <NumberField
-            label="num_ctx"
-            hint={caps?.contextLength ? `max ${caps.contextLength.toLocaleString('it-IT')}` : 'token di contesto'}
+            label="Memoria della conversazione"
+            technical="num_ctx"
+            description="Quanto testo il modello tiene a mente, misurato in token (circa ¾ di parola ciascuno). Più alto: ricorda messaggi più vecchi, ma usa più memoria ed è più lento."
+            hint={caps?.contextLength ? `max ${fmt(caps.contextLength)}` : undefined}
+            note={conversation.numCtx ? approxWords(conversation.numCtx) : null}
             min={256}
             max={caps?.contextLength ?? undefined}
             step={1024}
             value={conversation.numCtx}
-            placeholder="default di Ollama"
+            placeholder="automatico"
             onChange={(v) => save({ numCtx: v })}
           />
           <NumberField
-            label="seed"
-            hint="risposte riproducibili"
+            label="Risposte ripetibili"
+            technical="seed"
+            description="Con un numero qualsiasi, la stessa domanda dà sempre la stessa risposta: utile per confrontare. Vuoto: ogni risposta è diversa."
             step={1}
             value={conversation.seed}
-            placeholder="casuale"
+            placeholder="vuoto = sempre diverse"
             onChange={(v) => save({ seed: v })}
           />
         </div>

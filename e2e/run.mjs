@@ -279,9 +279,9 @@ try {
     await setSwitch(settings, 'Ragionamento', true)
     await settings.getByLabel('Temperatura').fill('1.2')
     await page.getByTestId('temperature-value').filter({ hasText: '1.20' }).waitFor()
-    await settings.getByText('Parametri avanzati').click()
-    await settings.getByLabel('top_p').fill('0.9')
-    await settings.getByLabel('seed').fill('7')
+    await settings.getByText('Impostazioni avanzate').click()
+    await settings.getByLabel('Varietà delle parole').fill('0.9')
+    await settings.getByLabel('Risposte ripetibili').fill('7')
     await page.getByTestId('composer-temperature').filter({ hasText: '1.20' }).waitFor()
     await page.waitForTimeout(400) // debounce del salvataggio
     const conv = await page.evaluate(async () => {
