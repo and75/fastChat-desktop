@@ -65,5 +65,6 @@ git push origin v0.1.0
 - La versione dell'app viene presa dal tag (non serve modificare `package.json`).
 - Un tag con trattino (es. `v0.2.0-beta.1`) crea una pre-release.
 - Prima della build girano typecheck e test unitari; se falliscono, nessuna release.
-- Da *Actions → Release → Run workflow* si compila senza pubblicare: gli installer restano
+- Da *Actions → Release → Run workflow* con il campo «version» (es. `0.2.0`) si pubblica senza
+  creare il tag a mano: lo crea il workflow. Con il campo vuoto si compila senza pubblicare: gli installer restano
   scaricabili come artifact del run per 14 giorni.
