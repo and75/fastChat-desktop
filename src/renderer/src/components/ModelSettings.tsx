@@ -44,12 +44,25 @@ function Switch(props: {
   onChange(v: boolean): void
 }): React.JSX.Element {
   const { label, checked, disabled = false, title, compact = false, color, onChange } = props
+  const track = (
+    <span
+      aria-hidden
+      className={
+        'relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 ' +
+        (checked ? color : 'bg-zinc-300 dark:bg-zinc-700')
+      }
+    >
+      <span className={'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ' + (checked ? 'left-4.5' : 'left-0.5')} />
+    </span>
+  )
   return (
     <label
       title={title}
       className={
+        // Nel pannello: etichetta a sinistra, interruttore allineato al bordo destro.
+        // Compatto (sotto il campo di scrittura): interruttore e testo affiancati.
         'flex select-none items-center gap-2 ' +
-        (compact ? 'text-xs ' : 'text-sm ') +
+        (compact ? 'text-xs ' : 'w-full justify-between text-sm ') +
         (disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer')
       }
     >
@@ -62,16 +75,17 @@ function Switch(props: {
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
-      <span
-        aria-hidden
-        className={
-          'relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 ' +
-          (checked ? color : 'bg-zinc-300 dark:bg-zinc-700')
-        }
-      >
-        <span className={'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ' + (checked ? 'left-4.5' : 'left-0.5')} />
-      </span>
-      <span>{label}</span>
+      {compact ? (
+        <>
+          {track}
+          <span>{label}</span>
+        </>
+      ) : (
+        <>
+          <span className="font-medium text-zinc-700 dark:text-zinc-300">{label}</span>
+          {track}
+        </>
+      )}
     </label>
   )
 }
