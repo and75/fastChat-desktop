@@ -12,6 +12,8 @@ const userData = mkdtempSync(join(tmpdir(), 'fastchat-e2e-'))
 const fake = await startFakeOllama([
   { name: 'qwen3:4b', capabilities: ['completion', 'thinking'] },
   { name: 'llama3.2:3b', capabilities: ['completion', 'tools'] },
+  // risponde dopo 2,5 s: simula il caricamento del modello in Ollama
+  { name: 'lento-avvio:1b', capabilities: ['completion'], startDelayMs: 2500, chunks: [{ content: 'Eccomi.' }] },
   {
     name: 'thinker:8b',
     capabilities: ['completion', 'thinking'],
@@ -125,7 +127,7 @@ try {
     const select = page.locator('#model-select')
     await select.locator('option', { hasText: 'qwen3:4b' }).waitFor({ state: 'attached' })
     const options = await select.locator('option').allTextContents()
-    assert.deepEqual(options, ['llama3.2:3b', 'qwen3:4b', 'slow:1b', 'thinker:8b'])
+    assert.deepEqual(options, ['lento-avvio:1b', 'llama3.2:3b', 'qwen3:4b', 'slow:1b', 'thinker:8b'])
   })
 
   await step('capabilities: llama3.2 senza ragionamento, qwen3 con ragionamento', async () => {
@@ -272,6 +274,27 @@ try {
     await page.getByTestId('message-user').filter({ hasText: 'Scrivi tanto' }).waitFor()
     assert.equal(await page.getByTestId('message-assistant').count(), 2)
     assert.equal(await page.getByTestId('brief-panel').getByLabel('Ruolo').inputValue(), 'Sei un tutor paziente.')
+  })
+
+  await step('attesa del modello: puntini animati e tempo trascorso fino al primo token', async () => {
+    await page.selectOption('#model-select', 'lento-avvio:1b')
+    await composer.fill('Sei sveglio?')
+    await composer.press('Enter')
+    const waiting = page.getByTestId('message-streaming').getByTestId('waiting-indicator')
+    await waiting.waitFor()
+    assert.match(await waiting.textContent(), /^Il modello sta elaborando·\d,\d s$/)
+    assert.equal(await waiting.locator('.loader-dot').count(), 3)
+    const anim = await waiting.locator('.loader-dot').first().evaluate((el) => getComputedStyle(el).animationName)
+    assert.equal(anim, 'loader-dot')
+    // il tempo avanza
+    const seconds = async () => Number((await waiting.getByTestId('elapsed').textContent()).replace(' s', '').replace(',', '.'))
+    const first = await seconds()
+    await page.waitForTimeout(600)
+    assert.ok((await seconds()) > first, 'il tempo trascorso deve aumentare')
+    // al primo token il loader sparisce e compare la risposta
+    await page.getByTestId('message-assistant').last().filter({ hasText: 'Eccomi.' }).waitFor()
+    assert.equal(await page.getByTestId('waiting-indicator').count(), 0)
+    await page.selectOption('#model-select', 'llama3.2:3b')
   })
 
   await step('sidebar: rinomina, ricerca, archivia, elimina', async () => {
@@ -571,7 +594,7 @@ try {
     const url = dialog.getByLabel('URL di Ollama')
     assert.equal(await url.inputValue(), fake.url)
     await dialog.getByRole('button', { name: 'Verifica' }).click()
-    await dialog.getByTestId('settings-check').filter({ hasText: 'Connesso · 4 modelli' }).waitFor()
+    await dialog.getByTestId('settings-check').filter({ hasText: 'Connesso · 5 modelli' }).waitFor()
     await url.fill('http://127.0.0.1:1')
     await dialog.getByRole('button', { name: 'Verifica' }).click()
     await dialog.getByTestId('settings-check').filter({ hasText: 'non raggiungibile' }).waitFor()

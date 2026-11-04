@@ -212,9 +212,9 @@ export function ChatView(): React.JSX.Element {
                 )}
             </Fragment>
           ))}
-          {live?.kind === 'plan' && <PlanLoading thinking={live.thinking} content={live.content} />}
+          {live?.kind === 'plan' && <PlanLoading thinking={live.thinking} content={live.content} startedAt={live.startedAt} />}
           {live?.kind === 'chat' && (
-            <MessageBubble role="assistant" content={live.content} thinking={live.thinking} streaming />
+            <MessageBubble role="assistant" content={live.content} thinking={live.thinking} streaming startedAt={live.startedAt} />
           )}
           {error && (
             <div

@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+import { Elapsed, TypingDots } from './Loader'
 
 interface Props {
   text: string
   /** true mentre il modello sta ancora ragionando (blocco aperto, testo che scorre). */
   live?: boolean
+  /** Inizio della richiesta, per il tempo trascorso mentre ragiona. */
+  startedAt?: number
 }
 
 const words = (t: string): number => t.trim().split(/\s+/).filter(Boolean).length
 
 /** Ragionamento del modello, separato dalla risposta. Aperto durante lo streaming, poi richiudibile. */
-export function ThinkingBlock({ text, live = false }: Props): React.JSX.Element | null {
+export function ThinkingBlock({ text, live = false, startedAt }: Props): React.JSX.Element | null {
   const [open, setOpen] = useState(live)
   const body = useRef<HTMLDivElement>(null)
 
@@ -35,7 +38,14 @@ export function ThinkingBlock({ text, live = false }: Props): React.JSX.Element 
         <span className={'transition-transform ' + (open ? 'rotate-90' : '')}>▸</span>
         {live ? (
           <span className="flex items-center gap-2">
-            Sta ragionando… <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
+            <TypingDots />
+            Sta ragionando…
+            {startedAt != null && (
+              <>
+                <span aria-hidden>·</span>
+                <Elapsed since={startedAt} />
+              </>
+            )}
           </span>
         ) : (
           <span>Ragionamento · {words(text)} parole</span>

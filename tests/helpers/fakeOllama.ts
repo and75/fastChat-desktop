@@ -15,6 +15,8 @@ export interface FakeModel {
   chunks?: Array<{ thinking?: string; content?: string }>
   /** Ritardo tra un chunk e l'altro, ms. */
   delayMs?: number
+  /** Attesa prima del primo chunk, ms (simula il caricamento del modello). */
+  startDelayMs?: number
   /**
    * Risposta alle richieste con `format` (plan mode): oggetto serializzato in JSON oppure stringa grezza.
    * Default: un piano di tre passi.
@@ -90,6 +92,7 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
         for (let i = 0; i < text.length; i += 20) chunks.push({ content: text.slice(i, i + 20) })
       }
       res.writeHead(200, { 'content-type': 'application/x-ndjson' })
+      if (model.startDelayMs) await sleep(model.startDelayMs)
       let aborted = false
       res.on('close', () => (aborted = !res.writableFinished))
       for (const c of chunks) {

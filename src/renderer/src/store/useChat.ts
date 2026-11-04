@@ -7,6 +7,8 @@ export interface LiveStream {
   kind: StreamKind
   content: string
   thinking: string
+  /** Inizio della richiesta (ms), per mostrare il tempo trascorso. */
+  startedAt: number
 }
 
 interface ChatState {
@@ -43,7 +45,7 @@ const replacePlan = (plans: Plan[], plan: Plan): Plan[] => plans.map((p) => (p.i
 export const useChat = create<ChatState>((set, get) => {
   /** Registra un nuovo stream e applica gli eventi eventualmente già arrivati. */
   const startStream = (conversationId: string, streamId: string, kind: StreamKind): void => {
-    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '' } } }))
+    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '', startedAt: Date.now() } } }))
     const early = pending.get(streamId) ?? []
     pending.delete(streamId)
     early.forEach((e) => get().handleStream(e))

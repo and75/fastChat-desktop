@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Plan, PlanStatus, PlanStep } from '@shared/types'
 import { useChat } from '../store/useChat'
+import { Elapsed, TypingDots } from './Loader'
 import { ThinkingBlock } from './ThinkingBlock'
 
 const STATUS_LABEL: Record<PlanStatus, string> = {
@@ -158,14 +159,24 @@ export function PlanSummary({ plan }: { plan: Plan }): React.JSX.Element {
 }
 
 /** Mentre il modello prepara il piano: ragionamento (se c'è) e conteggio dei passi già arrivati. */
-export function PlanLoading({ thinking, content }: { thinking: string; content: string }): React.JSX.Element {
+export function PlanLoading({
+  thinking,
+  content,
+  startedAt
+}: {
+  thinking: string
+  content: string
+  startedAt?: number
+}): React.JSX.Element {
   const found = (content.match(/"title"\s*:/g) ?? []).length
   return (
     <div className="flex flex-col gap-2" data-testid="plan-loading">
-      {thinking && <ThinkingBlock text={thinking} live={!content} />}
-      <div className="flex items-center gap-2 text-sm text-brand-800 dark:text-brand-300">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-brand-500" />
-        Sto preparando il piano…{found > 0 && ` ${found} ${found === 1 ? 'passo' : 'passi'}`}
+      {thinking && <ThinkingBlock text={thinking} live={!content} startedAt={startedAt} />}
+      <div role="status" className="flex items-center gap-2 text-sm text-brand-800 dark:text-brand-300">
+        <TypingDots />
+        <span>Sto preparando il piano…{found > 0 && ` ${found} ${found === 1 ? 'passo' : 'passi'}`}</span>
+        <span aria-hidden>·</span>
+        <Elapsed since={startedAt} />
       </div>
     </div>
   )
