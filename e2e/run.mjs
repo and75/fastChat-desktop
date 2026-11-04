@@ -185,6 +185,11 @@ try {
     await composer.fill('Ciao!')
     await composer.press('Enter')
     await page.getByTestId('message-user').filter({ hasText: 'Ciao!' }).waitFor()
+    // sotto il messaggio dell'utente: data compatta, completa nel tooltip
+    const date = page.getByTestId('message-user').filter({ hasText: 'Ciao!' }).getByTestId('message-date')
+    assert.match(await date.textContent(), /^Oggi, \d{2}:\d{2}$/)
+    assert.match(await date.getAttribute('title'), /\d{4}.*\d{2}:\d{2}/)
+    assert.equal(await page.getByTestId('message-assistant').getByTestId('message-date').count(), 0)
     await page.getByTestId('message-assistant').filter({ hasText: 'Ciao mondo!' }).waitFor()
     const body = lastChat()
     assert.equal(body.model, 'llama3.2:3b')

@@ -182,6 +182,7 @@ export function ChatView(): React.JSX.Element {
                 role={m.role}
                 content={m.content}
                 thinking={m.thinking}
+                createdAt={m.createdAt}
                 meta={m.role === 'assistant' ? m : undefined}
                 actions={
                   m.role === 'assistant' ? (

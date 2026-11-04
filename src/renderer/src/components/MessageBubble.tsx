@@ -1,3 +1,4 @@
+import { formatFullDate, formatMessageDate } from '@shared/format'
 import type { Message } from '@shared/types'
 import { Markdown } from './Markdown'
 import { WaitingIndicator } from './Loader'
@@ -10,6 +11,8 @@ interface Props {
   /** Statistiche mostrate sotto le risposte salvate. */
   meta?: Pick<Message, 'model' | 'evalCount' | 'durationMs'>
   streaming?: boolean
+  /** Data del messaggio (mostrata sotto i messaggi dell'utente). */
+  createdAt?: number
   /** Inizio della richiesta in corso (solo durante lo streaming). */
   startedAt?: number
   actions?: React.ReactNode
@@ -24,13 +27,23 @@ function formatMeta(meta: NonNullable<Props['meta']>): string {
   return parts.join(' · ')
 }
 
-export function MessageBubble({ role, content, thinking, meta, streaming, startedAt, actions }: Props): React.JSX.Element {
+export function MessageBubble({ role, content, thinking, meta, streaming, startedAt, createdAt, actions }: Props): React.JSX.Element {
   if (role === 'user') {
     return (
-      <div className="flex justify-end" data-testid="message-user">
+      <div className="flex flex-col items-end gap-1" data-testid="message-user">
         <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand-600 px-4 py-2 text-white">
           {content}
         </div>
+        {createdAt != null && (
+          <time
+            dateTime={new Date(createdAt).toISOString()}
+            title={formatFullDate(createdAt)}
+            className="px-1 text-xs text-zinc-400"
+            data-testid="message-date"
+          >
+            {formatMessageDate(createdAt)}
+          </time>
+        )}
       </div>
     )
   }
