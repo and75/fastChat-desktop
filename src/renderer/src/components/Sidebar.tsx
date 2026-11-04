@@ -4,6 +4,7 @@ import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { useTemplates } from '../store/useTemplates'
 import { AppLogo, ChevronDownIcon, PlusIcon } from './icons'
+import { isMac } from './WindowControls'
 
 /** Elenco dei template: un clic crea una conversazione con quel brief e quelle impostazioni. */
 function TemplateMenu({ onDone }: { onDone(): void }): React.JSX.Element {
@@ -221,8 +222,8 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings(): void }): React.J
       aria-label="Barra laterale"
       className="flex w-64 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950"
     >
-      {/* Logo e nome dell'app */}
-      <div className="flex items-center gap-2.5 px-4 pb-6 pt-4">
+      {/* Logo e nome dell'app; zona di trascinamento della finestra. Su macOS lascia spazio ai semafori. */}
+      <div className={'drag flex items-center gap-2.5 pb-6 pt-4 ' + (isMac ? 'pl-[88px] pr-4' : 'px-4')}>
         <AppLogo size={30} />
         <span className="text-lg font-semibold tracking-tight" data-testid="app-name">
           FastChat

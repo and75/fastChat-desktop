@@ -56,6 +56,16 @@ export interface Api {
     /** Approva (se serve) ed esegue il piano: la risposta arriva come un normale stream di chat. */
     execute(planId: string): Promise<Result<SendResult>>
   }
+  /** Controlli della finestra (la barra del titolo di sistema non c'è). */
+  window: {
+    /** Piattaforma: su macOS i controlli sono i semafori nativi, altrove li disegna l'app. */
+    platform: string
+    minimize(): Promise<Result<void>>
+    toggleMaximize(): Promise<Result<boolean>>
+    close(): Promise<Result<void>>
+    isMaximized(): Promise<Result<boolean>>
+    onMaximizedChange(cb: (maximized: boolean) => void): () => void
+  }
   clipboard: {
     /** Copia testo negli appunti di sistema (tramite il main: il renderer è in sandbox). */
     writeText(text: string): Promise<Result<void>>

@@ -47,6 +47,14 @@ const api: Api = {
     update: (planId, update) => invoke(IPC.plansUpdate, planId, update),
     execute: (planId) => invoke(IPC.plansExecute, planId)
   },
+  window: {
+    platform: process.platform,
+    minimize: () => invoke(IPC.windowMinimize),
+    toggleMaximize: () => invoke(IPC.windowToggleMaximize),
+    close: () => invoke(IPC.windowClose),
+    isMaximized: () => invoke(IPC.windowIsMaximized),
+    onMaximizedChange: (cb) => subscribe<boolean>(IPC.windowMaximized, cb)
+  },
   clipboard: {
     writeText: (text) => invoke(IPC.clipboardWrite, text)
   },

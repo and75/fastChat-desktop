@@ -6,6 +6,7 @@ import { DownloadIcon, PanelRightIcon } from './components/icons'
 import { ModelPicker } from './components/ModelPicker'
 import { OllamaBanner } from './components/OllamaBanner'
 import { SettingsDialog } from './components/SettingsDialog'
+import { WindowControls } from './components/WindowControls'
 import { Sidebar } from './components/Sidebar'
 import { useChat } from './store/useChat'
 import { useConversations } from './store/useConversations'
@@ -133,7 +134,8 @@ export default function App(): React.JSX.Element {
     <div className="flex h-full">
       <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-4 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+        {/* La topbar fa da barra del titolo: si trascina per spostare la finestra. */}
+        <header className="drag flex items-center gap-4 border-b border-zinc-200 py-2 pl-4 pr-2 dark:border-zinc-800">
           <h1 className="min-w-0 flex-1 truncate text-base font-semibold" title={conversation?.title}>
             {conversation?.title ?? 'FastChat'}
           </h1>
@@ -152,6 +154,7 @@ export default function App(): React.JSX.Element {
               </IconButton>
             </div>
           )}
+          <WindowControls />
         </header>
         <OllamaBanner />
         <div className="flex min-h-0 flex-1">

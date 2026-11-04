@@ -105,6 +105,22 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
   handle(IPC.modelsCheck, (_e, url: string) => createOllamaClient(() => validOllamaUrl(url)).listModels())
 
   // ---- impostazioni
+  // ---- finestra (agisce sulla finestra che ha fatto la richiesta)
+  const winOf = (e: IpcMainInvokeEvent): BrowserWindow => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (!win) throw new Error('Finestra non trovata')
+    return win
+  }
+  handle(IPC.windowMinimize, (e) => winOf(e).minimize())
+  handle(IPC.windowToggleMaximize, (e) => {
+    const win = winOf(e)
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+    return win.isMaximized()
+  })
+  handle(IPC.windowClose, (e) => winOf(e).close())
+  handle(IPC.windowIsMaximized, (e) => winOf(e).isMaximized())
+
   // ---- appunti
   handle(IPC.clipboardWrite, (_e, text: string) => {
     if (typeof text !== 'string') throw new Error('Testo non valido')

@@ -137,3 +137,41 @@ export function AppLogo({ size = 28, className = '' }: { size?: number; classNam
     </span>
   )
 }
+
+/** lucide/minus */
+export function MinusIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M5 12h14" />
+    </Svg>
+  )
+}
+
+/** lucide/square */
+export function SquareIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect width="16" height="16" x="4" y="4" rx="1.5" />
+    </Svg>
+  )
+}
+
+/** Due quadrati sovrapposti: «ripristina» (finestra ingrandita). */
+export function RestoreIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect width="13" height="13" x="4" y="7" rx="1.5" />
+      <path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4h9A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H17" />
+    </Svg>
+  )
+}
+
+/** lucide/x */
+export function CloseIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </Svg>
+  )
+}

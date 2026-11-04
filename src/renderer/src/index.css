@@ -37,6 +37,18 @@ body,
   height: 100%;
 }
 
+/*
+ * Zone di trascinamento della finestra (non c'è la barra del titolo di sistema).
+ * Dentro una zona .drag i controlli restano cliccabili.
+ */
+.drag {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.drag :is(button, select, input, textarea, a, label, [role='menu'], [role='tooltip']) {
+  -webkit-app-region: no-drag;
+}
+
 /* Barre di scorrimento invisibili ovunque: si scorre con rotella, trackpad e tastiera. */
 * {
   scrollbar-width: none;

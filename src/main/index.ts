@@ -3,6 +3,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { openDatabase, runMigrations, type DbHandle } from './db/client'
 import { getSettings } from './db/repo'
+import { IPC } from '@shared/types'
 import { registerIpc } from './ipc'
 import { createOllamaClient } from './ollama'
 
@@ -20,6 +21,12 @@ function createWindow(): BrowserWindow {
     show: false,
     title: 'FastChat',
     autoHideMenuBar: true,
+    // Niente barra del titolo di sistema: la topbar dell'app fa da barra (zone di trascinamento).
+    // macOS: semafori nativi integrati in alto a sinistra; Windows/Linux: finestra senza cornice
+    // con i controlli disegnati dall'app a destra della topbar.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 18, y: 18 } }
+      : { frame: false }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -30,6 +37,15 @@ function createWindow(): BrowserWindow {
   })
 
   win.on('ready-to-show', () => win.show())
+
+  // Stato ingrandito/ripristinato per l'icona del pulsante nella topbar.
+  const sendMaximized = (): void => {
+    if (!win.webContents.isDestroyed()) win.webContents.send(IPC.windowMaximized, win.isMaximized() || win.isFullScreen())
+  }
+  win.on('maximize', sendMaximized)
+  win.on('unmaximize', sendMaximized)
+  win.on('enter-full-screen', sendMaximized)
+  win.on('leave-full-screen', sendMaximized)
 
   // Nessuna finestra secondaria: i link esterni (http/https) si aprono nel browser di sistema.
   win.webContents.setWindowOpenHandler(({ url }) => {

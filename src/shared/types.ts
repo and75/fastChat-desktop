@@ -201,6 +201,12 @@ export const IPC = {
   chatStream: 'chat:stream',
   conversationUpdated: 'conversations:updated',
   clipboardWrite: 'clipboard:write',
+  windowMinimize: 'window:minimize',
+  windowToggleMaximize: 'window:toggle-maximize',
+  windowClose: 'window:close',
+  windowIsMaximized: 'window:is-maximized',
+  /** Evento main → renderer: la finestra è stata ingrandita o ripristinata. */
+  windowMaximized: 'window:maximized',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set'
 } as const

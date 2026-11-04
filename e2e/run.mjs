@@ -699,6 +699,43 @@ try {
     await side.getByTestId('template-menu').waitFor({ state: 'detached' })
   })
 
+  await step('finestra senza barra di sistema: controlli dopo il pulsante del pannello, topbar trascinabile', async () => {
+    const controls = page.getByTestId('window-controls')
+    await controls.waitFor()
+    const panelBtn = page.getByRole('button', { name: /il pannello della conversazione$/ })
+    assert.ok((await panelBtn.boundingBox()).x < (await controls.boundingBox()).x, 'i controlli vengono dopo il pulsante del pannello')
+    for (const name of ['Riduci a icona', 'Ingrandisci', 'Chiudi']) await controls.getByRole('button', { name }).waitFor()
+
+    // la topbar si trascina, i suoi controlli restano cliccabili
+    const regions = await page.evaluate(() => {
+      const r = (el) => getComputedStyle(el).getPropertyValue('-webkit-app-region')
+      const header = document.querySelector('header')
+      return { header: r(header), button: r(header.querySelector('button')), select: r(document.querySelector('#model-select')) }
+    })
+    assert.deepEqual(regions, { header: 'drag', button: 'no-drag', select: 'no-drag' })
+
+    // Sotto Xvfb non c'è un window manager: ingrandire/ridurre non avrebbe effetto. Si simula il WM
+    // sostituendo i metodi della finestra nel main (stessi eventi), così si verifica tutta la catena
+    // pulsante → IPC → finestra → evento → icona.
+    await app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0]
+      const state = { maximized: false, minimized: false, calls: [] }
+      globalThis.__wm = state
+      win.isMaximized = () => state.maximized
+      win.maximize = () => { state.calls.push('maximize'); state.maximized = true; win.emit('maximize') }
+      win.unmaximize = () => { state.calls.push('unmaximize'); state.maximized = false; win.emit('unmaximize') }
+      win.minimize = () => { state.calls.push('minimize'); state.minimized = true }
+    })
+    const wm = () => app.evaluate(() => globalThis.__wm)
+    await controls.getByRole('button', { name: 'Ingrandisci' }).click()
+    await controls.getByRole('button', { name: 'Ripristina' }).waitFor()
+    await controls.getByRole('button', { name: 'Ripristina' }).click()
+    await controls.getByRole('button', { name: 'Ingrandisci' }).waitFor()
+    await controls.getByRole('button', { name: 'Riduci a icona' }).click()
+    await waitUntil(async () => (await wm()).minimized)
+    assert.deepEqual((await wm()).calls, ['maximize', 'unmaximize', 'minimize'])
+  })
+
   await step('nessun errore JavaScript nel renderer (fase 5)', async () => {
     assert.deepEqual(errors, [])
   })
