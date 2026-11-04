@@ -102,3 +102,38 @@ export function RegenerateIcon(props: IconProps): React.JSX.Element {
     </Svg>
   )
 }
+
+/** lucide/plus */
+export function PlusIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </Svg>
+  )
+}
+
+/** lucide/chevron-down */
+export function ChevronDownIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Svg>
+  )
+}
+
+/** Logo di FastChat: fumetto con fulmine su quadrato arrotondato nel colore d'accento (come l'icona dell'app). */
+export function AppLogo({ size = 28, className = '' }: { size?: number; className?: string }): React.JSX.Element {
+  return (
+    <span
+      aria-hidden="true"
+      className={'inline-flex shrink-0 items-center justify-center rounded-[28%] bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-sm ' + className}
+      style={{ width: size, height: size }}
+    >
+      <svg width={size * 0.62} height={size * 0.62} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5z" />
+        <path d="M13 6.5 10 10.5h3.5L10.5 14" strokeWidth={2.1} />
+      </svg>
+    </span>
+  )
+}

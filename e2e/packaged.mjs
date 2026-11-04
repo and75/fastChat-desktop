@@ -20,7 +20,7 @@ try {
   const page = await app.firstWindow()
   assert.equal(await app.evaluate(({ app }) => app.isPackaged), true)
   await page.locator('#model-select option', { hasText: 'llama3.2:3b' }).waitFor({ state: 'attached' })
-  await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
+  await page.getByTestId('new-conversation').click()
   await page.getByLabel('Messaggio').fill('Ciao')
   await page.getByLabel('Messaggio').press('Enter')
   await page.getByTestId('message-assistant').filter({ hasText: 'Ciao mondo!' }).waitFor()

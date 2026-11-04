@@ -157,7 +157,7 @@ try {
   const composer = page.getByLabel('Messaggio')
 
   await step('nuova conversazione: compare in sidebar con il modello predefinito', async () => {
-    await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
+    await page.getByTestId('new-conversation').click()
     await items.first().waitFor()
     assert.equal(await items.count(), 1)
     assert.equal(await page.locator('#model-select').inputValue(), 'qwen3:4b')
@@ -276,7 +276,7 @@ try {
 
   await step('sidebar: rinomina, ricerca, archivia, elimina', async () => {
     // seconda conversazione
-    await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
+    await page.getByTestId('new-conversation').click()
     await page.waitForFunction(() => document.querySelectorAll('[data-testid="conversation-item"]').length === 2)
 
     // quella con i messaggi ha già il titolo generato dopo il primo scambio
@@ -322,7 +322,7 @@ try {
   // ------------------------------------------------------------------ fase 3
   await step('ragionamento: interruttore disabilitato se il modello non lo supporta', async () => {
     await page.getByLabel('Mostra archiviate').uncheck()
-    await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
+    await page.getByTestId('new-conversation').click()
     await openTab('Modello')
     await page.selectOption('#model-select', 'llama3.2:3b')
     const toggle = page.getByTestId('model-settings').getByRole('switch', { name: 'Ragionamento' })
@@ -420,7 +420,7 @@ try {
   const planRequests = () => fake.requests.filter((r) => r.path === '/api/chat' && r.body?.format)
 
   await step('plan mode: il modello propone un piano (format = JSON schema)', async () => {
-    await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
+    await page.getByTestId('new-conversation').click()
     await openTab('Modello')
     await page.selectOption('#model-select', 'thinker:8b')
     await openTab('Brief')
@@ -586,7 +586,7 @@ try {
     const saved = (await page.evaluate(() => window.api.settings.get())).data
     assert.equal(saved.theme, 'dark')
     assert.equal(saved.defaultModel, 'llama3.2:3b')
-    await page.getByRole('button', { name: '+ Nuova conversazione' }).click()
+    await page.getByTestId('new-conversation').click()
     await page.waitForFunction(() => document.querySelector('#model-select')?.value === 'llama3.2:3b')
   })
 
@@ -676,6 +676,27 @@ try {
     await items.first().getByRole('button').first().click()
     await page.waitForFunction(() => document.getElementById('panel-tab-model')?.getAttribute('aria-selected') === 'true')
     assert.equal(await page.locator('#panel-model').isVisible(), true)
+  })
+
+  await step('barra laterale: logo e nome in cima, pulsante con freccia dei preset, sezione Conversazioni', async () => {
+    const side = page.getByRole('complementary', { name: 'Barra laterale' })
+    assert.equal(await side.getByTestId('app-name').textContent(), 'FastChat')
+    // ordine verticale: nome, pulsante, titolo della sezione, ricerca
+    const y = async (loc) => (await loc.boundingBox()).y
+    const name = await y(side.getByTestId('app-name'))
+    const button = await y(side.getByTestId('new-conversation'))
+    const heading = side.getByRole('heading', { name: 'Conversazioni' })
+    const section = await y(heading)
+    const search = await y(side.getByLabel('Cerca conversazioni'))
+    assert.ok(name < button && button < section && section < search, `ordine: ${name}, ${button}, ${section}, ${search}`)
+
+    // la freccia è attaccata al pulsante e apre i preset sopra la lista, senza spostarla
+    const listY = await y(side.getByRole('list', { name: 'Conversazioni' }))
+    await side.getByRole('button', { name: 'Nuova da template' }).click()
+    await side.getByTestId('template-menu').waitFor()
+    assert.equal(await y(side.getByRole('list', { name: 'Conversazioni' })), listY)
+    await page.keyboard.press('Escape')
+    await side.getByTestId('template-menu').waitFor({ state: 'detached' })
   })
 
   await step('nessun errore JavaScript nel renderer (fase 5)', async () => {
