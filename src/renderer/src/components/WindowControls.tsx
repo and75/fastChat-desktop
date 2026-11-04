@@ -33,7 +33,6 @@ export function WindowControls(): React.JSX.Element | null {
       <IconButton
         tooltip="Chiudi"
         onClick={() => void window.api.window.close()}
-        className="hover:bg-red-600! hover:text-white! dark:hover:bg-red-600!"
       >
         <CloseIcon size={16} />
       </IconButton>
