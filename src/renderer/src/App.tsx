@@ -135,7 +135,8 @@ export default function App(): React.JSX.Element {
       <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* La topbar fa da barra del titolo: si trascina per spostare la finestra. */}
-        <header className="drag flex items-center gap-4 border-b border-zinc-200 py-2 pl-4 pr-2 dark:border-zinc-800">
+        {/* Altezza fissa (TOPBAR_HEIGHT, h-12): la stessa del blocco del logo, così i contenuti sono allineati. */}
+        <header className="drag flex h-12 shrink-0 items-center gap-4 border-b border-zinc-200 pl-4 pr-2 dark:border-zinc-800">
           <h1 className="min-w-0 flex-1 truncate text-base font-semibold" title={conversation?.title}>
             {conversation?.title ?? 'FastChat'}
           </h1>

@@ -779,6 +779,27 @@ try {
     assert.deepEqual((await wm()).calls, ['maximize', 'unmaximize', 'minimize'])
   })
 
+  await step('allineamento: blocco del logo e topbar alla stessa altezza, contenuti centrati sulla stessa linea', async () => {
+    const side = page.getByRole('complementary', { name: 'Barra laterale' })
+    const center = async (loc) => {
+      const b = await loc.boundingBox()
+      return b.y + b.height / 2
+    }
+    const title = page.locator('header h1')
+    const header = await page.locator('header').boundingBox()
+    const logoRow = await side.getByTestId('app-name').locator('..').boundingBox()
+    assert.ok(Math.abs(header.height - logoRow.height) <= 1, `altezze: topbar ${header.height}, logo ${logoRow.height}`)
+    const t = await center(title)
+    for (const [name, loc] of [
+      ['nome', side.getByTestId('app-name')],
+      ['pulsante della barra', side.getByRole('button', { name: 'Chiudi la barra laterale' })],
+      ['pulsante del pannello', page.getByRole('button', { name: /il pannello della conversazione$/ })]
+    ]) {
+      const c = await center(loc)
+      assert.ok(Math.abs(c - t) <= 1.5, `${name} a ${c}, titolo a ${t}`)
+    }
+  })
+
   await step('barra laterale richiudibile: striscia con logo e azioni rapide, stato ricordato', async () => {
     const side = page.getByRole('complementary', { name: 'Barra laterale' })
     const width = async () => (await side.boundingBox()).width
@@ -794,6 +815,12 @@ try {
     assert.ok((await width()) < 90 && (await width()) < open / 2, `larghezza chiusa: ${await width()}`)
     assert.equal(await side.getByLabel('Cerca conversazioni').count(), 0)
     assert.equal(await side.getByTestId('app-name').count(), 0)
+    {
+      const logo = await side.locator('span[aria-hidden="true"]').first().boundingBox()
+      const title = await page.locator('header h1').boundingBox()
+      const diff = Math.abs(logo.y + logo.height / 2 - (title.y + title.height / 2))
+      assert.ok(diff <= 1.5, `striscia chiusa: logo disallineato di ${diff}px`)
+    }
     for (const name of ['Nuova conversazione', 'Impostazioni']) await side.getByRole('button', { name }).waitFor()
     // tooltip a destra della striscia (non fuori dalla finestra)
     const plus = side.getByTestId('new-conversation-rail')

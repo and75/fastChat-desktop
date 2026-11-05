@@ -241,8 +241,12 @@ function CollapsedRail({ onExpand, onOpenSettings }: { onExpand(): void; onOpenS
       }
     >
       {/* Blocco del logo (zona di trascinamento); su macOS sotto i semafori. */}
-      <div className={'drag flex w-full flex-col items-center gap-3 pb-4 ' + (isMac ? 'pt-11' : 'pt-4')}>
-        <AppLogo size={30} />
+      {/* Prima riga alta come la topbar (h-12): logo allineato al titolo. Su macOS ospita i semafori e il logo scende. */}
+      <div className="drag flex w-full flex-col items-center gap-3 pb-4">
+        {isMac && <div className="h-12 w-full shrink-0" />}
+        <div className={'flex h-12 w-full shrink-0 items-center justify-center ' + (isMac ? '-mt-3' : '')}>
+          <AppLogo size={30} />
+        </div>
         <IconButton tooltip="Apri la barra laterale" tooltipPlacement="right" aria-expanded={false} onClick={onExpand}>
           <PanelLeftIcon size={18} />
         </IconButton>
@@ -282,7 +286,8 @@ function ExpandedSidebar({ onOpenSettings, onCollapse }: { onOpenSettings(): voi
       className="flex w-64 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950"
     >
       {/* Logo e nome dell'app, pulsante di chiusura a destra; zona di trascinamento. Su macOS lascia spazio ai semafori. */}
-      <div className={'drag flex items-center gap-2.5 pb-6 pt-4 ' + (isMac ? 'pl-[88px] pr-3' : 'pl-4 pr-3')}>
+      {/* Alta come la topbar (h-12) e centrata in verticale: logo e titolo della conversazione sulla stessa linea. */}
+      <div className={'drag flex h-12 shrink-0 items-center gap-2.5 ' + (isMac ? 'pl-[88px] pr-3' : 'pl-4 pr-3')}>
         <AppLogo size={30} />
         <span className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight" data-testid="app-name">
           FastChat
@@ -292,7 +297,7 @@ function ExpandedSidebar({ onOpenSettings, onCollapse }: { onOpenSettings(): voi
         </IconButton>
       </div>
 
-      <div className="px-3 pb-6">
+      <div className="px-3 pb-6 pt-4">
         <NewConversationButton />
       </div>
 
