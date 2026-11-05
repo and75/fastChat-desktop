@@ -15,6 +15,12 @@ npmRebuild: false
 mac:
   target: dmg
   category: public.app-category.productivity
+  # Firma ad-hoc (gratuita, senza account Apple Developer): senza nessuna firma macOS su Apple
+  # Silicon segnala l'app scaricata come «danneggiata». Con la firma ad-hoc compare invece il
+  # normale avviso «sviluppatore non identificato», superabile con clic destro → Apri.
+  # L'hardened runtime va disattivato con la firma ad-hoc, altrimenti l'app non si avvia.
+  identity: '-'
+  hardenedRuntime: false
 dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
 win:

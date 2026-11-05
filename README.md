@@ -49,8 +49,14 @@ e Drizzle ORM (driver `sqlite-proxy`). Nessun modulo nativo da ricompilare per E
 **Sicurezza.** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`; CSP limitata a `'self'`;
 navigazione e nuove finestre bloccate (i link esterni si aprono nel browser). Le chiamate a Ollama partono dal main.
 
-**Packaging.** `electron-builder.yml`; icona in `build/icon.png`. Gli installer non sono firmati:
-su macOS serve la firma/notarizzazione per distribuirli senza avvisi di Gatekeeper.
+**Primo avvio su macOS.** Gli installer hanno una firma ad-hoc, non un certificato Apple: al primo
+avvio fai clic destro sull'app in Applicazioni → **Apri**, oppure *Impostazioni di Sistema → Privacy e
+sicurezza → Apri comunque*. Se macOS dice che l'app è «danneggiata» (versioni fino alla 0.1.8), nel
+Terminale: `xattr -cr /Applications/FastChat.app`.
+
+**Packaging.** `electron-builder.yml`; icona in `build/icon.png`. Su macOS firma ad-hoc (gratuita);
+Windows senza firma. Per evitare gli avvisi di Gatekeeper e SmartScreen servono un certificato Apple
+Developer (firma + notarizzazione) e uno per Windows.
 
 ## Release
 

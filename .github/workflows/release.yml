@@ -93,6 +93,16 @@ jobs:
           TARGET: ${{ matrix.name == 'macOS' && '--mac --arm64 --x64' || matrix.name == 'Windows' && '--win --x64' || '--linux --x64' }}
         run: npx electron-builder $TARGET --publish never
 
+      - name: Verifica della firma (macOS)
+        if: matrix.name == 'macOS'
+        # Un'app senza firma su Apple Silicon risulta «danneggiata»: meglio fallire qui che pubblicarla.
+        run: |
+          for app in dist/mac*/FastChat.app; do
+            echo "== $app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            codesign -dv "$app" 2>&1 | grep -E 'Signature=adhoc|Authority=' 
+          done
+
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.name }}
