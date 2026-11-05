@@ -30,8 +30,12 @@ export interface SystemInfo {
 
 // ---------------------------------------------------------------- calibrazione di num_ctx
 
-/** Quota della RAM che Ollama può usare per il modello: più alta con memoria unificata. */
-export const RAM_SHARE = { unified: 0.65, other: 0.5 } as const
+/**
+ * Quota della RAM che Ollama può usare per il modello. Su Mac Apple Silicon è circa quanto macOS
+ * lascia alla GPU per la memoria unificata; sugli altri sistemi è la stessa quota, applicata alla RAM
+ * (con una GPU dedicata piccola può essere ottimistica: il cursore resta modificabile).
+ */
+export const RAM_SHARE = { unified: 0.65, other: 0.65 } as const
 /** Byte lasciati liberi oltre a pesi e contesto (sistema operativo, altre app). */
 export const RAM_MARGIN_BYTES = 1024 ** 3
 /** Costo in memoria di un token di contesto quando il modello non lo dichiara (~modelli da 3 a 14B). */

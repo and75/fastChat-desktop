@@ -41,7 +41,9 @@ describe('memoria della conversazione suggerita dalla RAM', () => {
     expect(suggestNumCtx({ system: mac(8), modelBytes: 2.5 * GB, caps: big(262_144) })).toBe(8192)
     expect(suggestNumCtx({ system: mac(16), modelBytes: 5 * GB, caps: big(262_144) })).toBe(32768)
     expect(suggestNumCtx({ system: mac(64), modelBytes: 18 * GB, caps: big(262_144, 256 * 1024) })).toBe(65536)
+    // PC: stessa quota del 65% → (20,8 − 5 − 1) GB ÷ 128 KiB ≈ 121k → 65.536
     expect(suggestNumCtx({ system: pc(32), modelBytes: 5 * GB, caps: big(262_144) })).toBe(65536)
+    expect(suggestNumCtx({ system: pc(16), modelBytes: 5 * GB, caps: big(262_144) })).toBe(32768)
   })
 
   it('mai sopra il massimo del modello, mai sotto 2k', () => {
