@@ -38,3 +38,46 @@ export function formatMessageDate(ts: number, now: number = Date.now()): string 
 export function formatFullDate(ts: number): string {
   return full.format(new Date(ts))
 }
+
+/**
+ * Estratto leggibile di un messaggio (per il tooltip della cronologia): senza sintassi Markdown,
+ * blocchi di codice sostituiti da «[codice]», spazi compattati, tagliato a `max` caratteri
+ * su un confine di parola con «…».
+ */
+export function excerpt(text: string, max = 120): string {
+  const plain = text
+    .replace(/```[\s\S]*?(```|$)/g, ' [codice] ') // blocchi di codice (anche non chiusi, in streaming)
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // immagini → testo alternativo
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // link → testo
+    .replace(/`([^`]*)`/g, '$1') // codice in linea
+    .replace(/^\s{0,3}(#{1,6}|>+|[-*+]|\d+[.)])\s+/gm, '') // titoli, citazioni, elenchi
+    .replace(/^\s*\|?[\s:-]+\|[\s|:-]*$/gm, ' ') // righe di separazione delle tabelle
+    .replace(/\|/g, ' ')
+    .replace(/(^|[^\w*~])(\*\*|__|~~|\*|_)(\S(?:.*?\S)?)\2(?![\w*~])/g, '$1$3') // grassetto, corsivo, barrato (non dentro le parole)
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (plain.length <= max) return plain
+  const cut = plain.slice(0, max)
+  const space = cut.lastIndexOf(' ')
+  return (space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s.,;:!?-]+$/, '') + '…'
+}
+
+/**
+ * Posizioni dei pallini della cronologia, in pixel dall'alto della linea (altezza `height`).
+ * `ratios` (0–1, crescenti) è dove ogni messaggio inizia rispetto all'intera conversazione.
+ * I pallini restano proporzionali, ma due pallini distano almeno `minGap`; se non ci stanno
+ * tutti, si distribuiscono a distanza regolare su tutta l'altezza.
+ */
+export function timelinePositions(ratios: number[], height: number, minGap: number): number[] {
+  const n = ratios.length
+  if (n === 0) return []
+  if (n === 1) return [Math.min(Math.max(ratios[0], 0), 1) * height]
+  if ((n - 1) * minGap >= height) return ratios.map((_, i) => (i * height) / (n - 1))
+  const pos = ratios.map((r) => Math.min(Math.max(r, 0), 1) * height)
+  // in avanti: ogni pallino almeno minGap sotto il precedente…
+  for (let i = 1; i < n; i++) pos[i] = Math.max(pos[i], pos[i - 1] + minGap)
+  // …all'indietro: senza uscire dal fondo della linea
+  pos[n - 1] = Math.min(pos[n - 1], height)
+  for (let i = n - 2; i >= 0; i--) pos[i] = Math.min(pos[i], pos[i + 1] - minGap)
+  return pos
+}

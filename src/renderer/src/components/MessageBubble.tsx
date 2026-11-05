@@ -16,6 +16,8 @@ interface Props {
   /** Inizio della richiesta in corso (solo durante lo streaming). */
   startedAt?: number
   actions?: React.ReactNode
+  /** Identificativo per la cronologia (attributo `data-message-id`). */
+  anchorId?: string
 }
 
 function formatMeta(meta: NonNullable<Props['meta']>): string {
@@ -27,10 +29,20 @@ function formatMeta(meta: NonNullable<Props['meta']>): string {
   return parts.join(' · ')
 }
 
-export function MessageBubble({ role, content, thinking, meta, streaming, startedAt, createdAt, actions }: Props): React.JSX.Element {
+export function MessageBubble({
+  role,
+  content,
+  thinking,
+  meta,
+  streaming,
+  startedAt,
+  createdAt,
+  actions,
+  anchorId
+}: Props): React.JSX.Element {
   if (role === 'user') {
     return (
-      <div className="flex flex-col items-end gap-1" data-testid="message-user">
+      <div className="flex scroll-mt-4 flex-col items-end gap-1" data-testid="message-user" data-message-id={anchorId}>
         <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand-600 px-4 py-2 text-white">
           {content}
         </div>
@@ -49,7 +61,11 @@ export function MessageBubble({ role, content, thinking, meta, streaming, starte
   }
 
   return (
-    <div className="group flex flex-col gap-2" data-testid={streaming ? 'message-streaming' : 'message-assistant'}>
+    <div
+      className="group flex scroll-mt-4 flex-col gap-2"
+      data-testid={streaming ? 'message-streaming' : 'message-assistant'}
+      data-message-id={anchorId}
+    >
       {/* Durante lo streaming il ragionamento resta aperto finché non inizia la risposta. */}
       {thinking && <ThinkingBlock text={thinking} live={!!streaming && !content} startedAt={startedAt} />}
       <div className="max-w-full text-zinc-900 dark:text-zinc-100">

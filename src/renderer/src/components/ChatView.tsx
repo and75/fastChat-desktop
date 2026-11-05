@@ -1,7 +1,8 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { ContextMeter } from './ContextMeter'
+import { ConversationTimeline, type TimelineItem } from './ConversationTimeline'
 import { CopyAction } from './CopyButton'
 import { RegenerateIcon } from './icons'
 import { MessageBubble } from './MessageBubble'
@@ -142,6 +143,25 @@ export function ChatView(): React.JSX.Element {
     stick.current = true
   }, [conversation?.id])
 
+  // Un pallino per messaggio nella cronologia, più la risposta in arrivo.
+  const liveContent = live?.kind === 'chat' ? live.content : null
+  const timeline = useMemo<TimelineItem[]>(() => {
+    const items: TimelineItem[] = messages.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      createdAt: m.createdAt
+    }))
+    if (liveContent != null)
+      items.push({
+        id: 'live',
+        role: 'assistant',
+        content: liveContent,
+        live: true
+      })
+    return items
+  }, [messages, liveContent])
+
   if (!conversation) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-zinc-500">
@@ -162,79 +182,91 @@ export function ChatView(): React.JSX.Element {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div
-        ref={scroller}
-        className="min-h-0 flex-1 overflow-y-auto"
-        onScroll={(e) => {
-          const el = e.currentTarget
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-        }}
-      >
-        <div className="mx-auto flex max-w-3xl flex-col gap-10 px-4 py-6" data-testid="messages">
-          {messages.length === 0 && !live && (
-            <p className="text-center text-sm text-zinc-500">
-              Scrivi il primo messaggio. Il brief nel pannello a destra viene inviato come system prompt.
-            </p>
-          )}
-          {messages.map((m) => (
-            <Fragment key={m.id}>
+      <div className="relative flex min-h-0 flex-1">
+        <div
+          ref={scroller}
+          className="@container min-h-0 flex-1 overflow-y-auto"
+          onScroll={(e) => {
+            const el = e.currentTarget
+            stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+          }}
+        >
+          {/* Nelle colonne strette i messaggi lasciano spazio a destra per la cronologia. */}
+          <div className="mx-auto flex max-w-3xl flex-col gap-10 px-4 py-6 @max-[52rem]:pr-10" data-testid="messages">
+            {messages.length === 0 && !live && (
+              <p className="text-center text-sm text-zinc-500">
+                Scrivi il primo messaggio. Il brief nel pannello a destra viene inviato come system prompt.
+              </p>
+            )}
+            {messages.map((m) => (
+              <Fragment key={m.id}>
+                <MessageBubble
+                  anchorId={m.id}
+                  role={m.role}
+                  content={m.content}
+                  thinking={m.thinking}
+                  createdAt={m.createdAt}
+                  meta={m.role === 'assistant' ? m : undefined}
+                  actions={
+                    m.role === 'assistant' ? (
+                      <>
+                        {canRegenerate && m === last && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 hover:text-zinc-700 dark:hover:text-zinc-200"
+                            onClick={() => void regenerate()}
+                          >
+                            <RegenerateIcon size={13} />
+                            Rigenera
+                          </button>
+                        )}
+                        {m.content && <CopyAction text={m.content} />}
+                      </>
+                    ) : undefined
+                  }
+                />
+                {plans
+                  .filter((p) => p.userMessageId === m.id)
+                  .map((p) =>
+                    m === last && (p.status === 'proposed' || p.status === 'approved') ? (
+                      <PlanChecklist key={p.id} plan={p} busy={!!live} />
+                    ) : (
+                      <PlanSummary key={p.id} plan={p} />
+                    )
+                  )}
+              </Fragment>
+            ))}
+            {live?.kind === 'plan' && <PlanLoading thinking={live.thinking} content={live.content} startedAt={live.startedAt} />}
+            {live?.kind === 'chat' && (
               <MessageBubble
-                role={m.role}
-                content={m.content}
-                thinking={m.thinking}
-                createdAt={m.createdAt}
-                meta={m.role === 'assistant' ? m : undefined}
-                actions={
-                  m.role === 'assistant' ? (
-                    <>
-                      {canRegenerate && m === last && (
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 hover:text-zinc-700 dark:hover:text-zinc-200"
-                          onClick={() => void regenerate()}
-                        >
-                          <RegenerateIcon size={13} />
-                          Rigenera
-                        </button>
-                      )}
-                      {m.content && <CopyAction text={m.content} />}
-                    </>
-                  ) : undefined
-                }
+                anchorId="live"
+                role="assistant"
+                content={live.content}
+                thinking={live.thinking}
+                streaming
+                startedAt={live.startedAt}
               />
-              {plans
-                .filter((p) => p.userMessageId === m.id)
-                .map((p) =>
-                  m === last && (p.status === 'proposed' || p.status === 'approved') ? (
-                    <PlanChecklist key={p.id} plan={p} busy={!!live} />
-                  ) : (
-                    <PlanSummary key={p.id} plan={p} />
-                  )
+            )}
+            {error && (
+              <div
+                role="alert"
+                data-testid="chat-error"
+                className="flex items-center gap-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
+              >
+                <span className="flex-1">{error}</span>
+                {last?.role === 'user' && (
+                  <button type="button" className="font-medium underline" onClick={() => void retry()}>
+                    Riprova
+                  </button>
                 )}
-            </Fragment>
-          ))}
-          {live?.kind === 'plan' && <PlanLoading thinking={live.thinking} content={live.content} startedAt={live.startedAt} />}
-          {live?.kind === 'chat' && (
-            <MessageBubble role="assistant" content={live.content} thinking={live.thinking} streaming startedAt={live.startedAt} />
-          )}
-          {error && (
-            <div
-              role="alert"
-              data-testid="chat-error"
-              className="flex items-center gap-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
-            >
-              <span className="flex-1">{error}</span>
-              {last?.role === 'user' && (
-                <button type="button" className="font-medium underline" onClick={() => void retry()}>
-                  Riprova
+                <button type="button" aria-label="Chiudi" onClick={clearError}>
+                  ✕
                 </button>
-              )}
-              <button type="button" aria-label="Chiudi" onClick={clearError}>
-                ✕
-              </button>
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
+        <ConversationTimeline key={conversation.id} items={timeline} scroller={scroller} />
       </div>
       <Composer disabled={!conversation.model} streaming={!!live} />
     </div>

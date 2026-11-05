@@ -849,6 +849,64 @@ try {
     await items.first().getByRole('button').first().click()
   })
 
+  await step('cronologia: un pallino per messaggio, estratto al passaggio del mouse, clic per saltare', async () => {
+    await page.getByTestId('new-conversation').click()
+    await page.locator('header h1', { hasText: 'Nuova conversazione' }).waitFor()
+    const timeline = page.getByRole('navigation', { name: 'Cronologia della conversazione' })
+    const dots = timeline.getByTestId('timeline-dot')
+    assert.equal(await dots.count(), 0)
+
+    const composer = page.getByRole('textbox', { name: 'Messaggio' })
+    const lines = Array.from({ length: 25 }, (_, i) => `riga ${i + 1} del testo`).join('\n')
+    for (let n = 1; n <= 4; n++) {
+      await composer.fill(`Domanda ${n} sul **tema**\n${lines}`)
+      await composer.press('Enter')
+      await waitUntil(async () => (await page.getByTestId('message-assistant').count()) === n)
+    }
+    await dots.nth(7).waitFor()
+    assert.equal(await dots.count(), 8)
+    assert.deepEqual(
+      await dots.evaluateAll((els) => els.map((el) => el.dataset.role)),
+      ['user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant']
+    )
+    // la linea prende tutta l'altezza della colonna; pallini in ordine, a distanze non regolari
+    const railBox = await timeline.boundingBox()
+    const area = await page.getByTestId('messages').locator('..').boundingBox()
+    assert.ok(railBox.height > area.height - 40, `linea alta ${railBox.height} su ${area.height}`)
+    const ys = await dots.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top))
+    for (let i = 1; i < ys.length; i++) assert.ok(ys[i] - ys[i - 1] >= 13, `pallini ${i - 1}/${i} troppo vicini`)
+    const gaps = ys.slice(1).map((y, i) => y - ys[i])
+    assert.ok(Math.max(...gaps) - Math.min(...gaps) > 20, `distanze: ${gaps.join(', ')}`)
+
+    // in fondo è evidenziato l'ultimo messaggio
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="timeline-dot"]')[7]?.getAttribute('aria-current') === 'true')
+
+    // estratto nel tooltip, senza Markdown
+    await dots.nth(2).hover()
+    const tip = page.getByTestId('timeline-tooltip')
+    await tip.waitFor()
+    assert.match(await tip.textContent(), /^Tu · Oggi, \d{2}:\d{2}Domanda 2 sul tema riga 1 del testo/)
+    await dots.nth(3).hover()
+    assert.match(await tip.textContent(), /^Assistente · Oggi, \d{2}:\d{2}Ciao mondo!$/)
+
+    // clic: il messaggio arriva in cima all'area e il suo pallino diventa quello attivo
+    const scroller = page.getByTestId('messages').locator('..')
+    const target = page.getByTestId('message-user').filter({ hasText: 'Domanda 2' })
+    await dots.nth(2).click()
+    await waitUntil(async () => {
+      const top = (await target.boundingBox()).y - (await scroller.boundingBox()).y
+      return top >= 0 && top < 40
+    })
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="timeline-dot"]')[2]?.getAttribute('aria-current') === 'true')
+
+    // da tastiera: Invio su un pallino
+    await dots.nth(0).focus()
+    await page.keyboard.press('Enter')
+    await waitUntil(async () => (await scroller.evaluate((el) => el.scrollTop)) < 30)
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="timeline-dot"]')[0]?.getAttribute('aria-current') === 'true')
+    await page.screenshot({ path: join(root, 'test-results', 'e2e-timeline.png') })
+  })
+
   await step('nessun errore JavaScript nel renderer (fase 5)', async () => {
     assert.deepEqual(errors, [])
   })

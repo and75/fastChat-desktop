@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatElapsed, formatFullDate, formatMessageDate } from '../src/shared/format'
+import { excerpt, formatElapsed, formatFullDate, formatMessageDate, timelinePositions } from '../src/shared/format'
 
 describe('formatElapsed', () => {
   it('decimi sotto i 10 secondi, poi secondi interi, poi minuti', () => {
@@ -39,5 +39,46 @@ describe('formatMessageDate', () => {
 
   it('data completa per il tooltip', () => {
     expect(formatFullDate(at(2026, 11, 3, 14, 32))).toMatch(/martedì 3 novembre 2026.*14:32/)
+  })
+})
+
+describe('excerpt', () => {
+  it('toglie la sintassi Markdown e sostituisce i blocchi di codice', () => {
+    expect(excerpt('# Titolo\n\nUn **grassetto**, un _corsivo_ e `codice`.')).toBe('Titolo Un grassetto, un corsivo e codice.')
+    expect(excerpt('Ecco:\n\n```ts\nconst x = 1\n```\n\nFatto.')).toBe('Ecco: [codice] Fatto.')
+    expect(excerpt('- uno\n- due\n1. tre\n> citazione')).toBe('uno due tre citazione')
+    expect(excerpt('Vedi [la guida](https://x.y) e ![logo](a.png)')).toBe('Vedi la guida e logo')
+    expect(excerpt('| a | b |\n|---|---|\n| 1 | 2 |')).toBe('a b 1 2')
+    expect(excerpt('In corso:\n```py\nprint(1)')).toBe('In corso: [codice]')
+    expect(excerpt('snake_case_name e 2 * 3 * 4')).toBe('snake_case_name e 2 * 3 * 4')
+  })
+
+  it('taglia sul confine di parola con i puntini', () => {
+    const long = 'parola '.repeat(40)
+    const out = excerpt(long, 50)
+    expect(out.length).toBeLessThanOrEqual(51)
+    expect(out.endsWith('parola…')).toBe(true)
+    expect(excerpt('breve', 50)).toBe('breve')
+    expect(excerpt('   ')).toBe('')
+  })
+})
+
+describe('timelinePositions', () => {
+  it('proporzionali quando i messaggi sono distanti', () => {
+    expect(timelinePositions([0, 0.5, 0.9], 200, 10)).toEqual([0, 100, 180])
+  })
+
+  it('distanza minima tra pallini vicini, senza uscire dalla linea', () => {
+    expect(timelinePositions([0, 0.01, 0.02, 0.5], 200, 10)).toEqual([0, 10, 20, 100])
+    expect(timelinePositions([0.9, 0.95, 1], 100, 10)).toEqual([80, 90, 100])
+  })
+
+  it('troppi pallini: distanza regolare su tutta l\'altezza', () => {
+    expect(timelinePositions([0, 0.1, 0.2, 0.3, 0.4], 20, 10)).toEqual([0, 5, 10, 15, 20])
+  })
+
+  it('casi limite', () => {
+    expect(timelinePositions([], 100, 10)).toEqual([])
+    expect(timelinePositions([0.3], 100, 10)).toEqual([30])
   })
 })
