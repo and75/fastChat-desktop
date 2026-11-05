@@ -147,13 +147,7 @@ describe('plan mode: parsing e normalizzazione', () => {
 })
 
 describe('uso del contesto', () => {
-  const base = {
-    brief: brief({}),
-    numCtx: null,
-    modelNumCtx: null,
-    modelMaxCtx: null,
-    fallbackNumCtx: 4096
-  }
+  const base = { brief: brief({}), numCtx: 4096 }
   const u = (content: string) => ({ role: 'user' as const, content })
 
   it('senza risposte: stima su brief + messaggi, memoria di riserva', () => {
@@ -177,10 +171,8 @@ describe('uso del contesto', () => {
     expect(r.used).toBe(1004 + 5)
   })
 
-  it('memoria: scelta della conversazione, poi predefinito del modello, sempre entro il massimo', () => {
-    expect(computeContextUsage({ ...base, messages: [], numCtx: 2048, modelNumCtx: 8192 }).total).toBe(2048)
-    expect(computeContextUsage({ ...base, messages: [], modelNumCtx: 8192 }).total).toBe(8192)
-    expect(computeContextUsage({ ...base, messages: [], numCtx: 65536, modelMaxCtx: 32768 }).total).toBe(32768)
+  it('la memoria totale è quella effettiva passata (vedi resolveNumCtx)', () => {
+    expect(computeContextUsage({ ...base, messages: [], numCtx: 2048 }).total).toBe(2048)
   })
 
   it('oltre il limite il rapporto supera 1', () => {

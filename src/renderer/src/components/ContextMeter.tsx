@@ -1,5 +1,5 @@
 import { computeContextUsage, formatTokensK } from '@shared/prompt'
-import { OLLAMA_DEFAULTS } from '@shared/types'
+import { resolveNumCtx } from '@shared/settings'
 import { useChat } from '../store/useChat'
 import { useModels } from '../store/useModels'
 
@@ -13,14 +13,8 @@ export function ContextMeter(): React.JSX.Element | null {
 
   // Durante lo streaming conta anche la risposta che sta arrivando.
   const all = live?.kind === 'chat' && live.content ? [...messages, { role: 'assistant' as const, content: live.content }] : messages
-  const usage = computeContextUsage({
-    brief: conversation,
-    messages: all,
-    numCtx: conversation.numCtx,
-    modelNumCtx: caps?.defaults.numCtx ?? null,
-    modelMaxCtx: caps?.contextLength ?? null,
-    fallbackNumCtx: OLLAMA_DEFAULTS.numCtx
-  })
+  // Stessa memoria che il main invia a Ollama come num_ctx.
+  const usage = computeContextUsage({ brief: conversation, messages: all, numCtx: resolveNumCtx(conversation, caps) })
   const pct = Math.round(usage.ratio * 100)
   const over = usage.ratio > 1
   const fmt = (n: number): string => n.toLocaleString('it-IT', { useGrouping: 'always' })

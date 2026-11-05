@@ -8,6 +8,7 @@ import {
   PLAN_SCHEMA,
   selectHistory
 } from '@shared/prompt'
+import { resolveNumCtx, resolveSettings } from '@shared/settings'
 import { DEFAULT_TITLE, type Conversation, type ModelCapabilities, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
 import type { Db } from './db/client'
 import {
@@ -51,12 +52,15 @@ type Mode =
   /** Proposta di un piano per il messaggio utente indicato. */
   | { kind: 'plan'; userMessageId: string }
 
-/** Opzioni del modello dalla conversazione: solo i valori impostati. */
-export function buildOptions(conv: Conversation): ChatOptions {
-  const options: ChatOptions = { temperature: conv.temperature }
-  if (conv.topP != null) options.top_p = conv.topP
-  if (conv.numCtx != null) options.num_ctx = conv.numCtx
-  if (conv.seed != null) options.seed = conv.seed
+/**
+ * Opzioni del modello: i valori effettivi (scelti, consigliati dal modello o predefiniti di Ollama),
+ * sempre espliciti, così Ollama usa esattamente ciò che l'app mostra e su cui dimensiona lo storico.
+ * Il seed resta assente quando è "casuale".
+ */
+export function buildOptions(conv: Conversation, caps: ModelCapabilities | null = null): ChatOptions {
+  const s = resolveSettings(conv, caps)
+  const options: ChatOptions = { temperature: s.temperature, top_p: s.topP, num_ctx: s.numCtx }
+  if (s.seed != null) options.seed = s.seed
   return options
 }
 
@@ -67,7 +71,7 @@ export function buildChatMessages(
   conv: Conversation,
   history: Message[],
   system: string = buildSystemPrompt(conv),
-  maxTokens: number = conv.numCtx ?? DEFAULT_HISTORY_LIMITS.maxTokens
+  maxTokens: number = resolveNumCtx(conv, null)
 ): ChatMessage[] {
   const picked = selectHistory(history, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens })
   const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
@@ -97,20 +101,6 @@ export function cleanTitle(raw: string): string {
 export function fallbackTitle(question: string): string {
   const line = question.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
   return line.length > 50 ? line.slice(0, 50).replace(/\s+\S*$/, '') + '…' : line || DEFAULT_TITLE
-}
-
-/**
- * Adatta la conversazione ai limiti del modello: la memoria (num_ctx) non può superare il contesto
- * massimo del modello (può succedere dopo un cambio di modello).
- */
-export function withModelLimits(conv: Conversation, caps: ModelCapabilities | null): Conversation {
-  const max = caps?.contextLength
-  return conv.numCtx != null && max && conv.numCtx > max ? { ...conv, numCtx: max } : conv
-}
-
-/** Token di contesto su cui dimensionare lo storico: quello scelto, altrimenti il predefinito del modello. */
-export function contextBudget(conv: Conversation, caps: ModelCapabilities | null): number {
-  return conv.numCtx ?? caps?.defaults.numCtx ?? DEFAULT_HISTORY_LIMITS.maxTokens
 }
 
 function systemFor(conv: Conversation, mode: Mode): string {
@@ -154,12 +144,6 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
     }
   }
 
-  /** Il parametro `think` va inviato solo ai modelli che lo supportano, altrimenti Ollama risponde con un errore. */
-  async function thinkParam(conv: Conversation): Promise<boolean | undefined> {
-    const caps = await capsOf(conv)
-    return caps?.thinking ? conv.think : undefined
-  }
-
   /**
    * Dopo il primo scambio, se la conversazione ha ancora il titolo predefinito, ne genera uno con il modello.
    * Se il modello non risponde usa l'inizio della domanda. Non sovrascrive mai un titolo scelto dall'utente.
@@ -174,6 +158,9 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
 
     let title = ''
     try {
+      const caps = await capsOf(conv)
+      // Stesso num_ctx della conversazione: con un valore diverso Ollama ricaricherebbe il modello
+      // per il titolo e di nuovo alla domanda successiva.
       const request: ChatRequest = {
         model: conv.model,
         messages: [
@@ -183,9 +170,9 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
             content: `Domanda:\n${question.content.slice(0, 1500)}\n\nRisposta:\n${answer.content.slice(0, 1500)}`
           }
         ],
-        options: { temperature: 0.3, num_predict: 32 }
+        options: { ...buildOptions(conv, caps), temperature: 0.3, num_predict: 32 }
       }
-      if ((await thinkParam(conv)) !== undefined) request.think = false
+      if (caps?.thinking) request.think = false
       title = cleanTitle((await ollama.chatStream(request, {})).content)
     } catch {
       /* si usa il titolo di riserva */
@@ -240,19 +227,18 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
     return out
   }
 
-  async function startStream(target: StreamTarget, original: Conversation, mode: Mode): Promise<string> {
+  async function startStream(target: StreamTarget, conv: Conversation, mode: Mode): Promise<string> {
     const streamId = randomUUID()
     const controller = new AbortController()
-    const caps = await capsOf(original)
-    const conv = withModelLimits(original, caps)
+    const caps = await capsOf(conv)
     const history = await listMessages(db, conv.id)
     const request: ChatRequest = {
       model: conv.model,
-      messages: buildChatMessages(conv, history, systemFor(conv, mode), contextBudget(conv, caps)),
-      options: buildOptions(conv)
+      messages: buildChatMessages(conv, history, systemFor(conv, mode), resolveNumCtx(conv, caps)),
+      options: buildOptions(conv, caps)
     }
     if (mode.kind === 'plan') request.format = PLAN_SCHEMA as unknown as Record<string, unknown>
-    if (caps?.thinking) request.think = conv.think
+    if (caps?.thinking) request.think = resolveSettings(conv, caps).think
 
     const kind: StreamKind = mode.kind === 'plan' ? 'plan' : 'chat'
     const base = { streamId, conversationId: conv.id, kind }

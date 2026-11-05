@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { OLLAMA_DEFAULTS, type Conversation, type ConversationPatch } from '@shared/types'
+import { autoSource, resolveNumCtx, resolveTopP } from '@shared/settings'
+import type { Conversation, ConversationPatch } from '@shared/types'
 import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
 import { registerPendingSave } from '../store/pendingSaves'
@@ -313,6 +314,9 @@ export function contextSteps(max: number): number[] {
 /** Massimo usato se il modello non dichiara la lunghezza del contesto. */
 const FALLBACK_MAX_CTX = 32768
 
+/** Dicitura accanto a un valore automatico. I valori vengono da resolve* (gli stessi inviati a Ollama). */
+const SOURCE_LABEL = { model: 'consigliato dal modello', ollama: 'predefinito di Ollama' } as const
+
 /** Impostazioni del modello per la conversazione: temperatura, ragionamento e parametri avanzati. */
 export function ModelSettings({ conversation }: { conversation: Conversation }): React.JSX.Element {
   const save = useDebouncedPatch(conversation.id)
@@ -369,8 +373,8 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
           technical="top_p"
           description="Quante parole alternative il modello considera a ogni passo. Più a sinistra: risposte più prevedibili e ripetitive; più a destra: più varie."
           value={conversation.topP}
-          autoValue={caps?.defaults.topP ?? OLLAMA_DEFAULTS.topP}
-          autoSource={caps?.defaults.topP != null ? 'consigliato dal modello' : 'predefinito di Ollama'}
+          autoValue={resolveTopP({ topP: null }, caps)}
+          autoSource={SOURCE_LABEL[autoSource(caps, 'topP')]}
           min={0.05}
           max={1}
           step={0.05}
@@ -384,9 +388,9 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
             'Quanto testo il modello tiene a mente, in token (circa ¾ di parola ciascuno). Più a destra: ricorda messaggi più vecchi, ma usa più memoria ed è più lento.' +
             (caps?.contextLength ? '' : ' Il massimo di questo modello non è noto.')
           }
-          value={conversation.numCtx}
-          autoValue={caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx}
-          autoSource={caps?.defaults.numCtx != null ? 'consigliato dal modello' : 'predefinito di Ollama'}
+          value={conversation.numCtx == null ? null : resolveNumCtx(conversation, caps)}
+          autoValue={resolveNumCtx({ numCtx: null }, caps)}
+          autoSource={SOURCE_LABEL[autoSource(caps, 'numCtx')]}
           steps={ctxSteps}
           format={(v) => `${fmt(v)} token`}
           extra={approxWords}

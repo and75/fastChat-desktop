@@ -4,10 +4,8 @@ import {
   buildChatMessages,
   buildOptions,
   cleanTitle,
-  contextBudget,
   createChatService,
-  fallbackTitle,
-  withModelLimits
+  fallbackTitle
 } from '../src/main/chat'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
 import { createConversation, getConversation, getPlan, listMessages, listPlans, updateConversation, updatePlan } from '../src/main/db/repo'
@@ -72,8 +70,13 @@ describe('buildOptions / buildChatMessages', () => {
     constraints: 'Solo italiano'
   } as Conversation
 
-  it('opzioni: solo i valori impostati', () => {
-    expect(buildOptions(conv)).toEqual({ temperature: 0.3, num_ctx: 4096, seed: 7 })
+  it('opzioni: valori effettivi sempre espliciti, seed solo se impostato', () => {
+    expect(buildOptions(conv)).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, seed: 7 })
+    expect(buildOptions({ ...conv, seed: null, numCtx: null })).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096 })
+    const caps = { capabilities: [], thinking: false, contextLength: 8192, defaults: { temperature: 0.6, topP: 0.95, numCtx: 2048 } }
+    // in automatico: consigliati dal modello; la scelta dell'utente non supera il massimo del modello
+    expect(buildOptions({ ...conv, seed: null, numCtx: null, topP: null }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 2048 })
+    expect(buildOptions({ ...conv, seed: null, numCtx: 65536 }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 8192 })
   })
 
   it('brief come primo messaggio system, poi lo storico', () => {
@@ -107,7 +110,8 @@ describe('chat service', () => {
       { role: 'system', content: '# Vincoli\nRispondi in rima' },
       { role: 'user', content: 'ciao' }
     ])
-    expect(body.options).toEqual({ temperature: 1.1 })
+    // nessuna scelta esplicita: predefiniti di Ollama, ma sempre inviati (= ciò che l'interfaccia mostra)
+    expect(body.options).toEqual({ temperature: 1.1, top_p: 0.9, num_ctx: 4096 })
     // llama3.2 non supporta il ragionamento: il parametro think non va inviato
     expect(body).not.toHaveProperty('think')
 
@@ -344,7 +348,7 @@ describe('titolo automatico', () => {
       options: Record<string, unknown>
     }
     expect(req.think).toBe(false)
-    expect(req.options).toEqual({ temperature: 0.3, num_predict: 32 })
+    expect(req.options).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, num_predict: 32 })
     expect(req.messages[1].content).toContain('Parlami di Roma')
     expect((await getConversation(h.db, conv.id))?.title).toBe('Ciao mondo!')
     expect(updated.map((c) => c.title)).toEqual(['Ciao mondo!'])
@@ -388,31 +392,20 @@ describe('titolo automatico', () => {
 })
 
 describe('limiti del modello', () => {
-  const caps = {
-    capabilities: [],
-    thinking: false,
-    contextLength: 4096,
-    defaults: { temperature: null, topP: null, numCtx: 2048 }
-  }
-  const conv = { numCtx: null } as Conversation
-
-  it('withModelLimits: num_ctx oltre il massimo del modello viene ridotto', () => {
-    expect(withModelLimits({ ...conv, numCtx: 32768 }, caps).numCtx).toBe(4096)
-    expect(withModelLimits({ ...conv, numCtx: 1024 }, caps).numCtx).toBe(1024)
-    expect(withModelLimits(conv, caps).numCtx).toBeNull()
-    expect(withModelLimits({ ...conv, numCtx: 32768 }, null).numCtx).toBe(32768)
-  })
-
-  it('contextBudget: scelta dell\'utente, poi predefinito del modello, poi 8192', () => {
-    expect(contextBudget({ ...conv, numCtx: 3000 }, caps)).toBe(3000)
-    expect(contextBudget(conv, caps)).toBe(2048)
-    expect(contextBudget(conv, null)).toBe(8192)
-  })
-
   it('nella richiesta a Ollama num_ctx non supera il massimo del modello', async () => {
     const c = await createConversation(h.db, { model: 'small', numCtx: 65536 })
     const chat = service()
     await chat.wait((await chat.send(target, c.id, 'ciao')).streamId)
     expect(lastChatBody().options.num_ctx).toBe(4096)
+  })
+
+  it('in automatico num_ctx è quello consigliato dal modello (Modelfile), e lo storico è tagliato su quello', async () => {
+    const c = await createConversation(h.db, { model: 'small' })
+    const chat = service()
+    await chat.wait((await chat.send(target, c.id, 'ciao')).streamId)
+    expect(lastChatBody().options.num_ctx).toBe(2048)
+    // anche la richiesta del titolo usa lo stesso num_ctx: Ollama non ricarica il modello
+    const title = fake.requests.filter((r) => r.path === '/api/chat' && isTitleRequest(r.body)).at(-1)?.body as { options: Record<string, unknown> }
+    expect(title.options).toMatchObject({ num_ctx: 2048, num_predict: 32, temperature: 0.3 })
   })
 })

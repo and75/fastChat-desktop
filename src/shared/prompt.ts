@@ -1,6 +1,6 @@
 // Funzioni pure per comporre i prompt. Condivise: il main le usa per le chiamate a Ollama,
 // il renderer per l'anteprima del system prompt nel BriefPanel.
-import type { Brief, PlanStep } from './types'
+import { OLLAMA_DEFAULTS, type Brief, type PlanStep } from './types'
 
 const SECTIONS: Array<[keyof Brief, string]> = [
   ['role', 'Ruolo'],
@@ -36,7 +36,8 @@ export interface HistoryLimits {
 
 export const DEFAULT_HISTORY_LIMITS: HistoryLimits = {
   maxMessages: 50,
-  maxTokens: 8192,
+  // Valore di riserva; in pratica maxTokens è sempre la memoria effettiva della conversazione (resolveNumCtx).
+  maxTokens: OLLAMA_DEFAULTS.numCtx,
   reserveTokens: 1024
 }
 
@@ -183,14 +184,8 @@ export interface ContextUsage {
 export interface ContextUsageInput {
   brief: Brief
   messages: Array<{ role: 'user' | 'assistant'; content: string; promptEvalCount?: number | null; evalCount?: number | null }>
-  /** Memoria scelta per la conversazione (num_ctx), null = automatica. */
-  numCtx: number | null
-  /** Predefinito del modello, se noto. */
-  modelNumCtx: number | null
-  /** Contesto massimo del modello, se noto. */
-  modelMaxCtx: number | null
-  /** Usato quando né la conversazione né il modello indicano la memoria. */
-  fallbackNumCtx: number
+  /** Memoria effettiva della conversazione (num_ctx inviato a Ollama): vedi resolveNumCtx. */
+  numCtx: number
 }
 
 /**
@@ -199,8 +194,7 @@ export interface ContextUsageInput {
  * messaggi arrivati dopo; altrimenti si stima tutto (brief + storico) con ~4 caratteri per token.
  */
 export function computeContextUsage(input: ContextUsageInput): ContextUsage {
-  let total = input.numCtx ?? input.modelNumCtx ?? input.fallbackNumCtx
-  if (input.modelMaxCtx && total > input.modelMaxCtx) total = input.modelMaxCtx
+  const total = input.numCtx
 
   const system = buildSystemPrompt(input.brief)
   const estimateAll = (system ? estimateTokens(system) : 0) + input.messages.reduce((n, m) => n + estimateTokens(m.content), 0)

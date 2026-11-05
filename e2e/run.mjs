@@ -433,7 +433,7 @@ try {
     assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, num_ctx: 32768, seed: 7 })
   })
 
-  await step('cursore della memoria: "↺ Automatico" toglie il valore e num_ctx non viene più inviato', async () => {
+  await step('cursore della memoria: "↺ Automatico" toglie il valore; a Ollama va il consigliato dal modello', async () => {
     const settings = page.getByTestId('model-settings')
     await settings.getByRole('button', { name: 'Torna al valore automatico: Memoria della conversazione' }).click()
     await settings.getByTestId('num_ctx-value').filter({ hasText: 'Automatico' }).waitFor()
@@ -447,7 +447,8 @@ try {
     await composer.press('Enter')
     await page.getByTestId('message-assistant').nth(1).waitFor()
     assert.equal(lastChat().think, false)
-    assert.equal('num_ctx' in lastChat().options, false)
+    // thinker:8b consiglia num_ctx 4096 nel Modelfile: in automatico è quello che si invia (e che il cursore mostra)
+    assert.deepEqual(lastChat().options, { temperature: 1.2, top_p: 0.9, num_ctx: 4096, seed: 7 })
     assert.equal(await page.getByTestId('message-assistant').nth(1).getByTestId('thinking-block').count(), 0)
   })
 
