@@ -289,8 +289,23 @@ try {
     await waiting.waitFor()
     assert.match(await waiting.textContent(), /^Il modello sta elaborando·\d,\d s$/)
     assert.equal(await waiting.locator('.loader-dot').count(), 3)
-    const anim = await waiting.locator('.loader-dot').first().evaluate((el) => getComputedStyle(el).animationName)
-    assert.equal(anim, 'loader-dot')
+    // l'animazione gira davvero: l'opacità del primo punto cambia nel tempo
+    const dot = waiting.locator('.loader-dot').first()
+    const sampleOpacity = async () => {
+      const values = new Set()
+      for (let i = 0; i < 8; i++) {
+        values.add(await dot.evaluate((el) => getComputedStyle(el).opacity))
+        await page.waitForTimeout(90)
+      }
+      return values.size
+    }
+    assert.equal(await dot.evaluate((el) => getComputedStyle(el).animationName), 'loader-dot')
+    assert.ok((await sampleOpacity()) > 2, 'i punti devono essere animati')
+    // con «riduci movimento» pulsano solo in trasparenza, senza spostarsi, ma restano animati
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    assert.equal(await dot.evaluate((el) => getComputedStyle(el).animationName), 'loader-fade')
+    assert.ok((await sampleOpacity()) > 2, 'anche con «riduci movimento» i punti devono pulsare')
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
     // il tempo avanza
     const seconds = async () => Number((await waiting.getByTestId('elapsed').textContent()).replace(' s', '').replace(',', '.'))
     const first = await seconds()

@@ -66,10 +66,23 @@ body,
     transform: translateY(-3px);
   }
 }
+/*
+ * Con «riduci movimento» i punti non saltano ma pulsano in trasparenza: niente spostamenti,
+ * però si vede che l'app sta lavorando (le linee guida ammettono le variazioni di opacità).
+ */
+@keyframes loader-fade {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .loader-dot {
-    animation: none;
-    opacity: 0.6;
+    animation-name: loader-fade;
   }
 }
 
