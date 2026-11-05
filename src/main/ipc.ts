@@ -10,6 +10,7 @@ import {
   type Result
 } from '@shared/types'
 import { normalizeSteps } from '@shared/prompt'
+import { calibrationPatch, type CalibrateDeps } from './calibrate'
 import { createChatService } from './chat'
 import type { Db } from './db/client'
 import {
@@ -31,10 +32,12 @@ import {
 } from './db/repo'
 import { suggestedFileName, toJson, toMarkdown, type ExportFormat } from './export'
 import { createOllamaClient, OllamaError, type OllamaClient } from './ollama'
+import { systemInfo } from './system'
 
 export interface IpcDeps {
   db: Db
   ollama: OllamaClient
+  getOllamaUrl(): string
   /** Aggiorna l'URL di Ollama usato dal client (tenuto in memoria nel main). */
   setOllamaUrl(url: string): void
 }
@@ -75,8 +78,9 @@ const requireId = (id: unknown): string => {
   return id
 }
 
-export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
+export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps): void {
   const watched = new WeakSet<WebContents>()
+  const calibrate: CalibrateDeps = { ollama, system: () => systemInfo(getOllamaUrl()) }
   const chat = createChatService({
     db,
     ollama,
@@ -103,6 +107,7 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
   handle(IPC.modelsList, () => ollama.listModels())
   handle(IPC.modelsCapabilities, (_e, name: string) => ollama.showModel(requireId(name)))
   handle(IPC.modelsCheck, (_e, url: string) => createOllamaClient(() => validOllamaUrl(url)).listModels())
+  handle(IPC.systemInfo, () => systemInfo(getOllamaUrl()))
 
   // ---- impostazioni
   // ---- finestra (agisce sulla finestra che ha fatto la richiesta)
@@ -142,8 +147,11 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
   handle(IPC.conversationsList, (_e, query?: ConversationListQuery) => listConversations(db, query ?? {}))
 
   handle(IPC.conversationsGet, async (_e, id: string): Promise<ConversationDetail> => {
-    const conversation = await getConversation(db, requireId(id))
+    let conversation = await getConversation(db, requireId(id))
     if (!conversation) throw new Error('Conversazione non trovata')
+    // Conversazioni non ancora calibrate (versioni precedenti, o Ollama assente alla creazione).
+    const fill = await calibrationPatch(calibrate, conversation.model, conversation, true)
+    if (Object.keys(fill).length) conversation = await updateConversation(db, conversation.id, fill)
     return {
       conversation,
       messages: await listMessages(db, conversation.id),
@@ -164,10 +172,25 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
 
   handle(IPC.conversationsCreate, async (_e, fromTemplateId?: string) => {
     const model = await initialModel()
-    if (!fromTemplateId) return createConversation(db, { model })
-    const template = await getTemplate(db, requireId(fromTemplateId))
-    if (!template) throw new Error('Template non trovato')
-    return createConversation(db, conversationFromTemplate(template, model))
+    let init: ConversationPatch = { model }
+    if (fromTemplateId) {
+      const template = await getTemplate(db, requireId(fromTemplateId))
+      if (!template) throw new Error('Template non trovato')
+      init = conversationFromTemplate(template, model)
+    }
+    // I parametri partono dai valori suggeriti per il modello; il template può fissarne alcuni (temperatura).
+    const conv = await createConversation(db, init)
+    const fill = await calibrationPatch(calibrate, conv.model, { ...conv, temperature: init.temperature ?? null }, true)
+    return Object.keys(fill).length ? updateConversation(db, conv.id, fill) : conv
+  })
+
+  /** Riporta temperatura, top_p e num_ctx ai valori suggeriti per il modello e la macchina. */
+  handle(IPC.conversationsCalibrate, async (_e, id: string) => {
+    const conv = await getConversation(db, requireId(id))
+    if (!conv) throw new Error('Conversazione non trovata')
+    const fill = await calibrationPatch(calibrate, conv.model, conv, false)
+    if (!Object.keys(fill).length) throw new Error('Ollama non risponde: impossibile calcolare i valori suggeriti')
+    return updateConversation(db, conv.id, fill)
   })
 
   handle(IPC.conversationsExport, async (e, id: string, format: ExportFormat): Promise<string | null> => {
@@ -200,9 +223,19 @@ export function registerIpc({ db, ollama, setOllamaUrl }: IpcDeps): void {
     return filePath
   })
 
-  handle(IPC.conversationsUpdate, (_e, id: string, patch: ConversationPatch) =>
-    updateConversation(db, requireId(id), patch ?? {})
-  )
+  handle(IPC.conversationsUpdate, async (_e, id: string, patch: ConversationPatch) => {
+    const convId = requireId(id)
+    patch = patch ?? {}
+    // Cambio modello: i parametri ripartono dai valori suggeriti per il nuovo modello (salvo quelli nel patch).
+    if (typeof patch.model === 'string') {
+      const current = await getConversation(db, convId)
+      if (current && current.model !== patch.model) {
+        const fill = await calibrationPatch(calibrate, patch.model, {}, false)
+        patch = { ...fill, ...patch }
+      }
+    }
+    return updateConversation(db, convId, patch)
+  })
 
   handle(IPC.conversationsRemove, async (_e, id: string) => {
     const convId = requireId(id)

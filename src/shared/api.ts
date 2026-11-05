@@ -13,6 +13,7 @@ import type {
   SendResult,
   StreamEvent
 } from './types'
+import type { SystemInfo } from './settings'
 
 /** Contratto di `window.api`, implementato dal preload. */
 export interface Api {
@@ -22,12 +23,18 @@ export interface Api {
     /** Prova un URL di Ollama senza salvarlo: restituisce i modelli trovati. */
     check(url: string): Promise<Result<OllamaModel[]>>
   }
+  system: {
+    /** RAM e tipo di memoria della macchina, se Ollama gira qui: per il calcolo della memoria della conversazione. */
+    info(): Promise<Result<SystemInfo>>
+  }
   conversations: {
     list(query?: ConversationListQuery): Promise<Result<Conversation[]>>
     get(id: string): Promise<Result<ConversationDetail>>
     /** Nuova conversazione, vuota o con brief e impostazioni di un template. */
     create(fromTemplateId?: string): Promise<Result<Conversation>>
     update(id: string, patch: ConversationPatch): Promise<Result<Conversation>>
+    /** Riporta temperatura, top_p e num_ctx ai valori suggeriti per modello e macchina. */
+    calibrate(id: string): Promise<Result<Conversation>>
     remove(id: string): Promise<Result<void>>
     /** Chiede dove salvare e scrive il file; restituisce il percorso, o null se annullato. */
     export(id: string, format: 'md' | 'json'): Promise<Result<string | null>>

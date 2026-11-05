@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createOllamaClient, OllamaError, parseModelDefaults } from '../src/main/ollama'
+import { createOllamaClient, kvBytesPerToken, OllamaError, parseModelDefaults } from '../src/main/ollama'
 import { startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
 
 let fake: FakeOllama
@@ -51,11 +51,23 @@ describe('showModel', () => {
       capabilities: ['completion', 'thinking'],
       thinking: true,
       contextLength: 40960,
+      kvBytesPerToken: null,
       defaults: { temperature: 0.6, topP: 0.95, numCtx: 8192 }
     })
     const llama = await c.showModel('llama3.2:3b')
     expect(llama.thinking).toBe(false)
     expect(llama.defaults).toEqual({ temperature: null, topP: null, numCtx: null })
+  })
+
+  it('kvBytesPerToken: 2 × layer × teste KV × dimensione testa × 2 byte, dall\'architettura', () => {
+    // llama 3.1 8B: 32 layer, 8 teste KV, 4096/32 = 128 → 128 KiB
+    expect(kvBytesPerToken({ 'llama.block_count': 32, 'llama.attention.head_count': 32, 'llama.attention.head_count_kv': 8, 'llama.embedding_length': 4096 })).toBe(131072)
+    // key_length dichiarata vince su embedding ÷ teste; senza head_count_kv si usano tutte le teste
+    expect(kvBytesPerToken({ 'gemma3.block_count': 48, 'gemma3.attention.head_count': 16, 'gemma3.attention.head_count_kv': 8, 'gemma3.attention.key_length': 256, 'gemma3.embedding_length': 3840 })).toBe(48 * 8 * 256 * 4)
+    expect(kvBytesPerToken({ 'x.block_count': 10, 'x.attention.head_count': 4, 'x.embedding_length': 512 })).toBe(10 * 4 * 128 * 4)
+    // campi mancanti
+    expect(kvBytesPerToken({ 'x.block_count': 10 })).toBeNull()
+    expect(kvBytesPerToken({})).toBeNull()
   })
 
   it('tiene in cache le capabilities', async () => {

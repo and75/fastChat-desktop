@@ -21,11 +21,15 @@ const api: Api = {
     capabilities: (name) => invoke(IPC.modelsCapabilities, name),
     check: (url) => invoke(IPC.modelsCheck, url)
   },
+  system: {
+    info: () => invoke(IPC.systemInfo)
+  },
   conversations: {
     list: (query) => invoke(IPC.conversationsList, query),
     get: (id) => invoke(IPC.conversationsGet, id),
     create: (fromTemplateId) => invoke(IPC.conversationsCreate, fromTemplateId),
     update: (id, patch) => invoke(IPC.conversationsUpdate, id, patch),
+    calibrate: (id) => invoke(IPC.conversationsCalibrate, id),
     remove: (id) => invoke(IPC.conversationsRemove, id),
     export: (id, format) => invoke(IPC.conversationsExport, id, format),
     onUpdated: (cb) => subscribe<Conversation>(IPC.conversationUpdated, cb)

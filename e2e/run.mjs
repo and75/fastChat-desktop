@@ -80,6 +80,10 @@ const app = await electron.launch({
     OLLAMA_URL: fake.url,
     FASTCHAT_USER_DATA: userData,
     FASTCHAT_EXPORT_PATH: join(userData, 'export'),
+    // Macchina finta: 16 GB di RAM non unificata → quota 50%. Con un modello da 2 GB e 128 KiB per token
+    // la memoria suggerita è ~42k → 32.768 (thinker:8b), 8.192 per i modelli con contesto massimo 8k.
+    FASTCHAT_SYSTEM_RAM: String(16 * 1024 ** 3),
+    FASTCHAT_SYSTEM_UNIFIED: '0',
     NODE_ENV: 'production'
   }
 })
@@ -204,12 +208,12 @@ try {
 
   await step('contatore del contesto: conteggio di Ollama dopo la risposta, su memoria del modello', async () => {
     const meter = page.getByTestId('context-usage')
-    // llama3.2 nel server finto non dichiara num_ctx: memoria predefinita di Ollama (4.096 token)
-    await meter.filter({ hasText: /^Contesto [\d,]+k? \/ 4,1k · \d+%$/ }).waitFor()
+    // llama3.2 nel server finto ha contesto massimo 8.192: la memoria calcolata dalla RAM si ferma lì
+    await meter.filter({ hasText: /^Contesto [\d,]+k? \/ 8,2k · \d+%$/ }).waitFor()
     const text = await meter.textContent()
     assert.doesNotMatch(text, /≈/, 'dopo una risposta il numero viene da Ollama, non è una stima')
     const title = await meter.getAttribute('title')
-    assert.match(title, /token usati su 4\.096 disponibili \(conteggio di Ollama/)
+    assert.match(title, /token usati su 8\.192 disponibili \(conteggio di Ollama/)
   })
 
   await step('titolo automatico dopo il primo scambio (sidebar e intestazione)', async () => {
@@ -386,18 +390,21 @@ try {
     assert.equal(await settings.locator('details, summary').count(), 0)
     assert.equal(await settings.getByText('Impostazioni avanzate').count(), 0)
 
-    // cursori in automatico: posizione e valori presi dal modello (parameters + context_length)
-    await settings.getByTestId('top_p-value').filter({ hasText: 'Automatico · 0,95 (consigliato dal modello)' }).waitFor()
-    await settings.getByTestId('num_ctx-value').filter({ hasText: /Automatico · 4\.?096 token \(consigliato dal modello\)/ }).waitFor()
-    await settings.getByText('32.768 token').waitFor() // estremo destro = massimo del modello
-    await settings.getByText('Il modello consiglia 0,6.').waitFor()
+    // al cambio modello i cursori partono dai valori suggeriti: top_p dal Modelfile, memoria calcolata
+    // dalla RAM (16 GB, modello da 2 GB → 32.768, che è anche il massimo del modello)
+    await settings.getByTestId('top_p-value').filter({ hasText: '0,95 (consigliato dal modello)' }).waitFor()
+    await settings.getByTestId('num_ctx-value').filter({ hasText: '32.768 token ≈ 24.600 parole (calcolato per questa macchina)' }).waitFor()
+    await settings.getByText('Calcolato su 16 GB di RAM e un modello da 2 GB.').waitFor()
+    // la temperatura è stata cambiata (1,2) e il Modelfile consiglia 0,6: compare il ripristino
+    await settings.getByRole('button', { name: 'Torna al valore suggerito: Temperatura' }).filter({ hasText: '↺ Suggerito 0.60' }).waitFor()
 
     await settings.getByLabel('Varietà delle parole').fill('0.9')
     await settings.getByTestId('top_p-value').filter({ hasText: /^0,90$/ }).waitFor()
+    await settings.getByRole('button', { name: 'Torna al valore suggerito: Varietà delle parole' }).filter({ hasText: '0,95' }).waitFor()
     const memory = settings.getByLabel('Memoria della conversazione')
     await memory.focus()
-    await memory.press('End')
-    await settings.getByTestId('num_ctx-value').filter({ hasText: '32.768 token' }).waitFor()
+    await memory.press('ArrowLeft')
+    await settings.getByTestId('num_ctx-value').filter({ hasText: '16.384 token' }).waitFor()
     await settings.getByLabel('Risposte ripetibili').fill('7')
     await page.getByTestId('composer-temperature').filter({ hasText: '1.20' }).waitFor()
     await page.waitForTimeout(400) // debounce del salvataggio
@@ -407,7 +414,7 @@ try {
     })
     assert.equal(conv.temperature, 1.2)
     assert.equal(conv.topP, 0.9)
-    assert.equal(conv.numCtx, 32768)
+    assert.equal(conv.numCtx, 16384)
     assert.equal(conv.seed, 7)
     assert.equal(conv.think, true)
   })
@@ -430,14 +437,14 @@ try {
 
     const body = lastChat()
     assert.equal(body.think, true)
-    assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, num_ctx: 32768, seed: 7 })
+    assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, num_ctx: 16384, seed: 7 })
   })
 
-  await step('cursore della memoria: "↺ Automatico" toglie il valore; a Ollama va il consigliato dal modello', async () => {
+  await step('cursore della memoria: "↺ Suggerito" riporta al valore calcolato, che è ciò che va a Ollama', async () => {
     const settings = page.getByTestId('model-settings')
-    await settings.getByRole('button', { name: 'Torna al valore automatico: Memoria della conversazione' }).click()
-    await settings.getByTestId('num_ctx-value').filter({ hasText: 'Automatico' }).waitFor()
-    await waitUntil(async () => (await latestConversation()).numCtx === null)
+    await settings.getByRole('button', { name: 'Torna al valore suggerito: Memoria della conversazione' }).click()
+    await settings.getByTestId('num_ctx-value').filter({ hasText: '32.768 token' }).waitFor()
+    await waitUntil(async () => (await latestConversation()).numCtx === 32768)
   })
 
   await step('ragionamento spento: think=false e nessun blocco', async () => {
@@ -447,9 +454,21 @@ try {
     await composer.press('Enter')
     await page.getByTestId('message-assistant').nth(1).waitFor()
     assert.equal(lastChat().think, false)
-    // thinker:8b consiglia num_ctx 4096 nel Modelfile: in automatico è quello che si invia (e che il cursore mostra)
-    assert.deepEqual(lastChat().options, { temperature: 1.2, top_p: 0.9, num_ctx: 4096, seed: 7 })
+    assert.deepEqual(lastChat().options, { temperature: 1.2, top_p: 0.9, num_ctx: 32768, seed: 7 })
     assert.equal(await page.getByTestId('message-assistant').nth(1).getByTestId('thinking-block').count(), 0)
+  })
+
+  await step('"Tutti i valori suggeriti": temperatura e top_p dal Modelfile, memoria dalla macchina', async () => {
+    const settings = page.getByTestId('model-settings')
+    await settings.getByRole('button', { name: '↺ Tutti i valori suggeriti' }).click()
+    await settings.getByTestId('temperature-value').filter({ hasText: '0.60 (consigliato dal modello)' }).waitFor()
+    await settings.getByTestId('top_p-value').filter({ hasText: '0,95 (consigliato dal modello)' }).waitFor()
+    await settings.getByTestId('num_ctx-value').filter({ hasText: '32.768 token' }).waitFor()
+    await waitUntil(async () => {
+      const c = await latestConversation()
+      return c.temperature === 0.6 && c.topP === 0.95 && c.numCtx === 32768 && c.seed === 7
+    })
+    assert.equal(await settings.getByRole('button', { name: '↺ Tutti i valori suggeriti' }).count(), 0)
   })
 
   await step('nessun errore JavaScript nel renderer (fase 3)', async () => {

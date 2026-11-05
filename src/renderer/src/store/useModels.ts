@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { SystemInfo } from '@shared/settings'
 import type { AppSettings, ModelCapabilities, OllamaModel } from '@shared/types'
 
 type Status = 'idle' | 'loading' | 'ready' | 'error'
@@ -10,11 +11,14 @@ interface ModelsState {
   error: string | null
   selected: string | null
   capabilities: Record<string, ModelCapabilities>
+  /** RAM della macchina (se Ollama è locale): per il suggerimento della memoria della conversazione. */
+  system: SystemInfo | null
 
   init(): Promise<void>
   refresh(): Promise<void>
   select(name: string): Promise<void>
   loadCapabilities(name: string): Promise<ModelCapabilities | null>
+  loadSystem(): Promise<void>
   setOllamaUrl(url: string): Promise<boolean>
   /** Salva le impostazioni generali; se cambia l'URL ricarica i modelli. */
   saveSettings(patch: Partial<AppSettings>): Promise<string | null>
@@ -27,11 +31,17 @@ export const useModels = create<ModelsState>((set, get) => ({
   error: null,
   selected: null,
   capabilities: {},
+  system: null,
 
   async init() {
     const res = await window.api.settings.get()
     if (res.ok) set({ settings: res.data, selected: res.data.defaultModel })
-    await get().refresh()
+    await Promise.all([get().refresh(), get().loadSystem()])
+  },
+
+  async loadSystem() {
+    const res = await window.api.system.info()
+    set({ system: res.ok ? res.data : null })
   },
 
   async refresh() {
@@ -72,7 +82,7 @@ export const useModels = create<ModelsState>((set, get) => ({
     if (patch.defaultModel !== undefined) set({ selected: res.data.defaultModel })
     if (patch.ollamaUrl !== undefined && patch.ollamaUrl !== before?.ollamaUrl) {
       set({ capabilities: {} })
-      await get().refresh()
+      await Promise.all([get().refresh(), get().loadSystem()])
     }
     return null
   },
@@ -84,7 +94,7 @@ export const useModels = create<ModelsState>((set, get) => ({
       return false
     }
     set({ settings: res.data, capabilities: {} })
-    await get().refresh()
+    await Promise.all([get().refresh(), get().loadSystem()])
     return true
   }
 }))

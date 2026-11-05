@@ -92,11 +92,13 @@ export interface ModelCapabilities {
   thinking: boolean
   /** Lunghezza massima del contesto con cui il modello è stato addestrato (token). */
   contextLength: number | null
+  /** Memoria occupata da ogni token di contesto (cache KV in f16), dall'architettura in /api/show; null se non calcolabile. */
+  kvBytesPerToken: number | null
   defaults: ModelDefaults
 }
 
-/** Valori usati da Ollama quando né la conversazione né il modello indicano nulla. */
-export const OLLAMA_DEFAULTS = { topP: 0.9, numCtx: 4096 } as const
+/** Valori usati da Ollama quando il Modelfile non indica nulla. */
+export const OLLAMA_DEFAULTS = { temperature: 0.8, topP: 0.9, numCtx: 4096 } as const
 
 /** Campi modificabili di una conversazione. */
 export type ConversationPatch = Partial<
@@ -181,10 +183,12 @@ export const IPC = {
   modelsList: 'models:list',
   modelsCapabilities: 'models:capabilities',
   modelsCheck: 'models:check',
+  systemInfo: 'system:info',
   conversationsList: 'conversations:list',
   conversationsGet: 'conversations:get',
   conversationsCreate: 'conversations:create',
   conversationsUpdate: 'conversations:update',
+  conversationsCalibrate: 'conversations:calibrate',
   conversationsRemove: 'conversations:remove',
   chatSend: 'chat:send',
   chatRegenerate: 'chat:regenerate',

@@ -89,6 +89,28 @@ export function parseModelDefaults(parameters: unknown): ModelDefaults {
   return out
 }
 
+/** Valore numerico di `model_info` la cui chiave finisce con `suffix` (le chiavi sono prefissate dall'architettura, es. "llama.block_count"). */
+export function modelInfoNumber(info: Record<string, unknown>, suffix: string): number | null {
+  const entry = Object.entries(info).find(([k]) => k.endsWith(suffix))
+  return typeof entry?.[1] === 'number' && entry[1] > 0 ? entry[1] : null
+}
+
+/**
+ * Memoria per token di contesto (cache KV in f16): 2 (K e V) × layer × teste KV × dimensione testa × 2 byte.
+ * La dimensione della testa è `attention.key_length` se dichiarata, altrimenti embedding ÷ teste.
+ * null se l'architettura non espone i campi.
+ */
+export function kvBytesPerToken(info: Record<string, unknown>): number | null {
+  const layers = modelInfoNumber(info, '.block_count')
+  const heads = modelInfoNumber(info, '.attention.head_count')
+  const kvHeads = modelInfoNumber(info, '.attention.head_count_kv') ?? heads
+  const headDim =
+    modelInfoNumber(info, '.attention.key_length') ??
+    (heads && modelInfoNumber(info, '.embedding_length') ? modelInfoNumber(info, '.embedding_length')! / heads : null)
+  if (!layers || !kvHeads || !headDim) return null
+  return 2 * layers * kvHeads * headDim * 2
+}
+
 const isAbort = (err: unknown): boolean =>
   err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
 
@@ -156,11 +178,12 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       parameters?: unknown
     }
     const capabilities = body.capabilities ?? []
-    const ctxEntry = Object.entries(body.model_info ?? {}).find(([k]) => k.endsWith('.context_length'))
+    const info = body.model_info ?? {}
     const caps: ModelCapabilities = {
       capabilities,
       thinking: capabilities.includes('thinking'),
-      contextLength: typeof ctxEntry?.[1] === 'number' ? ctxEntry[1] : null,
+      contextLength: modelInfoNumber(info, '.context_length'),
+      kvBytesPerToken: kvBytesPerToken(info),
       defaults: parseModelDefaults(body.parameters)
     }
     capsCache.set(key, caps)

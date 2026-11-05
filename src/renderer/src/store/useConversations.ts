@@ -16,6 +16,8 @@ interface ConversationsState {
   create(fromTemplateId?: string): Promise<void>
   select(id: string | null): Promise<void>
   update(id: string, patch: ConversationPatch): Promise<Conversation | null>
+  /** Riporta i parametri del modello ai valori suggeriti. */
+  calibrate(id: string): Promise<Conversation | null>
   remove(id: string): Promise<void>
   /** Aggiorna una voce della lista con la versione ricevuta dal main. */
   upsertLocal(conv: Conversation): void
@@ -62,6 +64,17 @@ export const useConversations = create<ConversationsState>((set, get) => ({
 
   async update(id, patch) {
     const res = await window.api.conversations.update(id, patch)
+    if (!res.ok) {
+      set({ error: res.error })
+      return null
+    }
+    get().upsertLocal(res.data)
+    useChat.getState().replaceConversation(res.data)
+    return res.data
+  },
+
+  async calibrate(id) {
+    const res = await window.api.conversations.calibrate(id)
     if (!res.ok) {
       set({ error: res.error })
       return null

@@ -77,6 +77,7 @@ async function bootstrap(): Promise<void> {
   registerIpc({
     db: dbHandle.db,
     ollama,
+    getOllamaUrl: () => ollamaUrl,
     setOllamaUrl: (url) => {
       ollamaUrl = url
     }

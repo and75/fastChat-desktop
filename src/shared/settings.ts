@@ -1,6 +1,9 @@
-// Valori effettivi dei parametri del modello per una conversazione.
-// Unica fonte di verità: il main li manda a Ollama, il renderer li mostra (pannello impostazioni,
-// misuratore del contesto). Così ciò che l'utente vede è esattamente ciò che viene inviato.
+// Parametri del modello per una conversazione: valori suggeriti (calibrazione) e valori effettivi.
+//
+// Principio: il valore configurato nella conversazione è ciò che l'utente vede sul cursore e ciò che
+// va a Ollama. L'app lo riempie quando si sceglie il modello (calibrazione), poi l'utente lo cambia
+// a piacere. Le funzioni resolve* sono solo la rete di sicurezza per le conversazioni non ancora
+// calibrate (create prima di questa versione, o con Ollama irraggiungibile).
 import { OLLAMA_DEFAULTS, type ConversationSettings, type ModelCapabilities } from './types'
 
 /** Parametri risolti: nessun "automatico", solo numeri. */
@@ -15,33 +18,96 @@ export interface EffectiveSettings {
   think: boolean
 }
 
-/** Da dove viene un valore automatico, per l'interfaccia. */
-export type AutoSource = 'model' | 'ollama'
+/** Informazioni sulla macchina su cui gira Ollama, per dimensionare la memoria della conversazione. */
+export interface SystemInfo {
+  /** RAM totale in byte; null se Ollama non è su questa macchina (URL remoto) o non è leggibile. */
+  ramBytes: number | null
+  /** Memoria unificata (Mac Apple Silicon): la GPU usa la RAM di sistema. */
+  unified: boolean
+}
 
-/** Contesto massimo del modello, se noto; altrimenti nessun limite. */
-export function maxNumCtx(caps: ModelCapabilities | null | undefined): number | null {
-  return caps?.contextLength ?? null
+// ---------------------------------------------------------------- calibrazione di num_ctx
+
+/** Quota della RAM che Ollama può usare per il modello: più alta con memoria unificata. */
+export const RAM_SHARE = { unified: 0.65, other: 0.5 } as const
+/** Byte lasciati liberi oltre a pesi e contesto (sistema operativo, altre app). */
+export const RAM_MARGIN_BYTES = 1024 ** 3
+/** Costo in memoria di un token di contesto quando il modello non lo dichiara (~modelli da 3 a 14B). */
+export const DEFAULT_KV_BYTES_PER_TOKEN = 128 * 1024
+/** Limiti del suggerimento: sotto 2k il modello non è utilizzabile; sopra il massimo del modello non ha senso. */
+export const MIN_NUM_CTX = 2048
+/** Massimo usato se il modello non dichiara la lunghezza del contesto. */
+export const FALLBACK_MAX_CTX = 32768
+
+export interface SuggestNumCtxInput {
+  system: SystemInfo | null
+  /** Dimensione del file del modello (pesi), da /api/tags. */
+  modelBytes: number | null
+  caps: ModelCapabilities | null
+}
+
+/** Potenza di 2 minore o uguale a n (n ≥ 1). */
+export const floorPow2 = (n: number): number => 2 ** Math.floor(Math.log2(n))
+
+/** Contesto massimo del modello, o il valore di riserva se ignoto. */
+export const maxNumCtx = (caps: ModelCapabilities | null | undefined): number => caps?.contextLength ?? FALLBACK_MAX_CTX
+
+/**
+ * Memoria della conversazione suggerita per questa macchina e questo modello, in token.
+ * Calcolo di massima dalla RAM: (RAM × quota − pesi − margine) ÷ costo per token, arrotondato alla
+ * potenza di 2 inferiore, tra MIN_NUM_CTX e il massimo del modello. null se mancano RAM o modello.
+ */
+export function suggestNumCtx({ system, modelBytes, caps }: SuggestNumCtxInput): number | null {
+  if (!system?.ramBytes || !modelBytes) return null
+  const usable = system.ramBytes * (system.unified ? RAM_SHARE.unified : RAM_SHARE.other)
+  const forContext = usable - modelBytes - RAM_MARGIN_BYTES
+  const perToken = caps?.kvBytesPerToken ?? DEFAULT_KV_BYTES_PER_TOKEN
+  const tokens = forContext > 0 ? floorPow2(forContext / perToken) : 0
+  return Math.max(MIN_NUM_CTX, Math.min(tokens, maxNumCtx(caps)))
+}
+
+/** Riga per l'interfaccia: da dove viene il suggerimento. */
+export function describeSuggestion(input: SuggestNumCtxInput): string {
+  const gb = (b: number): string => `${Math.round(b / 1024 ** 3)} GB`
+  if (!input.system?.ramBytes) return 'Ollama non è su questa macchina: si usa il valore del modello.'
+  if (!input.modelBytes) return 'Dimensione del modello non nota: si usa il valore del modello.'
+  return `Calcolato su ${gb(input.system.ramBytes)} di RAM${input.system.unified ? ' unificata' : ''} e un modello da ${gb(input.modelBytes)}.`
+}
+
+// ---------------------------------------------------------------- valori suggeriti e calibrazione
+
+/** Valori con cui una conversazione parte per un dato modello: quelli che l'utente poi può cambiare. */
+export interface SuggestedSettings {
+  temperature: number
+  topP: number
+  numCtx: number
 }
 
 /**
- * Memoria della conversazione: la scelta dell'utente, altrimenti il `num_ctx` consigliato dal modello
- * (Modelfile), altrimenti il predefinito di Ollama. Mai oltre il contesto massimo del modello
- * (la scelta può superarlo dopo un cambio di modello).
+ * Suggerimenti per il modello: num_ctx calibrato sulla macchina, altrimenti il Modelfile, altrimenti
+ * Ollama; temperatura e top_p dal Modelfile, altrimenti Ollama.
  */
-export function resolveNumCtx(conv: Pick<ConversationSettings, 'numCtx'>, caps: ModelCapabilities | null | undefined): number {
-  const chosen = conv.numCtx ?? caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx
-  const max = maxNumCtx(caps)
-  return max != null && chosen > max ? max : chosen
+export function suggestSettings(input: SuggestNumCtxInput): SuggestedSettings {
+  const { caps } = input
+  const numCtx = suggestNumCtx(input) ?? Math.min(caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx, maxNumCtx(caps))
+  return {
+    temperature: caps?.defaults.temperature ?? OLLAMA_DEFAULTS.temperature,
+    topP: caps?.defaults.topP ?? OLLAMA_DEFAULTS.topP,
+    numCtx
+  }
 }
 
-/** Varietà delle parole: la scelta dell'utente, altrimenti il consigliato dal modello, altrimenti Ollama. */
+// ---------------------------------------------------------------- valori effettivi
+
+/** Memoria della conversazione: il valore configurato, mai oltre il contesto massimo del modello. */
+export function resolveNumCtx(conv: Pick<ConversationSettings, 'numCtx'>, caps: ModelCapabilities | null | undefined): number {
+  const configured = conv.numCtx ?? caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx
+  return Math.min(configured, maxNumCtx(caps))
+}
+
+/** Varietà delle parole: il valore configurato, altrimenti il Modelfile, altrimenti Ollama. */
 export function resolveTopP(conv: Pick<ConversationSettings, 'topP'>, caps: ModelCapabilities | null | undefined): number {
   return conv.topP ?? caps?.defaults.topP ?? OLLAMA_DEFAULTS.topP
-}
-
-/** Origine del valore automatico di un parametro (per la dicitura "consigliato dal modello"/"predefinito di Ollama"). */
-export function autoSource(caps: ModelCapabilities | null | undefined, key: 'topP' | 'numCtx'): AutoSource {
-  return caps?.defaults[key] != null ? 'model' : 'ollama'
 }
 
 /** Tutti i parametri effettivi della conversazione con il modello indicato. */

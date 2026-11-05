@@ -9,6 +9,10 @@ export interface FakeModel {
   name: string
   capabilities: string[]
   contextLength?: number
+  /** Dimensione del file del modello in byte (/api/tags). Default 2 GB. */
+  size?: number
+  /** Campi aggiuntivi di `model_info` (/api/show), es. block_count e teste KV per il costo del contesto. */
+  modelInfo?: Record<string, unknown>
   /** Testo del campo `parameters` di /api/show (formato Modelfile), es. "top_p 0.95\nnum_ctx 8192". */
   parameters?: string
   /** Chunk da inviare su /api/chat. Default: un breve pensiero + risposta. */
@@ -61,7 +65,7 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
       return json(res, 200, {
         models: models.map((m) => ({
           name: m.name,
-          size: 2_000_000_000,
+          size: m.size ?? 2_000_000_000,
           modified_at: '2026-01-01T00:00:00Z',
           details: { family: 'fake', parameter_size: '3B', quantization_level: 'Q4_K_M' }
         }))
@@ -75,7 +79,7 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
       if (!model) return json(res, 404, { error: `model '${modelName}' not found` })
       return json(res, 200, {
         capabilities: model.capabilities,
-        model_info: { 'fake.context_length': model.contextLength ?? 8192 },
+        model_info: { 'fake.context_length': model.contextLength ?? 8192, ...model.modelInfo },
         ...(model.parameters ? { parameters: model.parameters } : {})
       })
     }
