@@ -23,6 +23,12 @@ export const conversations = sqliteTable(
     numPredict: integer('num_predict'),
     seed: integer('seed'),
     archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+    /** Riassunto automatico dei messaggi più vecchi, inviato nel system prompt al posto loro. */
+    autoSummary: integer('auto_summary', { mode: 'boolean' }).notNull().default(true),
+    summary: text('summary'),
+    /** Id dell'ultimo messaggio coperto dal riassunto: i successivi vengono inviati per intero. */
+    summaryUpTo: text('summary_up_to'),
+    summaryUpdatedAt: integer('summary_updated_at'),
     createdAt: integer('created_at').notNull().default(now),
     updatedAt: integer('updated_at').notNull().default(now)
   },

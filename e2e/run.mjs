@@ -39,7 +39,9 @@ const fake = await startFakeOllama([
 ])
 // Le richieste di generazione del titolo (dopo il primo scambio) non contano come "ultima chat".
 const isTitleRequest = (body) => body?.messages?.[0]?.content?.startsWith('Genera un titolo')
-const chatRequests = () => fake.requests.filter((r) => r.path === '/api/chat' && !isTitleRequest(r.body))
+// Nemmeno le richieste del riassunto automatico (dopo la risposta) contano come "ultima chat".
+const isSummaryRequest = (body) => body?.messages?.[0]?.content?.startsWith("Sei l'archivista")
+const chatRequests = () => fake.requests.filter((r) => r.path === '/api/chat' && !isTitleRequest(r.body) && !isSummaryRequest(r.body))
 const lastChat = () => chatRequests().at(-1)?.body
 
 
@@ -518,6 +520,67 @@ try {
     // il pulsante compare solo sull'ultima risposta
     assert.equal(await page.getByTestId('continue-answer').count(), 1)
     await page.selectOption('#model-select', 'thinker:8b')
+  })
+
+  await step('riassunto automatico: scatta oltre la soglia, entra nel system prompt, si vede e si elimina', async () => {
+    const settings = page.getByTestId('model-settings')
+    const panel = settings.getByTestId('summary-panel')
+    await panel.getByText('Nessun riassunto').waitFor()
+    // memoria minima (1.024 → riserva 512, metà): ~440 token per lo storico; 8 messaggi brevi + uno da 1.200 caratteri superano il 70%
+    const memory = settings.getByRole('slider', { name: 'Memoria della conversazione' })
+    await memory.focus()
+    await memory.press('Home')
+    await waitUntil(async () => (await latestConversation()).numCtx === 1024)
+    const box = page.getByRole('textbox', { name: 'Messaggio' })
+    await box.fill('Dati: ' + 'd'.repeat(1200))
+    await box.press('Enter')
+    await page.getByTestId('message-assistant').nth(4).waitFor()
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
+    // dopo la risposta il main riassume i messaggi più vecchi (ultimo scambio escluso) e aggiorna la conversazione
+    await panel.getByText(/Riassunto in vigore: copre i primi 8 messaggi, aggiornato alle \d{2}:\d{2}\./).waitFor()
+    const conv = await latestConversation()
+    assert.match(conv.summary, /^risposta0 risposta1/)
+    assert.equal((await page.getByTestId('timeline-dot').evaluateAll((els) => els.filter((e) => e.dataset.summarized === 'true').length)), 8)
+    // la richiesta del riassunto: prompt dell'archivista, senza ragionamento, stessa memoria
+    const summaryReq = fake.requests.filter((r) => r.path === '/api/chat' && r.body?.messages?.[0]?.content?.startsWith("Sei l'archivista")).at(-1).body
+    assert.equal(summaryReq.think, false)
+    assert.equal(summaryReq.options.num_ctx, 1024)
+    assert.match(summaryReq.messages[1].content, /^Messaggi:\n/)
+
+    // la domanda successiva porta brief + riassunto nel system prompt e solo i messaggi non coperti
+    await box.fill('E quindi?')
+    await box.press('Enter')
+    await page.getByTestId('message-assistant').nth(5).waitFor()
+    const body = lastChat()
+    // (questa conversazione non ha brief: il system prompt è il solo riassunto)
+    assert.match(body.messages[0].content, /^# Riassunto della conversazione finora\nrisposta0 risposta1/)
+    assert.equal(body.messages.filter((m) => m.role !== 'system').length, 3)
+    assert.match(await page.getByTestId('context-usage').getAttribute('title'), /nel riassunto automatico/)
+    // anche dopo questa risposta i recenti superano la soglia: il riassunto si aggiorna (incrementale) e copre altri 2 messaggi
+    await panel.getByText(/Riassunto in vigore: copre i primi 10 messaggi/).waitFor()
+    const incremental = fake.requests.filter((r) => isSummaryRequest(r.body)).at(-1).body
+    assert.match(incremental.messages[1].content, /^Riassunto finora:\nrisposta0 [\s\S]*\n\nNuovi messaggi:\nUtente: Dati: d/)
+
+    // mostra e modifica, poi elimina
+    await panel.getByTestId('summary-toggle').click()
+    const text = panel.getByTestId('summary-text')
+    assert.match(await text.inputValue(), /^risposta0/)
+    await text.fill('Riassunto scritto a mano.')
+    await text.blur()
+    await waitUntil(async () => (await latestConversation()).summary === 'Riassunto scritto a mano.')
+    await panel.getByTestId('summary-clear').click()
+    await panel.getByText('Nessun riassunto').waitFor()
+    await waitUntil(async () => (await latestConversation()).summary === null && (await latestConversation()).summaryUpTo === null)
+    assert.equal((await page.getByTestId('timeline-dot').evaluateAll((els) => els.filter((e) => e.dataset.summarized === 'true').length)), 0)
+    // interruttore: spento, "Riassumi ora" funziona comunque (manuale)
+    await setSwitch(settings, 'Riassunto automatico', false)
+    await waitUntil(async () => (await latestConversation()).autoSummary === false)
+    await panel.getByTestId('summary-now').click()
+    await panel.getByText(/Riassunto in vigore/).waitFor()
+    await setSwitch(settings, 'Riassunto automatico', true)
+    await memory.focus()
+    await memory.press('End')
+    await waitUntil(async () => (await latestConversation()).numCtx === 32768)
   })
 
   await step('nessun errore JavaScript nel renderer (fase 3)', async () => {

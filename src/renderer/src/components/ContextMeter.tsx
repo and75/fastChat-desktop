@@ -15,7 +15,14 @@ export function ContextMeter(): React.JSX.Element | null {
   const all = live?.kind === 'chat' && live.content ? [...messages, { role: 'assistant' as const, content: live.content }] : messages
   // Stessa memoria che il main invia a Ollama come num_ctx; la riserva è num_predict.
   const effective = resolveSettings(conversation, caps)
-  const usage = computeContextUsage({ brief: conversation, messages: all, numCtx: effective.numCtx })
+  const usage = computeContextUsage({
+    brief: conversation,
+    messages: all,
+    numCtx: effective.numCtx,
+    summary: conversation.summary,
+    summaryUpTo: conversation.summaryUpTo,
+    summaryUpdatedAt: conversation.summaryUpdatedAt
+  })
   const pct = Math.round(usage.ratio * 100)
   const reservePct = Math.round((effective.numPredict / effective.numCtx) * 100)
   // Lo storico viene tagliato quando non sta nello spazio che resta oltre la riserva.
@@ -27,6 +34,7 @@ export function ContextMeter(): React.JSX.Element | null {
       ? ` (stima a ${usage.charsPerToken.toLocaleString('it-IT')} caratteri per token${usage.charsPerToken === DEFAULT_CHARS_PER_TOKEN ? '' : ', misurati su questa conversazione'}; il conteggio esatto arriva da Ollama dopo la risposta)`
       : ' (conteggio di Ollama: prompt + risposta)') +
     `. Riserva per la risposta: ${fmt(effective.numPredict)} token` +
+    (conversation.summary ? '. I messaggi più vecchi sono nel riassunto automatico' : '') +
     (over ? '. Oltre lo spazio disponibile, i messaggi più vecchi non vengono inviati.' : '')
 
   return (

@@ -26,6 +26,12 @@ export interface Conversation extends Brief, ConversationSettings {
   title: string
   model: string
   archived: boolean
+  /** Riassunto automatico dei messaggi più vecchi quando la conversazione non sta più nella memoria. */
+  autoSummary: boolean
+  summary: string | null
+  /** Id dell'ultimo messaggio coperto dal riassunto; i successivi vengono inviati per intero. */
+  summaryUpTo: string | null
+  summaryUpdatedAt: number | null
   createdAt: number
   updatedAt: number
 }
@@ -124,6 +130,10 @@ export type ConversationPatch = Partial<
     | 'numPredict'
     | 'seed'
     | 'archived'
+    | 'autoSummary'
+    | 'summary'
+    | 'summaryUpTo'
+    | 'summaryUpdatedAt'
   >
 >
 
@@ -196,6 +206,7 @@ export const IPC = {
   conversationsCreate: 'conversations:create',
   conversationsUpdate: 'conversations:update',
   conversationsCalibrate: 'conversations:calibrate',
+  conversationsSummarize: 'conversations:summarize',
   conversationsRemove: 'conversations:remove',
   chatSend: 'chat:send',
   chatRegenerate: 'chat:regenerate',

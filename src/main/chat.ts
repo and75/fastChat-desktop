@@ -4,9 +4,11 @@ import {
   buildPlanPrompt,
   buildSystemPrompt,
   DEFAULT_HISTORY_LIMITS,
+  historyAfter,
   parsePlan,
   PLAN_SCHEMA,
-  selectHistory
+  selectHistory,
+  withSummary
 } from '@shared/prompt'
 import { resolveSettings } from '@shared/settings'
 import { DEFAULT_TITLE, type Conversation, type DoneReason, type ModelCapabilities, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
@@ -25,6 +27,7 @@ import {
   updatePlan
 } from './db/repo'
 import type { ChatMessage, ChatOptions, ChatRequest, OllamaClient } from './ollama'
+import type { Summarizer } from './summary'
 
 /** Destinatario degli eventi di stream (in produzione: il WebContents che ha fatto la richiesta). */
 export type StreamTarget = object
@@ -33,8 +36,10 @@ export interface ChatServiceDeps {
   db: Db
   ollama: OllamaClient
   emit(target: StreamTarget, event: StreamEvent): void
-  /** Notifica una conversazione modificata dal main (es. titolo generato). */
+  /** Notifica una conversazione modificata dal main (es. titolo generato, riassunto aggiornato). */
   onConversationUpdated?(target: StreamTarget, conversation: Conversation): void
+  /** Riassunto automatico, eseguito dopo ogni risposta. */
+  summarizer?: Summarizer
 }
 
 interface ActiveStream {
@@ -65,8 +70,8 @@ export function buildOptions(conv: Conversation, caps: ModelCapabilities | null 
 }
 
 /**
- * Messaggi da inviare: system prompt (di default il brief; mai troncato) + coda dello storico che sta nel
- * contesto, lasciando libera la riserva per la risposta (num_predict: la risposta non può sforare).
+ * Messaggi da inviare: system prompt (brief + riassunto; mai troncato) + coda dei messaggi non coperti
+ * dal riassunto che sta nel contesto, lasciando libera la riserva per la risposta (num_predict).
  */
 export function buildChatMessages(
   conv: Conversation,
@@ -75,7 +80,9 @@ export function buildChatMessages(
   caps: ModelCapabilities | null = null
 ): ChatMessage[] {
   const s = resolveSettings(conv, caps)
-  const picked = selectHistory(history, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.numPredict })
+  const { recent, aligned } = historyAfter(history, conv.summaryUpTo)
+  if (aligned) system = withSummary(system, conv.summary)
+  const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.numPredict })
   const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
   for (const m of picked) out.push({ role: m.role, content: m.content })
   return out
@@ -116,7 +123,7 @@ function systemFor(conv: Conversation, mode: Mode): string {
   }
 }
 
-export function createChatService({ db, ollama, emit, onConversationUpdated }: ChatServiceDeps) {
+export function createChatService({ db, ollama, emit, onConversationUpdated, summarizer }: ChatServiceDeps) {
   const streams = new Map<string, ActiveStream>()
 
   const isBusy = (conversationId: string): boolean =>
@@ -266,7 +273,11 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
         // La conversazione è di nuovo libera prima di generare il titolo.
         streams.delete(streamId)
       }
-      if (answered) await maybeAutoTitle(target, conv.id).catch(() => undefined)
+      if (answered) {
+        await maybeAutoTitle(target, conv.id).catch(() => undefined)
+        const r = await summarizer?.summarize(conv.id).catch(() => null)
+        if (r?.outcome === 'updated' && r.conversation) onConversationUpdated?.(target, r.conversation)
+      }
     }
 
     const active: ActiveStream = { conversationId: conv.id, target, controller, done: Promise.resolve() }

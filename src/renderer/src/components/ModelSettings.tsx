@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { describeSuggestion, maxNumCtx, numPredictSteps, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
 import type { Conversation, ConversationPatch } from '@shared/types'
+import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
 import { registerPendingSave } from '../store/pendingSaves'
@@ -114,6 +115,103 @@ export function ThinkToggle({ conversation, compact = false }: { conversation: C
       color="bg-brand-600"
       onChange={(think) => void update(conversation.id, { think })}
     />
+  )
+}
+
+/** Riassunto automatico: i messaggi più vecchi confluiscono in un riassunto quando non stanno più nella memoria. */
+export function SummaryPanel({ conversation }: { conversation: Conversation }): React.JSX.Element {
+  const update = useConversations((s) => s.update)
+  const summarize = useConversations((s) => s.summarize)
+  const messages = useChat((s) => s.messages)
+  const busy = useChat((s) => !!s.streams[conversation.id])
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState(conversation.summary ?? '')
+  const [working, setWorking] = useState(false)
+  const [feedback, setFeedback] = useState<string | null>(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setDraft(conversation.summary ?? ''), [conversation.id, conversation.summary])
+
+  const covered = conversation.summary && conversation.summaryUpTo ? messages.findIndex((m) => m.id === conversation.summaryUpTo) + 1 : 0
+
+  const run = async (): Promise<void> => {
+    setWorking(true)
+    setFeedback(null)
+    const before = useConversations.getState().error
+    const ok = await summarize(conversation.id)
+    if (!ok) {
+      const err = useConversations.getState().error
+      setFeedback(err && err !== before ? err : 'Riassunto non riuscito')
+      useConversations.setState({ error: before })
+    }
+    setWorking(false)
+  }
+
+  return (
+    <div className="flex flex-col gap-2" data-testid="summary-panel">
+      <Switch
+        label="Riassunto automatico"
+        checked={conversation.autoSummary}
+        title="Quando i messaggi non stanno più nella memoria, i più vecchi vengono riassunti dal modello e il riassunto prende il loro posto nel system prompt"
+        color="bg-brand-600"
+        onChange={(autoSummary) => void update(conversation.id, { autoSummary })}
+      />
+      <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+        {conversation.summary
+          ? `Riassunto in vigore: copre ${covered > 0 ? `i primi ${covered} messaggi` : 'i messaggi più vecchi'}` +
+            (conversation.summaryUpdatedAt ? `, aggiornato alle ${new Date(conversation.summaryUpdatedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : '') +
+            '.'
+          : 'Nessun riassunto: tutti i messaggi vengono inviati per intero (finché stanno nella memoria).'}
+      </span>
+      <div className="flex flex-wrap gap-2 text-xs">
+        {conversation.summary && (
+          <button
+            type="button"
+            className="rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            onClick={() => setOpen((o) => !o)}
+            data-testid="summary-toggle"
+          >
+            {open ? 'Nascondi' : 'Mostra e modifica'}
+          </button>
+        )}
+        <button
+          type="button"
+          className="rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          disabled={working || busy || messages.length < 3}
+          title="Riassume subito i messaggi più vecchi, lasciando per intero l'ultimo scambio"
+          onClick={() => void run()}
+          data-testid="summary-now"
+        >
+          {working ? 'Riassumo…' : conversation.summary ? 'Aggiorna ora' : 'Riassumi ora'}
+        </button>
+        {conversation.summary && (
+          <button
+            type="button"
+            className="rounded border border-zinc-300 px-2 py-0.5 text-red-700 hover:bg-red-50 dark:border-zinc-700 dark:text-red-300 dark:hover:bg-red-950"
+            onClick={() => {
+              setOpen(false)
+              void update(conversation.id, { summary: null })
+            }}
+            data-testid="summary-clear"
+          >
+            Elimina
+          </button>
+        )}
+      </div>
+      {feedback && <span className="text-xs text-red-700 dark:text-red-300">{feedback}</span>}
+      {open && conversation.summary && (
+        <textarea
+          aria-label="Testo del riassunto"
+          rows={8}
+          value={draft}
+          className="w-full resize-y rounded-lg border border-zinc-300 bg-white p-2 text-xs leading-snug dark:border-zinc-700 dark:bg-zinc-900"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            if (draft.trim() !== (conversation.summary ?? '')) void update(conversation.id, { summary: draft })
+          }}
+          data-testid="summary-text"
+        />
+      )}
+    </div>
   )
 }
 
@@ -403,6 +501,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
         extra={approxWords}
         onChange={(v) => save({ numPredict: v })}
       />
+      <SummaryPanel conversation={conversation} />
       <NumberField
         label="Risposte ripetibili"
         technical="seed"

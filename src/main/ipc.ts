@@ -33,6 +33,7 @@ import {
 } from './db/repo'
 import { suggestedFileName, toJson, toMarkdown, type ExportFormat } from './export'
 import { createOllamaClient, OllamaError, type OllamaClient } from './ollama'
+import { createSummarizer } from './summary'
 import { systemInfo } from './system'
 
 export interface IpcDeps {
@@ -82,9 +83,11 @@ const requireId = (id: unknown): string => {
 export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps): void {
   const watched = new WeakSet<WebContents>()
   const calibrate: CalibrateDeps = { ollama, system: () => systemInfo(getOllamaUrl()) }
+  const summarizer = createSummarizer({ db, ollama })
   const chat = createChatService({
     db,
     ollama,
+    summarizer,
     emit: (target, event) => {
       const wc = target as WebContents
       if (!wc.isDestroyed()) wc.send(IPC.chatStream, event)
@@ -222,6 +225,14 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     if (canceled || !filePath) return null
     await writeFile(filePath, format === 'md' ? toMarkdown(data) : toJson(data), 'utf8')
     return filePath
+  })
+
+  /** Riassunto manuale: riassume i messaggi più vecchi anche sotto la soglia. */
+  handle(IPC.conversationsSummarize, async (_e, id: string) => {
+    const r = await summarizer.summarize(requireId(id), true)
+    if (r.outcome === 'updated' && r.conversation) return r.conversation
+    if (r.outcome === 'not-needed') throw new Error('Niente da riassumere: la conversazione sta nella memoria, a parte l\'ultimo scambio')
+    throw new Error('Il modello non ha prodotto un riassunto. Riprova')
   })
 
   handle(IPC.conversationsUpdate, async (_e, id: string, patch: ConversationPatch) => {

@@ -35,6 +35,8 @@ export interface Api {
     update(id: string, patch: ConversationPatch): Promise<Result<Conversation>>
     /** Riporta temperatura, top_p e num_ctx ai valori suggeriti per modello e macchina. */
     calibrate(id: string): Promise<Result<Conversation>>
+    /** Riassume subito i messaggi più vecchi (anche sotto la soglia automatica). */
+    summarize(id: string): Promise<Result<Conversation>>
     remove(id: string): Promise<Result<void>>
     /** Chiede dove salvare e scrive il file; restituisce il percorso, o null se annullato. */
     export(id: string, format: 'md' | 'json'): Promise<Result<string | null>>

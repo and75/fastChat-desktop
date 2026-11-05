@@ -148,12 +148,15 @@ export function ChatView(): React.JSX.Element {
 
   // Un pallino per messaggio nella cronologia, più la risposta in arrivo.
   const liveContent = live?.kind === 'chat' ? live.content : null
+  const summaryUpTo = conversation?.summary ? conversation.summaryUpTo : null
   const timeline = useMemo<TimelineItem[]>(() => {
-    const items: TimelineItem[] = messages.map((m) => ({
+    const coveredUntil = summaryUpTo ? messages.findIndex((m) => m.id === summaryUpTo) : -1
+    const items: TimelineItem[] = messages.map((m, i) => ({
       id: m.id,
       role: m.role,
       content: m.content,
-      createdAt: m.createdAt
+      createdAt: m.createdAt,
+      summarized: i <= coveredUntil
     }))
     if (liveContent != null)
       items.push({
@@ -163,7 +166,7 @@ export function ChatView(): React.JSX.Element {
         live: true
       })
     return items
-  }, [messages, liveContent])
+  }, [messages, liveContent, summaryUpTo])
 
   if (!conversation) {
     return (

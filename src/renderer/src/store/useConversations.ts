@@ -18,6 +18,8 @@ interface ConversationsState {
   update(id: string, patch: ConversationPatch): Promise<Conversation | null>
   /** Riporta i parametri del modello ai valori suggeriti. */
   calibrate(id: string): Promise<Conversation | null>
+  /** Riassume subito i messaggi più vecchi. */
+  summarize(id: string): Promise<Conversation | null>
   remove(id: string): Promise<void>
   /** Aggiorna una voce della lista con la versione ricevuta dal main. */
   upsertLocal(conv: Conversation): void
@@ -64,6 +66,17 @@ export const useConversations = create<ConversationsState>((set, get) => ({
 
   async update(id, patch) {
     const res = await window.api.conversations.update(id, patch)
+    if (!res.ok) {
+      set({ error: res.error })
+      return null
+    }
+    get().upsertLocal(res.data)
+    useChat.getState().replaceConversation(res.data)
+    return res.data
+  },
+
+  async summarize(id) {
+    const res = await window.api.conversations.summarize(id)
     if (!res.ok) {
       set({ error: res.error })
       return null

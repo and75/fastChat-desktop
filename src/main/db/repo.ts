@@ -59,7 +59,11 @@ const PATCHABLE: (keyof ConversationPatch)[] = [
   'numCtx',
   'numPredict',
   'seed',
-  'archived'
+  'archived',
+  'autoSummary',
+  'summary',
+  'summaryUpTo',
+  'summaryUpdatedAt'
 ]
 
 /** Tiene solo i campi ammessi: il patch arriva dal renderer e non va preso alla lettera. */
@@ -74,9 +78,19 @@ export function sanitizePatch(patch: ConversationPatch): ConversationPatch {
   if ('numCtx' in out) out.numCtx = toInt(out.numCtx, 256, 1_048_576)
   if ('numPredict' in out) out.numPredict = toInt(out.numPredict, 64, 1_048_576)
   if ('seed' in out) out.seed = toInt(out.seed, -2_147_483_648, 2_147_483_647)
-  for (const key of ['think', 'planMode', 'archived'] as const) {
+  for (const key of ['think', 'planMode', 'archived', 'autoSummary'] as const) {
     if (key in out) out[key] = out[key] === true
   }
+  if ('summary' in out) {
+    out.summary = typeof out.summary === 'string' && out.summary.trim() ? out.summary.trim().slice(0, 20_000) : null
+    // Senza riassunto non c'è nulla di coperto.
+    if (out.summary == null) {
+      out.summaryUpTo = null
+      out.summaryUpdatedAt = null
+    }
+  }
+  if ('summaryUpTo' in out && typeof out.summaryUpTo !== 'string') out.summaryUpTo = null
+  if ('summaryUpdatedAt' in out) out.summaryUpdatedAt = toInt(out.summaryUpdatedAt, 0, Number.MAX_SAFE_INTEGER)
   return out as ConversationPatch
 }
 

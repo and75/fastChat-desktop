@@ -18,6 +18,10 @@ const conv: Conversation = {
   numPredict: null,
   seed: null,
   archived: false,
+  autoSummary: true,
+  summary: null,
+  summaryUpTo: null,
+  summaryUpdatedAt: null,
   createdAt: Date.UTC(2026, 0, 1),
   updatedAt: Date.UTC(2026, 0, 2)
 }

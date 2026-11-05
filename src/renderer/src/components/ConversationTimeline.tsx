@@ -10,6 +10,8 @@ export interface TimelineItem {
   createdAt?: number
   /** Risposta in arrivo (pallino che pulsa). */
   live?: boolean
+  /** Coperto dal riassunto: non viene più inviato per intero al modello. */
+  summarized?: boolean
 }
 
 interface Props {
@@ -153,7 +155,10 @@ export function ConversationTimeline({ items, scroller }: Props): React.JSX.Elem
         {visible &&
           items.map((it, i) => {
             const user = it.role === 'user'
-            const label = `Messaggio ${i + 1} di ${items.length}, ${user ? 'tu' : 'assistente'}: ${excerpt(it.content, 80) || '…'}`
+            const label =
+              `Messaggio ${i + 1} di ${items.length}, ${user ? 'tu' : 'assistente'}` +
+              (it.summarized ? ' (nel riassunto)' : '') +
+              `: ${excerpt(it.content, 80) || '…'}`
             return (
               <button
                 key={it.id}
@@ -162,6 +167,7 @@ export function ConversationTimeline({ items, scroller }: Props): React.JSX.Elem
                 aria-current={i === active ? 'true' : undefined}
                 data-testid="timeline-dot"
                 data-role={it.role}
+                data-summarized={it.summarized ? 'true' : undefined}
                 className="group/dot absolute left-1/2 flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full focus:outline-none"
                 style={{ top: layout.positions[i] }}
                 onMouseEnter={() => setHover(i)}
@@ -177,6 +183,8 @@ export function ConversationTimeline({ items, scroller }: Props): React.JSX.Elem
                     (user
                       ? 'bg-brand-600 dark:bg-brand-400 '
                       : 'border-2 border-brand-600 bg-white dark:border-brand-400 dark:bg-zinc-950 ') +
+                    // nel riassunto: attenuato, non è più nel prompt per intero
+                    (it.summarized ? 'opacity-40 ' : '') +
                     (i === active ? 'ring-4 ring-brand-500/30 ' : '') +
                     (it.live ? 'animate-pulse' : '')
                   }
@@ -197,6 +205,7 @@ export function ConversationTimeline({ items, scroller }: Props): React.JSX.Elem
             <span className="mb-0.5 block text-[11px] opacity-70">
               {tip.role === 'user' ? 'Tu' : 'Assistente'}
               {tip.live ? ' · in corso' : tip.createdAt != null ? ` · ${formatMessageDate(tip.createdAt)}` : ''}
+              {tip.summarized ? ' · nel riassunto' : ''}
             </span>
             {excerpt(tip.content) || '…'}
           </div>

@@ -21,12 +21,15 @@ export function buildSystemPrompt(brief: Brief): string {
 }
 
 export interface HistoryMessage {
+  /** Id del messaggio (serve per sapere quali sono coperti dal riassunto). */
+  id?: string
   role: 'user' | 'assistant'
   content: string
   /** Ragionamento della risposta (conta nei token generati). */
   thinking?: string | null
   /** Token generati da Ollama per questa risposta (content + thinking). */
   evalCount?: number | null
+  createdAt?: number
 }
 
 export interface HistoryLimits {
@@ -101,6 +104,106 @@ export function selectHistory<T extends HistoryMessage>(
   return picked
 }
 
+const joinSections = (...parts: string[]): string => parts.filter((p) => p.trim()).join('\n\n')
+
+// ---------------------------------------------------------------- riassunto automatico
+
+/** Soglie del riassunto, in frazione dello spazio per lo storico (memoria − riserva − system prompt). */
+export const SUMMARY = {
+  /** Sopra questa quota si riassume. */
+  trigger: 0.7,
+  /** Si riassumono i messaggi più vecchi finché i recenti scendono sotto questa quota. */
+  target: 0.4,
+  /** L'ultimo scambio (domanda e risposta) resta sempre per intero. */
+  keepLast: 2,
+  /** Token massimi del riassunto generato. */
+  maxTokens: 600
+} as const
+
+/** System prompt completo: brief + riassunto della conversazione finora (se c'è). */
+export function withSummary(system: string, summary: string | null | undefined): string {
+  const text = summary?.trim()
+  if (!text) return system
+  return joinSections(system, `# Riassunto della conversazione finora
+${text}`)
+}
+
+/**
+ * Messaggi non coperti dal riassunto. Se il messaggio indicato non esiste più (eliminato), il
+ * riassunto non è più allineato e si restituisce tutto lo storico: chi chiama non deve usarlo.
+ */
+export function historyAfter<T extends HistoryMessage>(history: T[], summaryUpTo: string | null | undefined): { recent: T[]; aligned: boolean } {
+  if (!summaryUpTo) return { recent: history, aligned: true }
+  const idx = history.findIndex((m) => m.id === summaryUpTo)
+  return idx < 0 ? { recent: history, aligned: false } : { recent: history.slice(idx + 1), aligned: true }
+}
+
+export interface SummaryPlanInput<T extends HistoryMessage> {
+  /** Messaggi non ancora coperti dal riassunto, in ordine. */
+  recent: T[]
+  /** System prompt completo (brief + riassunto attuale), che si sottrae dal budget. */
+  systemPrompt: string
+  /** Memoria della conversazione (num_ctx) e riserva per la risposta (num_predict). */
+  numCtx: number
+  numPredict: number
+  /** Forza il riassunto anche sotto la soglia (azione manuale). */
+  force?: boolean
+}
+
+/**
+ * Decide quali messaggi far confluire nel riassunto: i più vecchi, finché i recenti stanno nella quota
+ * obiettivo. null se non serve (sotto la soglia) o non c'è nulla da coprire.
+ */
+export function planSummary<T extends HistoryMessage>(input: SummaryPlanInput<T>): { cover: T[]; keep: T[] } | null {
+  const { recent } = input
+  const cpt = charsPerToken(recent)
+  const budget = input.numCtx - input.numPredict - (input.systemPrompt ? estimateTokens(input.systemPrompt, cpt) : 0)
+  if (budget <= 0 || recent.length <= SUMMARY.keepLast) return null
+  const costs = recent.map((m) => estimateTokens(m.content, cpt))
+  let used = costs.reduce((a, b) => a + b, 0)
+  if (!input.force && used <= budget * SUMMARY.trigger) return null
+  let n = 0
+  while (n < recent.length - SUMMARY.keepLast && used > budget * SUMMARY.target) used -= costs[n++]
+  // Si chiude su una risposta, così i messaggi tenuti iniziano con una domanda.
+  while (n > 0 && n < recent.length - SUMMARY.keepLast && recent[n - 1].role === 'user') n++
+  if (n === 0) return null
+  return { cover: recent.slice(0, n), keep: recent.slice(n) }
+}
+
+/** Trascrizione dei messaggi da riassumere, dalla più recente a ritroso finché sta in `maxChars`. */
+export function transcript(messages: ReadonlyArray<HistoryMessage>, maxChars: number): string {
+  const lines: string[] = []
+  let chars = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const line = `${messages[i].role === 'user' ? 'Utente' : 'Assistente'}: ${messages[i].content.trim()}`
+    if (chars + line.length > maxChars && lines.length > 0) break
+    lines.push(chars + line.length > maxChars ? line.slice(0, maxChars - chars) + '…' : line)
+    chars += line.length
+  }
+  return lines.reverse().join('\n\n')
+}
+
+export const SUMMARY_PROMPT = `Sei l'archivista di una conversazione tra un utente e un assistente. Aggiorna il riassunto della conversazione con i nuovi messaggi.
+Scrivi un riassunto compatto in prosa o elenco, nella lingua della conversazione, con:
+- fatti stabiliti e decisioni prese;
+- richieste dell'utente ancora aperte;
+- nomi, numeri, date, termini tecnici e frammenti di codice essenziali, citati esattamente.
+Niente introduzioni né commenti: rispondi solo con il riassunto aggiornato. Massimo 350 parole.`
+
+/** Testo del messaggio utente per la richiesta di riassunto. */
+export function buildSummaryRequest(previous: string | null, newMessages: string): string {
+  const head = previous?.trim() ? `Riassunto finora:\n${previous.trim()}\n\nNuovi messaggi:` : 'Messaggi:'
+  return `${head}\n${newMessages}`
+}
+
+/** Ripulisce il riassunto generato: niente blocchi di ragionamento, niente titoli ridondanti. */
+export function cleanSummary(raw: string): string {
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/^\s*#+\s*riassunto[^\n]*\n/i, '')
+    .trim()
+}
+
 // ---------------------------------------------------------------- plan mode
 
 /** JSON schema passato a Ollama in `format`: il modello può rispondere solo con un piano. */
@@ -131,8 +234,6 @@ Non rispondere ancora alla richiesta dell'utente. Proponi prima un piano per ris
 - Il piano deve rispettare ruolo, contesto, obiettivi e vincoli indicati sopra.
 - Scrivi nella stessa lingua dell'utente.
 Rispondi solo con un oggetto JSON nella forma {"steps":[{"title":"…","detail":"…"}]}.`
-
-const joinSections = (...parts: string[]): string => parts.filter((p) => p.trim()).join('\n\n')
 
 /** System prompt per la fase di pianificazione: brief + istruzioni del piano. */
 export function buildPlanPrompt(brief: Brief): string {
@@ -220,6 +321,10 @@ export interface ContextUsageInput {
   messages: Array<HistoryMessage & { promptEvalCount?: number | null }>
   /** Memoria effettiva della conversazione (num_ctx inviato a Ollama): vedi resolveNumCtx. */
   numCtx: number
+  /** Riassunto in vigore e ultimo messaggio coperto: i messaggi coperti non si contano. */
+  summary?: string | null
+  summaryUpTo?: string | null
+  summaryUpdatedAt?: number | null
 }
 
 /**
@@ -230,14 +335,15 @@ export interface ContextUsageInput {
 export function computeContextUsage(input: ContextUsageInput): ContextUsage {
   const total = input.numCtx
 
-  const system = buildSystemPrompt(input.brief)
+  const { recent: messages, aligned } = historyAfter(input.messages, input.summaryUpTo)
+  const system = withSummary(buildSystemPrompt(input.brief), aligned ? input.summary : null)
   const cpt = charsPerToken(input.messages)
   const est = (text: string): number => estimateTokens(text, cpt)
-  const estimateAll = (system ? est(system) : 0) + input.messages.reduce((n, m) => n + est(m.content), 0)
+  const estimateAll = (system ? est(system) : 0) + messages.reduce((n, m) => n + est(m.content), 0)
 
   let lastIdx = -1
-  for (let i = input.messages.length - 1; i >= 0; i--) {
-    if (input.messages[i].role === 'assistant' && input.messages[i].promptEvalCount != null) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant' && messages[i].promptEvalCount != null) {
       lastIdx = i
       break
     }
@@ -245,15 +351,15 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage {
 
   let used = estimateAll
   let estimated = true
-  if (lastIdx >= 0) {
-    const last = input.messages[lastIdx]
+  // Se il riassunto è cambiato dopo l'ultima risposta, il conteggio di Ollama non descrive più il prompt attuale.
+  const countValid = lastIdx >= 0 && (input.summaryUpdatedAt == null || (messages[lastIdx].createdAt ?? 0) >= input.summaryUpdatedAt)
+  if (countValid) {
+    const last = messages[lastIdx]
     const real = (last.promptEvalCount ?? 0) + (last.evalCount ?? est(last.content))
-    const after = input.messages.slice(lastIdx + 1).reduce((n, m) => n + est(m.content), 0)
+    const after = messages.slice(lastIdx + 1).reduce((n, m) => n + est(m.content), 0)
     // Con la cache dei prompt Ollama può riportare solo i token rivalutati: se il numero è molto più
     // basso della stima, non è attendibile e si resta sulla stima.
-    const estimateUpToLast =
-      (system ? est(system) : 0) +
-      input.messages.slice(0, lastIdx + 1).reduce((n, m) => n + est(m.content), 0)
+    const estimateUpToLast = (system ? est(system) : 0) + messages.slice(0, lastIdx + 1).reduce((n, m) => n + est(m.content), 0)
     if (real >= estimateUpToLast * 0.5) {
       used = real + after
       estimated = after > 0

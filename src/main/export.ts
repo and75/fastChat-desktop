@@ -37,6 +37,8 @@ export function toMarkdown({ conversation: c, messages, plans }: ExportData): st
     out.push('## Brief', '', brief.replace(/^# /gm, '### '), '')
   }
 
+  if (c.summary) out.push('## Riassunto automatico', '', c.summary, '')
+
   out.push('## Conversazione', '')
   for (const m of messages) {
     if (m.role === 'user') {

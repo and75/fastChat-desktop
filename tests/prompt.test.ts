@@ -3,8 +3,14 @@ import {
   buildExecutePrompt,
   buildPlanPrompt,
   buildSystemPrompt,
+  buildSummaryRequest,
   charsPerToken,
+  cleanSummary,
   computeContextUsage,
+  historyAfter,
+  planSummary,
+  transcript,
+  withSummary,
   estimateTokens,
   formatTokensK,
   normalizeSteps,
@@ -226,5 +232,82 @@ describe('caratteri per token misurati sulla conversazione', () => {
     const usage = computeContextUsage({ brief: brief({}), messages: [answer('y'.repeat(300), 100), u('x'.repeat(3000))], numCtx: 4096 })
     expect(usage.charsPerToken).toBe(3)
     expect(usage.estimated).toBe(true)
+  })
+})
+
+describe('riassunto automatico', () => {
+  const msg = (id: string, role: 'user' | 'assistant', chars: number) => ({ id, role, content: 'x'.repeat(chars) })
+  // 8 messaggi da 400 caratteri = 104 token l'uno (a 4 caratteri per token)
+  const eight = Array.from({ length: 8 }, (_, i) => msg(`m${i}`, i % 2 ? 'assistant' : 'user', 400))
+
+  it('withSummary: sezione in coda al brief; niente se vuoto', () => {
+    expect(withSummary('# Ruolo\nTutor', 'Si parlava di Roma.')).toBe('# Ruolo\nTutor\n\n# Riassunto della conversazione finora\nSi parlava di Roma.')
+    expect(withSummary('', 'Si parlava di Roma.')).toBe('# Riassunto della conversazione finora\nSi parlava di Roma.')
+    expect(withSummary('# Ruolo\nTutor', '  ')).toBe('# Ruolo\nTutor')
+    expect(withSummary('# Ruolo\nTutor', null)).toBe('# Ruolo\nTutor')
+  })
+
+  it('historyAfter: i messaggi dopo quello coperto; disallineato se non esiste più', () => {
+    expect(historyAfter(eight, null)).toEqual({ recent: eight, aligned: true })
+    expect(historyAfter(eight, 'm3')).toEqual({ recent: eight.slice(4), aligned: true })
+    expect(historyAfter(eight, 'sparito')).toEqual({ recent: eight, aligned: false })
+  })
+
+  it('planSummary: sotto la soglia non fa nulla', () => {
+    // 8 × 104 = 832 token; budget 2000 → 42% < 70%
+    expect(planSummary({ recent: eight, systemPrompt: '', numCtx: 2000, numPredict: 0 })).toBeNull()
+    // ma con force copre finché i recenti scendono sotto il 40% (800): toglie i primi 2
+    const forced = planSummary({ recent: eight, systemPrompt: '', numCtx: 2000, numPredict: 0, force: true })!
+    expect(forced.cover.map((m) => m.id)).toEqual(['m0', 'm1'])
+    expect(forced.keep).toHaveLength(6)
+  })
+
+  it('planSummary: sopra la soglia copre i più vecchi fino all\'obiettivo, chiudendo su una risposta', () => {
+    // budget 1000 − riserva 100 = 900; 832 > 630 (70%) → scende sotto 360 (40%): tiene 3 (312), copre 5…
+    // …ma il 5º coperto sarebbe una domanda (m4): si chiude sulla risposta m5
+    const plan = planSummary({ recent: eight, systemPrompt: '', numCtx: 1000, numPredict: 100 })!
+    expect(plan.cover.map((m) => m.id)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4', 'm5'])
+    expect(plan.keep.map((m) => m.id)).toEqual(['m6', 'm7'])
+  })
+
+  it('planSummary: l\'ultimo scambio resta sempre per intero; il system prompt pesa sul budget', () => {
+    const tiny = planSummary({ recent: eight, systemPrompt: '', numCtx: 300, numPredict: 100 })!
+    expect(tiny.keep.map((m) => m.id)).toEqual(['m6', 'm7'])
+    expect(planSummary({ recent: eight.slice(0, 2), systemPrompt: '', numCtx: 100, numPredict: 50 })).toBeNull()
+    // system prompt enorme: budget negativo → niente
+    expect(planSummary({ recent: eight, systemPrompt: 'x'.repeat(10_000), numCtx: 1000, numPredict: 100 })).toBeNull()
+  })
+
+  it('transcript: dalla più recente a ritroso, entro il limite di caratteri', () => {
+    const t = transcript([msg('a', 'user', 100), msg('b', 'assistant', 100), msg('c', 'user', 100)], 260)
+    expect(t.split('\n\n')).toHaveLength(2)
+    expect(t.startsWith('Assistente: ')).toBe(true)
+    expect(t.endsWith('Utente: ' + 'x'.repeat(100))).toBe(true)
+    // almeno un messaggio, troncato
+    expect(transcript([msg('a', 'user', 100)], 20)).toBe('Utente: ' + 'x'.repeat(12) + '…')
+  })
+
+  it('buildSummaryRequest e cleanSummary', () => {
+    expect(buildSummaryRequest(null, 'Utente: ciao')).toBe('Messaggi:\nUtente: ciao')
+    expect(buildSummaryRequest('Prima.', 'Utente: ciao')).toBe('Riassunto finora:\nPrima.\n\nNuovi messaggi:\nUtente: ciao')
+    expect(cleanSummary('<think>mah</think>\n# Riassunto aggiornato\n- punto uno\n')).toBe('- punto uno')
+  })
+
+  it('computeContextUsage: con il riassunto contano solo system (con riassunto) e messaggi non coperti', () => {
+    const summary = 's'.repeat(400) // 100 token + "# Riassunto…" (43 caratteri → 11) + separatore
+    const r = computeContextUsage({ brief: brief({}), messages: eight, numCtx: 4096, summary, summaryUpTo: 'm3' })
+    const title = '# Riassunto della conversazione finora\n'
+    expect(r.used).toBe(Math.ceil((title.length + 400) / 4) + 4 + 4 * 104)
+    // riassunto disallineato: si ignora e si contano tutti i messaggi
+    expect(computeContextUsage({ brief: brief({}), messages: eight, numCtx: 4096, summary, summaryUpTo: 'sparito' }).used).toBe(8 * 104)
+  })
+
+  it('computeContextUsage: un riassunto più recente dell\'ultima risposta invalida il conteggio di Ollama', () => {
+    const msgs = [
+      { id: 'u', role: 'user' as const, content: 'ciao', createdAt: 1000 },
+      { id: 'a', role: 'assistant' as const, content: 'risposta', promptEvalCount: 30, evalCount: 12, createdAt: 2000 }
+    ]
+    expect(computeContextUsage({ brief: brief({}), messages: msgs, numCtx: 4096 })).toMatchObject({ used: 42, estimated: false })
+    expect(computeContextUsage({ brief: brief({}), messages: msgs, numCtx: 4096, summary: 'x', summaryUpdatedAt: 3000 }).estimated).toBe(true)
   })
 })
