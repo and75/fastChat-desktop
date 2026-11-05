@@ -23,6 +23,10 @@ export function buildSystemPrompt(brief: Brief): string {
 export interface HistoryMessage {
   role: 'user' | 'assistant'
   content: string
+  /** Ragionamento della risposta (conta nei token generati). */
+  thinking?: string | null
+  /** Token generati da Ollama per questa risposta (content + thinking). */
+  evalCount?: number | null
 }
 
 export interface HistoryLimits {
@@ -41,8 +45,35 @@ export const DEFAULT_HISTORY_LIMITS: HistoryLimits = {
   reserveTokens: 1024
 }
 
-/** Stima grossolana: ~4 caratteri per token, più un piccolo costo fisso per messaggio. */
-export const estimateTokens = (text: string): number => Math.ceil(text.length / 4) + 4
+/** Caratteri per token quando non ci sono ancora conteggi reali: ~4 per l'inglese, di più del vero per italiano e codice. */
+export const DEFAULT_CHARS_PER_TOKEN = 4
+/** Intervallo plausibile del rapporto misurato: fuori da qui il conteggio è inattendibile. */
+const CHARS_PER_TOKEN_RANGE = [2, 6] as const
+/** Token generati minimi perché la misura valga qualcosa. */
+const MIN_CALIBRATION_TOKENS = 50
+
+/** Stima: caratteri ÷ caratteri per token, più un piccolo costo fisso per messaggio. */
+export const estimateTokens = (text: string, charsPerToken: number = DEFAULT_CHARS_PER_TOKEN): number =>
+  Math.ceil(text.length / charsPerToken) + 4
+
+/**
+ * Caratteri per token misurati sulla conversazione: per ogni risposta Ollama dice quanti token ha
+ * generato (eval_count) e l'app conosce il testo (risposta + ragionamento). Niente chiamate in più,
+ * e vale per la lingua e lo stile di questa conversazione. Con pochi dati resta il valore predefinito.
+ */
+export function charsPerToken(messages: ReadonlyArray<HistoryMessage>): number {
+  let chars = 0
+  let tokens = 0
+  for (const m of messages) {
+    if (m.role !== 'assistant' || !m.evalCount) continue
+    chars += m.content.length + (m.thinking?.length ?? 0)
+    tokens += m.evalCount
+  }
+  if (tokens < MIN_CALIBRATION_TOKENS) return DEFAULT_CHARS_PER_TOKEN
+  const ratio = chars / tokens
+  if (ratio < CHARS_PER_TOKEN_RANGE[0] || ratio > CHARS_PER_TOKEN_RANGE[1]) return DEFAULT_CHARS_PER_TOKEN
+  return Math.round(ratio * 100) / 100
+}
 
 /**
  * Sceglie gli ultimi messaggi dello storico che stanno nel budget.
@@ -55,10 +86,11 @@ export function selectHistory<T extends HistoryMessage>(
   limits: HistoryLimits = DEFAULT_HISTORY_LIMITS
 ): T[] {
   if (history.length === 0) return []
-  let budget = limits.maxTokens - limits.reserveTokens - (systemPrompt ? estimateTokens(systemPrompt) : 0)
+  const cpt = charsPerToken(history)
+  let budget = limits.maxTokens - limits.reserveTokens - (systemPrompt ? estimateTokens(systemPrompt, cpt) : 0)
   const picked: T[] = []
   for (let i = history.length - 1; i >= 0 && picked.length < limits.maxMessages; i--) {
-    const cost = estimateTokens(history[i].content)
+    const cost = estimateTokens(history[i].content, cpt)
     if (picked.length > 0 && cost > budget) break
     budget -= cost
     picked.push(history[i])
@@ -179,11 +211,13 @@ export interface ContextUsage {
   ratio: number
   /** true se il numero è una stima (nessuna risposta con conteggio di Ollama). */
   estimated: boolean
+  /** Caratteri per token usati per le stime: misurati sulla conversazione, o il predefinito. */
+  charsPerToken: number
 }
 
 export interface ContextUsageInput {
   brief: Brief
-  messages: Array<{ role: 'user' | 'assistant'; content: string; promptEvalCount?: number | null; evalCount?: number | null }>
+  messages: Array<HistoryMessage & { promptEvalCount?: number | null }>
   /** Memoria effettiva della conversazione (num_ctx inviato a Ollama): vedi resolveNumCtx. */
   numCtx: number
 }
@@ -197,7 +231,9 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage {
   const total = input.numCtx
 
   const system = buildSystemPrompt(input.brief)
-  const estimateAll = (system ? estimateTokens(system) : 0) + input.messages.reduce((n, m) => n + estimateTokens(m.content), 0)
+  const cpt = charsPerToken(input.messages)
+  const est = (text: string): number => estimateTokens(text, cpt)
+  const estimateAll = (system ? est(system) : 0) + input.messages.reduce((n, m) => n + est(m.content), 0)
 
   let lastIdx = -1
   for (let i = input.messages.length - 1; i >= 0; i--) {
@@ -211,20 +247,20 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage {
   let estimated = true
   if (lastIdx >= 0) {
     const last = input.messages[lastIdx]
-    const real = (last.promptEvalCount ?? 0) + (last.evalCount ?? estimateTokens(last.content))
-    const after = input.messages.slice(lastIdx + 1).reduce((n, m) => n + estimateTokens(m.content), 0)
+    const real = (last.promptEvalCount ?? 0) + (last.evalCount ?? est(last.content))
+    const after = input.messages.slice(lastIdx + 1).reduce((n, m) => n + est(m.content), 0)
     // Con la cache dei prompt Ollama può riportare solo i token rivalutati: se il numero è molto più
     // basso della stima, non è attendibile e si resta sulla stima.
     const estimateUpToLast =
-      (system ? estimateTokens(system) : 0) +
-      input.messages.slice(0, lastIdx + 1).reduce((n, m) => n + estimateTokens(m.content), 0)
+      (system ? est(system) : 0) +
+      input.messages.slice(0, lastIdx + 1).reduce((n, m) => n + est(m.content), 0)
     if (real >= estimateUpToLast * 0.5) {
       used = real + after
       estimated = after > 0
     }
   }
 
-  return { used, total, ratio: total > 0 ? used / total : 0, estimated }
+  return { used, total, ratio: total > 0 ? used / total : 0, estimated, charsPerToken: cpt }
 }
 
 /** Formato compatto in migliaia: 850 → "850", 3200 → "3,2k", 40960 → "41k". */

@@ -1,4 +1,4 @@
-import { computeContextUsage, formatTokensK } from '@shared/prompt'
+import { computeContextUsage, DEFAULT_CHARS_PER_TOKEN, formatTokensK } from '@shared/prompt'
 import { resolveSettings } from '@shared/settings'
 import { useChat } from '../store/useChat'
 import { useModels } from '../store/useModels'
@@ -23,7 +23,9 @@ export function ContextMeter(): React.JSX.Element | null {
   const fmt = (n: number): string => n.toLocaleString('it-IT', { useGrouping: 'always' })
   const title =
     `${usage.estimated ? 'Circa ' : ''}${fmt(usage.used)} token usati su ${fmt(usage.total)} disponibili` +
-    (usage.estimated ? ' (stima: il conteggio esatto arriva da Ollama dopo la risposta)' : ' (conteggio di Ollama: prompt + risposta)') +
+    (usage.estimated
+      ? ` (stima a ${usage.charsPerToken.toLocaleString('it-IT')} caratteri per token${usage.charsPerToken === DEFAULT_CHARS_PER_TOKEN ? '' : ', misurati su questa conversazione'}; il conteggio esatto arriva da Ollama dopo la risposta)`
+      : ' (conteggio di Ollama: prompt + risposta)') +
     `. Riserva per la risposta: ${fmt(effective.numPredict)} token` +
     (over ? '. Oltre lo spazio disponibile, i messaggi più vecchi non vengono inviati.' : '')
 

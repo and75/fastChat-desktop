@@ -3,6 +3,7 @@ import {
   buildExecutePrompt,
   buildPlanPrompt,
   buildSystemPrompt,
+  charsPerToken,
   computeContextUsage,
   estimateTokens,
   formatTokensK,
@@ -185,5 +186,45 @@ describe('uso del contesto', () => {
     expect(formatTokensK(8192)).toBe('8,2k')
     expect(formatTokensK(40960)).toBe('41k')
     expect(formatTokensK(4000)).toBe('4k')
+  })
+})
+
+describe('caratteri per token misurati sulla conversazione', () => {
+  const answer = (content: string, evalCount: number | null, thinking: string | null = null) =>
+    ({ role: 'assistant' as const, content, evalCount, thinking })
+  const u = (content: string) => ({ role: 'user' as const, content })
+
+  it('senza conteggi, o con pochi token, resta 4', () => {
+    expect(charsPerToken([])).toBe(4)
+    expect(charsPerToken([u('x'.repeat(400)), answer('y'.repeat(300), null)])).toBe(4)
+    expect(charsPerToken([answer('y'.repeat(147), 49)])).toBe(4)
+  })
+
+  it('rapporto reale: risposta + ragionamento diviso i token generati', () => {
+    // 300 caratteri in 100 token → 3 per token
+    expect(charsPerToken([answer('y'.repeat(300), 100)])).toBe(3)
+    // il ragionamento conta nei token generati
+    expect(charsPerToken([answer('y'.repeat(100), 100, 't'.repeat(250))])).toBe(3.5)
+    // si somma su tutte le risposte; i messaggi dell'utente non contano
+    expect(charsPerToken([u('x'.repeat(5000)), answer('y'.repeat(300), 100), answer('y'.repeat(100), 100)])).toBe(2)
+  })
+
+  it('fuori dall\'intervallo plausibile il conteggio è inattendibile → 4', () => {
+    expect(charsPerToken([answer('y'.repeat(100), 100)])).toBe(4) // 1 carattere per token
+    expect(charsPerToken([answer('y'.repeat(1000), 100)])).toBe(4) // 10
+  })
+
+  it('selectHistory e computeContextUsage usano il rapporto misurato', () => {
+    // 3 caratteri per token: 3000 caratteri = 1004 token, non 754
+    const h = [answer('y'.repeat(300), 100), u('x'.repeat(3000)), answer('ok', null), u('fine')]
+    const limits = { maxMessages: 50, maxTokens: 1000, reserveTokens: 0 }
+    // budget 1000: 'fine' (6) + 'ok' (5), poi 3000 caratteri = 1004 token non entrano → resta solo 'fine' (niente risposte orfane)
+    expect(selectHistory(h, '', limits)).toHaveLength(1)
+    // senza conteggi (4 per token) i 3000 caratteri costerebbero 754 ed entrerebbero
+    const uncalibrated = [answer('y'.repeat(300), null), u('x'.repeat(3000)), answer('ok', null), u('fine')]
+    expect(selectHistory(uncalibrated, '', limits)).toHaveLength(3)
+    const usage = computeContextUsage({ brief: brief({}), messages: [answer('y'.repeat(300), 100), u('x'.repeat(3000))], numCtx: 4096 })
+    expect(usage.charsPerToken).toBe(3)
+    expect(usage.estimated).toBe(true)
   })
 })
