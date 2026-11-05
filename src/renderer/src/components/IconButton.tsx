@@ -6,14 +6,22 @@ interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   /** Nasconde il tooltip (es. mentre il menu del pulsante è aperto). */
   hideTooltip?: boolean
   active?: boolean
+  /** Dove si apre il tooltip: sotto allineato a destra (topbar) o a destra (striscia della barra laterale). */
+  tooltipPlacement?: 'bottom-end' | 'bottom-start' | 'right'
 }
 
 /**
  * Pulsante con sola icona e tooltip (al passaggio del mouse o con il focus da tastiera).
  * Il tooltip si apre sotto, allineato a destra: questi pulsanti stanno sul bordo destro della topbar.
  */
+const PLACEMENT = {
+  'bottom-end': 'right-0 top-full mt-1.5',
+  'bottom-start': 'left-0 top-full mt-1.5',
+  right: 'left-full top-1/2 ml-2 -translate-y-1/2'
+} as const
+
 export const IconButton = forwardRef<HTMLButtonElement, Props>(function IconButton(
-  { tooltip, hideTooltip = false, active = false, className = '', children, ...rest },
+  { tooltip, hideTooltip = false, active = false, tooltipPlacement = 'bottom-end', className = '', children, ...rest },
   ref
 ) {
   const tipId = useId()
@@ -39,7 +47,9 @@ export const IconButton = forwardRef<HTMLButtonElement, Props>(function IconButt
         id={tipId}
         role="tooltip"
         className={
-          'pointer-events-none absolute right-0 top-full z-50 mt-1.5 whitespace-nowrap rounded-md bg-zinc-900 px-2 py-1 text-xs text-white opacity-0 shadow-md transition-opacity delay-300 dark:bg-zinc-100 dark:text-zinc-900 ' +
+          'pointer-events-none absolute z-50 whitespace-nowrap ' +
+          PLACEMENT[tooltipPlacement] +
+          '  rounded-md bg-zinc-900 px-2 py-1 text-xs text-white opacity-0 shadow-md transition-opacity delay-300 dark:bg-zinc-100 dark:text-zinc-900 ' +
           (hideTooltip ? '' : 'group-hover/tt:opacity-100 group-has-[:focus-visible]/tt:opacity-100')
         }
       >

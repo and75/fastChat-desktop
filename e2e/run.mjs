@@ -12,8 +12,8 @@ const userData = mkdtempSync(join(tmpdir(), 'fastchat-e2e-'))
 const fake = await startFakeOllama([
   { name: 'qwen3:4b', capabilities: ['completion', 'thinking'] },
   { name: 'llama3.2:3b', capabilities: ['completion', 'tools'] },
-  // risponde dopo 2,5 s: simula il caricamento del modello in Ollama
-  { name: 'lento-avvio:1b', capabilities: ['completion'], startDelayMs: 2500, chunks: [{ content: 'Eccomi.' }] },
+  // risponde dopo 5 s: simula il caricamento del modello in Ollama
+  { name: 'lento-avvio:1b', capabilities: ['completion'], startDelayMs: 5000, chunks: [{ content: 'Eccomi.' }] },
   {
     name: 'thinker:8b',
     capabilities: ['completion', 'thinking'],
@@ -779,12 +779,55 @@ try {
     assert.deepEqual((await wm()).calls, ['maximize', 'unmaximize', 'minimize'])
   })
 
+  await step('barra laterale richiudibile: striscia con logo e azioni rapide, stato ricordato', async () => {
+    const side = page.getByRole('complementary', { name: 'Barra laterale' })
+    const width = async () => (await side.boundingBox()).width
+    const open = await width()
+    const before = await items.count()
+    // il pulsante sta a destra nel blocco del logo, dopo il nome
+    const closeBtn = side.getByRole('button', { name: 'Chiudi la barra laterale' })
+    assert.ok((await closeBtn.boundingBox()).x > (await side.getByTestId('app-name').boundingBox()).x)
+    await closeBtn.click()
+
+    // chiusa: striscia stretta con logo, riapri, nuova conversazione e impostazioni
+    await side.getByRole('button', { name: 'Apri la barra laterale' }).waitFor()
+    assert.ok((await width()) < 90 && (await width()) < open / 2, `larghezza chiusa: ${await width()}`)
+    assert.equal(await side.getByLabel('Cerca conversazioni').count(), 0)
+    assert.equal(await side.getByTestId('app-name').count(), 0)
+    for (const name of ['Nuova conversazione', 'Impostazioni']) await side.getByRole('button', { name }).waitFor()
+    // tooltip a destra della striscia (non fuori dalla finestra)
+    const plus = side.getByTestId('new-conversation-rail')
+    await plus.hover()
+    const tip = page.getByRole('tooltip', { name: 'Nuova conversazione' })
+    await page.waitForFunction(() => {
+      const t = [...document.querySelectorAll('[role="tooltip"]')].find((el) => el.textContent === 'Nuova conversazione')
+      return t && getComputedStyle(t).opacity === '1'
+    })
+    assert.ok((await tip.boundingBox()).x > (await plus.boundingBox()).x)
+    // azioni rapide funzionanti
+    await plus.click()
+    await page.locator('header h1', { hasText: 'Nuova conversazione' }).waitFor()
+    await side.getByRole('button', { name: 'Impostazioni' }).click()
+    await page.getByTestId('settings-dialog').waitFor()
+    await page.keyboard.press('Escape')
+    await page.getByTestId('settings-dialog').waitFor({ state: 'detached' })
+
+    // lo stato resta dopo il riavvio della pagina
+    await page.reload()
+    await side.getByRole('button', { name: 'Apri la barra laterale' }).waitFor()
+    await side.getByRole('button', { name: 'Apri la barra laterale' }).click()
+    await side.getByRole('button', { name: 'Chiudi la barra laterale' }).waitFor()
+    assert.equal(Math.round(await width()), Math.round(open))
+    assert.equal(await items.count(), before + 1)
+    await items.first().getByRole('button').first().click()
+  })
+
   await step('nessun errore JavaScript nel renderer (fase 5)', async () => {
     assert.deepEqual(errors, [])
   })
 
-  await items.filter({ hasText: 'Ciao mondo!' }).first().waitFor({ state: 'attached' }).catch(() => {})
-  await items.nth(2).getByRole('button').first().click()
+  // conversazione del plan mode (titolo generato dalla risposta «risposta0 …»), con piani e messaggi
+  await items.filter({ hasText: 'risposta0' }).first().getByRole('button').first().click()
   await page.getByTestId('message-assistant').first().waitFor()
   await page.screenshot({ path: join(root, 'test-results', 'e2e-phase5-dark.png') })
 } catch (err) {

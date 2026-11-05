@@ -3,7 +3,8 @@ import type { Conversation } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { useTemplates } from '../store/useTemplates'
-import { AppLogo, ChevronDownIcon, PlusIcon } from './icons'
+import { IconButton } from './IconButton'
+import { AppLogo, ChevronDownIcon, PanelLeftIcon, PlusIcon, SettingsIcon } from './icons'
 import { isMac } from './WindowControls'
 
 /** Elenco dei template: un clic crea una conversazione con quel brief e quelle impostazioni. */
@@ -205,7 +206,65 @@ function NewConversationButton(): React.JSX.Element {
   )
 }
 
+const COLLAPSED_KEY = 'fastchat.sidebarCollapsed'
+
+/** Stato aperta/chiusa della barra laterale, ricordato anche dopo il riavvio. */
+function useCollapsed(): [boolean, (v: boolean) => void] {
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(COLLAPSED_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const set = (v: boolean): void => {
+    setCollapsed(v)
+    try {
+      localStorage.setItem(COLLAPSED_KEY, v ? '1' : '0')
+    } catch {
+      /* storage non disponibile: vale solo per questa sessione */
+    }
+  }
+  return [collapsed, set]
+}
+
+/** Barra laterale chiusa: striscia con logo, pulsante per riaprire, nuova conversazione e impostazioni. */
+function CollapsedRail({ onExpand, onOpenSettings }: { onExpand(): void; onOpenSettings(): void }): React.JSX.Element {
+  const create = useConversations((s) => s.create)
+  return (
+    <aside
+      aria-label="Barra laterale"
+      data-collapsed="true"
+      className={
+        'flex shrink-0 flex-col items-center border-r border-zinc-200 bg-zinc-50 pb-3 dark:border-zinc-800 dark:bg-zinc-950 ' +
+        (isMac ? 'w-20' : 'w-16')
+      }
+    >
+      {/* Blocco del logo (zona di trascinamento); su macOS sotto i semafori. */}
+      <div className={'drag flex w-full flex-col items-center gap-3 pb-4 ' + (isMac ? 'pt-11' : 'pt-4')}>
+        <AppLogo size={30} />
+        <IconButton tooltip="Apri la barra laterale" tooltipPlacement="right" aria-expanded={false} onClick={onExpand}>
+          <PanelLeftIcon size={18} />
+        </IconButton>
+      </div>
+      <IconButton tooltip="Nuova conversazione" tooltipPlacement="right" data-testid="new-conversation-rail" onClick={() => void create()}>
+        <PlusIcon size={18} />
+      </IconButton>
+      <div className="flex-1" />
+      <IconButton tooltip="Impostazioni" tooltipPlacement="right" onClick={onOpenSettings}>
+        <SettingsIcon size={18} />
+      </IconButton>
+    </aside>
+  )
+}
+
 export function Sidebar({ onOpenSettings }: { onOpenSettings(): void }): React.JSX.Element {
+  const [collapsed, setCollapsed] = useCollapsed()
+  if (collapsed) return <CollapsedRail onExpand={() => setCollapsed(false)} onOpenSettings={onOpenSettings} />
+  return <ExpandedSidebar onCollapse={() => setCollapsed(true)} onOpenSettings={onOpenSettings} />
+}
+
+function ExpandedSidebar({ onOpenSettings, onCollapse }: { onOpenSettings(): void; onCollapse(): void }): React.JSX.Element {
   const { conversations, activeId, search, showArchived, setSearch, setShowArchived } = useConversations()
   const [query, setQuery] = useState(search)
 
@@ -222,12 +281,15 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings(): void }): React.J
       aria-label="Barra laterale"
       className="flex w-64 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950"
     >
-      {/* Logo e nome dell'app; zona di trascinamento della finestra. Su macOS lascia spazio ai semafori. */}
-      <div className={'drag flex items-center gap-2.5 pb-6 pt-4 ' + (isMac ? 'pl-[88px] pr-4' : 'px-4')}>
+      {/* Logo e nome dell'app, pulsante di chiusura a destra; zona di trascinamento. Su macOS lascia spazio ai semafori. */}
+      <div className={'drag flex items-center gap-2.5 pb-6 pt-4 ' + (isMac ? 'pl-[88px] pr-3' : 'pl-4 pr-3')}>
         <AppLogo size={30} />
-        <span className="text-lg font-semibold tracking-tight" data-testid="app-name">
+        <span className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight" data-testid="app-name">
           FastChat
         </span>
+        <IconButton tooltip="Chiudi la barra laterale" tooltipPlacement="bottom-end" aria-expanded={true} onClick={onCollapse}>
+          <PanelLeftIcon size={18} />
+        </IconButton>
       </div>
 
       <div className="px-3 pb-6">
