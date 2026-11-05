@@ -25,7 +25,7 @@ afterAll(() => fake.close())
 
 const deps = (ramGb: number, unified = true) => ({
   ollama: createOllamaClient(() => fake.url),
-  system: () => ({ ramBytes: ramGb * GB, unified })
+  system: () => ({ ramBytes: ramGb * GB, unified, kvCacheType: 'f16' as const })
 })
 
 describe('calibrazione', () => {
@@ -69,8 +69,9 @@ describe('informazioni di sistema', () => {
     process.env.FASTCHAT_SYSTEM_RAM = String(16 * GB)
     process.env.FASTCHAT_SYSTEM_UNIFIED = '1'
     try {
-      expect(systemInfo('http://127.0.0.1:11434')).toEqual({ ramBytes: 16 * GB, unified: true })
-      expect(systemInfo('http://10.0.0.2:11434')).toEqual({ ramBytes: null, unified: true })
+      expect(systemInfo('http://127.0.0.1:11434')).toEqual({ ramBytes: 16 * GB, unified: true, kvCacheType: 'f16' })
+      expect(systemInfo('http://127.0.0.1:11434', 'q8_0')).toEqual({ ramBytes: 16 * GB, unified: true, kvCacheType: 'q8_0' })
+      expect(systemInfo('http://10.0.0.2:11434')).toEqual({ ramBytes: null, unified: true, kvCacheType: 'f16' })
     } finally {
       delete process.env.FASTCHAT_SYSTEM_RAM
       delete process.env.FASTCHAT_SYSTEM_UNIFIED

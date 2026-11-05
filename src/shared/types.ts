@@ -181,16 +181,23 @@ export interface PlanUpdate {
   status?: PlanStatus
 }
 
+/** Tipo della cache KV del server Ollama (OLLAMA_KV_CACHE_TYPE): decide quanto costa ogni token di contesto. */
+export type KvCacheType = 'f16' | 'q8_0' | 'q4_0'
+export const KV_CACHE_TYPES: KvCacheType[] = ['f16', 'q8_0', 'q4_0']
+
 export interface AppSettings {
   ollamaUrl: string
   theme: 'system' | 'light' | 'dark'
   defaultModel: string | null
+  /** Non leggibile dall'API: va impostato uguale a quello del server. */
+  kvCacheType: KvCacheType
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   ollamaUrl: 'http://127.0.0.1:11434',
   theme: 'system',
-  defaultModel: null
+  defaultModel: null,
+  kvCacheType: 'f16'
 }
 
 /** Esito tipizzato delle chiamate IPC: gli errori arrivano al renderer come valori, non come eccezioni. */

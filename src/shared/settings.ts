@@ -4,7 +4,7 @@
 // va a Ollama. L'app lo riempie quando si sceglie il modello (calibrazione), poi l'utente lo cambia
 // a piacere. Le funzioni resolve* sono solo la rete di sicurezza per le conversazioni non ancora
 // calibrate (create prima di questa versione, o con Ollama irraggiungibile).
-import { OLLAMA_DEFAULTS, type ConversationSettings, type ModelCapabilities } from './types'
+import { OLLAMA_DEFAULTS, type ConversationSettings, type KvCacheType, type ModelCapabilities } from './types'
 
 /** Parametri risolti: nessun "automatico", solo numeri. */
 export interface EffectiveSettings {
@@ -26,7 +26,15 @@ export interface SystemInfo {
   ramBytes: number | null
   /** Memoria unificata (Mac Apple Silicon): la GPU usa la RAM di sistema. */
   unified: boolean
+  /** Tipo della cache KV del server Ollama (impostazione dell'app, default f16). */
+  kvCacheType: KvCacheType
 }
+
+/**
+ * Byte per valore della cache KV rispetto a f16 (2 byte): q8_0 = 34 byte ogni 32 valori, q4_0 = 18 ogni 32.
+ * Con la cache quantizzata (OLLAMA_FLASH_ATTENTION=1 + OLLAMA_KV_CACHE_TYPE) ogni token costa meno.
+ */
+export const KV_CACHE_SCALE: Record<KvCacheType, number> = { f16: 1, q8_0: 34 / 64, q4_0: 18 / 64 }
 
 // ---------------------------------------------------------------- calibrazione di num_ctx
 
@@ -59,7 +67,7 @@ export function suggestNumCtx({ system, modelBytes, caps }: SuggestNumCtxInput):
   if (!system?.ramBytes || !modelBytes) return null
   // Nessuna quota prudenziale: tutta la RAM meno i pesi del modello. L'utente abbassa se serve.
   const forContext = system.ramBytes - modelBytes
-  const perToken = caps?.kvBytesPerToken ?? DEFAULT_KV_BYTES_PER_TOKEN
+  const perToken = (caps?.kvBytesPerToken ?? DEFAULT_KV_BYTES_PER_TOKEN) * KV_CACHE_SCALE[system.kvCacheType]
   const tokens = forContext > 0 ? floorPow2(forContext / perToken) : 0
   return Math.max(MIN_NUM_CTX, Math.min(tokens, maxNumCtx(caps)))
 }
@@ -69,7 +77,10 @@ export function describeSuggestion(input: SuggestNumCtxInput): string {
   const gb = (b: number): string => `${Math.round(b / 1024 ** 3)} GB`
   if (!input.system?.ramBytes) return 'Ollama non è su questa macchina: si usa il valore del modello.'
   if (!input.modelBytes) return 'Dimensione del modello non nota: si usa il valore del modello.'
-  return `Calcolato su ${gb(input.system.ramBytes)} di RAM${input.system.unified ? ' unificata' : ''} e un modello da ${gb(input.modelBytes)}.`
+  return (
+    `Calcolato su ${gb(input.system.ramBytes)} di RAM${input.system.unified ? ' unificata' : ''} e un modello da ${gb(input.modelBytes)}` +
+    (input.system.kvCacheType === 'f16' ? '.' : `, con cache KV ${input.system.kvCacheType}.`)
+  )
 }
 
 // ---------------------------------------------------------------- lunghezza della risposta

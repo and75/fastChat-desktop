@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { BrowserWindow, clipboard, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import {
   IPC,
+  KV_CACHE_TYPES,
   type AppSettings,
   type ConversationDetail,
   type ConversationListQuery,
@@ -10,7 +11,7 @@ import {
   type Result
 } from '@shared/types'
 import { normalizeSteps } from '@shared/prompt'
-import { followNumPredict } from '@shared/settings'
+import { followNumPredict, type SystemInfo } from '@shared/settings'
 import { calibrationPatch, type CalibrateDeps } from './calibrate'
 import { createChatService } from './chat'
 import type { Db } from './db/client'
@@ -82,7 +83,8 @@ const requireId = (id: unknown): string => {
 
 export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps): void {
   const watched = new WeakSet<WebContents>()
-  const calibrate: CalibrateDeps = { ollama, system: () => systemInfo(getOllamaUrl()) }
+  const system = async (): Promise<SystemInfo> => systemInfo(getOllamaUrl(), (await getSettings(db)).kvCacheType)
+  const calibrate: CalibrateDeps = { ollama, system }
   const summarizer = createSummarizer({ db, ollama })
   const chat = createChatService({
     db,
@@ -111,7 +113,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   handle(IPC.modelsList, () => ollama.listModels())
   handle(IPC.modelsCapabilities, (_e, name: string) => ollama.showModel(requireId(name)))
   handle(IPC.modelsCheck, (_e, url: string) => createOllamaClient(() => validOllamaUrl(url)).listModels())
-  handle(IPC.systemInfo, () => systemInfo(getOllamaUrl()))
+  handle(IPC.systemInfo, () => system())
 
   // ---- impostazioni
   // ---- finestra (agisce sulla finestra che ha fatto la richiesta)
@@ -139,6 +141,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   handle(IPC.settingsGet, () => getSettings(db))
   handle(IPC.settingsSet, async (_e, patch: Partial<AppSettings>) => {
     if (patch.ollamaUrl !== undefined) patch.ollamaUrl = validOllamaUrl(patch.ollamaUrl)
+    if (patch.kvCacheType !== undefined && !KV_CACHE_TYPES.includes(patch.kvCacheType)) throw new Error('Tipo di cache KV non valido')
     const next = await setSettings(db, patch)
     if (patch.ollamaUrl !== undefined) {
       setOllamaUrl(next.ollamaUrl)

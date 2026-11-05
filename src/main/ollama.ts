@@ -99,7 +99,21 @@ export function modelInfoNumber(info: Record<string, unknown>, suffix: string): 
 }
 
 /**
- * Memoria per token di contesto (cache KV in f16): 2 (K e V) × layer × teste KV × dimensione testa × 2 byte.
+ * Quota dei layer che vedono tutto il contesto nelle architetture con finestra scorrevole: gli altri
+ * tengono in cache solo gli ultimi `sliding_window` token, un costo fisso che non cresce con il contesto.
+ * Gemma 3: 5 layer locali ogni globale; Gemma 2: alternati. Altre architetture: non noto, si resta prudenti.
+ */
+export function globalLayerShare(info: Record<string, unknown>): number {
+  if (!modelInfoNumber(info, '.attention.sliding_window')) return 1
+  const arch = Object.keys(info).find((k) => k.endsWith('.block_count'))?.split('.')[0] ?? ''
+  if (arch === 'gemma3' || arch === 'gemma3n') return 1 / 6
+  if (arch === 'gemma2') return 1 / 2
+  return 1
+}
+
+/**
+ * Memoria per token di contesto (cache KV in f16): 2 (K e V) × layer × teste KV × dimensione testa × 2 byte,
+ * contando solo i layer che crescono con il contesto (vedi globalLayerShare).
  * La dimensione della testa è `attention.key_length` se dichiarata, altrimenti embedding ÷ teste.
  * null se l'architettura non espone i campi.
  */
@@ -111,7 +125,7 @@ export function kvBytesPerToken(info: Record<string, unknown>): number | null {
     modelInfoNumber(info, '.attention.key_length') ??
     (heads && modelInfoNumber(info, '.embedding_length') ? modelInfoNumber(info, '.embedding_length')! / heads : null)
   if (!layers || !kvHeads || !headDim) return null
-  return 2 * layers * kvHeads * headDim * 2
+  return Math.round(2 * layers * globalLayerShare(info) * kvHeads * headDim * 2)
 }
 
 const isAbort = (err: unknown): boolean =>

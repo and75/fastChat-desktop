@@ -25,8 +25,8 @@ const caps: ModelCapabilities = {
 const bare: ModelCapabilities = { capabilities: [], thinking: false, contextLength: null, kvBytesPerToken: null, defaults: { temperature: null, topP: null, numCtx: null } }
 const conv: ConversationSettings = { temperature: 0.7, think: true, planMode: false, topP: null, numCtx: null, numPredict: null, seed: null }
 const noThink = { think: false }
-const mac = (gb: number): SystemInfo => ({ ramBytes: gb * GB, unified: true })
-const pc = (gb: number): SystemInfo => ({ ramBytes: gb * GB, unified: false })
+const mac = (gb: number, kvCacheType: SystemInfo['kvCacheType'] = 'f16'): SystemInfo => ({ ramBytes: gb * GB, unified: true, kvCacheType })
+const pc = (gb: number): SystemInfo => ({ ramBytes: gb * GB, unified: false, kvCacheType: 'f16' })
 const big = (contextLength: number, kv: number | null = null): ModelCapabilities => ({ ...bare, contextLength, kvBytesPerToken: kv })
 
 describe('memoria della conversazione suggerita dalla RAM', () => {
@@ -58,8 +58,16 @@ describe('memoria della conversazione suggerita dalla RAM', () => {
     expect(suggestNumCtx({ system: mac(16), modelBytes: 5 * GB, caps: cheap })).toBe(131_072) // 11 GB ÷ 64 KiB → 180k
   })
 
+  it('cache KV quantizzata: ogni token costa meno, il contesto che ci sta cresce', () => {
+    // 11 GB ÷ 128 KiB = 90k → 65.536; q8_0 (×0,53) → 169k → 131.072; q4_0 (×0,28) → 320k → 262.144
+    expect(suggestNumCtx({ system: mac(16), modelBytes: 5 * GB, caps: big(262_144) })).toBe(65536)
+    expect(suggestNumCtx({ system: mac(16, 'q8_0'), modelBytes: 5 * GB, caps: big(262_144) })).toBe(131_072)
+    expect(suggestNumCtx({ system: mac(16, 'q4_0'), modelBytes: 5 * GB, caps: big(262_144) })).toBe(262_144)
+    expect(describeSuggestion({ system: mac(16, 'q8_0'), modelBytes: 5 * GB, caps })).toBe('Calcolato su 16 GB di RAM unificata e un modello da 5 GB, con cache KV q8_0.')
+  })
+
   it('senza RAM (Ollama remoto) o senza dimensione del modello: nessun suggerimento', () => {
-    expect(suggestNumCtx({ system: { ramBytes: null, unified: false }, modelBytes: 5 * GB, caps })).toBeNull()
+    expect(suggestNumCtx({ system: { ramBytes: null, unified: false, kvCacheType: 'f16' }, modelBytes: 5 * GB, caps })).toBeNull()
     expect(suggestNumCtx({ system: null, modelBytes: 5 * GB, caps })).toBeNull()
     expect(suggestNumCtx({ system: mac(16), modelBytes: null, caps })).toBeNull()
   })
@@ -67,7 +75,7 @@ describe('memoria della conversazione suggerita dalla RAM', () => {
   it('describeSuggestion', () => {
     expect(describeSuggestion({ system: mac(16), modelBytes: 5 * GB, caps })).toBe('Calcolato su 16 GB di RAM unificata e un modello da 5 GB.')
     expect(describeSuggestion({ system: pc(32), modelBytes: 5 * GB, caps })).toBe('Calcolato su 32 GB di RAM e un modello da 5 GB.')
-    expect(describeSuggestion({ system: { ramBytes: null, unified: false }, modelBytes: 5 * GB, caps })).toMatch(/non è su questa macchina/)
+    expect(describeSuggestion({ system: { ramBytes: null, unified: false, kvCacheType: 'f16' }, modelBytes: 5 * GB, caps })).toMatch(/non è su questa macchina/)
   })
 })
 

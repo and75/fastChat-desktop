@@ -5,7 +5,7 @@ import type { OllamaClient } from './ollama'
 
 export interface CalibrateDeps {
   ollama: OllamaClient
-  system(): SystemInfo
+  system(): SystemInfo | Promise<SystemInfo>
 }
 
 /** Campi che la calibrazione riempie. */
@@ -27,7 +27,7 @@ export async function suggestFor(deps: CalibrateDeps, model: string, ctx: Calibr
   try {
     const [caps, models] = await Promise.all([deps.ollama.showModel(model), deps.ollama.listModels()])
     const modelBytes = models.find((m) => m.name === model)?.size ?? null
-    return suggestSettings({ system: deps.system(), modelBytes, caps, think: ctx.think === true && caps.thinking, numCtx: ctx.numCtx })
+    return suggestSettings({ system: await deps.system(), modelBytes, caps, think: ctx.think === true && caps.thinking, numCtx: ctx.numCtx })
   } catch {
     return null
   }

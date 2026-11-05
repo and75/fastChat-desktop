@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createOllamaClient, kvBytesPerToken, OllamaError, parseModelDefaults } from '../src/main/ollama'
+import { createOllamaClient, globalLayerShare, kvBytesPerToken, OllamaError, parseModelDefaults } from '../src/main/ollama'
 import { startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
 
 let fake: FakeOllama
@@ -63,11 +63,23 @@ describe('showModel', () => {
     // llama 3.1 8B: 32 layer, 8 teste KV, 4096/32 = 128 → 128 KiB
     expect(kvBytesPerToken({ 'llama.block_count': 32, 'llama.attention.head_count': 32, 'llama.attention.head_count_kv': 8, 'llama.embedding_length': 4096 })).toBe(131072)
     // key_length dichiarata vince su embedding ÷ teste; senza head_count_kv si usano tutte le teste
-    expect(kvBytesPerToken({ 'gemma3.block_count': 48, 'gemma3.attention.head_count': 16, 'gemma3.attention.head_count_kv': 8, 'gemma3.attention.key_length': 256, 'gemma3.embedding_length': 3840 })).toBe(48 * 8 * 256 * 4)
+    expect(kvBytesPerToken({ 'qwen3.block_count': 48, 'qwen3.attention.head_count': 16, 'qwen3.attention.head_count_kv': 8, 'qwen3.attention.key_length': 256, 'qwen3.embedding_length': 3840 })).toBe(48 * 8 * 256 * 4)
     expect(kvBytesPerToken({ 'x.block_count': 10, 'x.attention.head_count': 4, 'x.embedding_length': 512 })).toBe(10 * 4 * 128 * 4)
     // campi mancanti
     expect(kvBytesPerToken({ 'x.block_count': 10 })).toBeNull()
     expect(kvBytesPerToken({})).toBeNull()
+  })
+
+  it('finestra scorrevole: contano solo i layer globali (Gemma 3: 1 su 6, Gemma 2: 1 su 2)', () => {
+    // gemma3 27B: 62 layer × 16 teste KV × 128 → 508 KiB pieni, ma solo 1 layer su 6 cresce con il contesto
+    const gemma3 = { 'gemma3.block_count': 62, 'gemma3.attention.head_count': 32, 'gemma3.attention.head_count_kv': 16, 'gemma3.attention.key_length': 128, 'gemma3.attention.sliding_window': 1024 }
+    expect(globalLayerShare(gemma3)).toBeCloseTo(1 / 6)
+    expect(kvBytesPerToken(gemma3)).toBe(Math.round((62 / 6) * 16 * 128 * 4))
+    const gemma2 = { 'gemma2.block_count': 42, 'gemma2.attention.head_count': 16, 'gemma2.attention.head_count_kv': 8, 'gemma2.attention.key_length': 256, 'gemma2.attention.sliding_window': 4096 }
+    expect(kvBytesPerToken(gemma2)).toBe(21 * 8 * 256 * 4)
+    // senza finestra, o architettura sconosciuta con finestra: tutti i layer
+    expect(globalLayerShare({ 'llama.block_count': 32 })).toBe(1)
+    expect(globalLayerShare({ 'boh.block_count': 32, 'boh.attention.sliding_window': 4096 })).toBe(1)
   })
 
   it('tiene in cache le capabilities', async () => {

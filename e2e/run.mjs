@@ -755,14 +755,19 @@ try {
     await url.fill(fake.url)
     await dialog.getByLabel('Tema').selectOption('dark')
     await dialog.getByLabel('Modello predefinito').selectOption('llama3.2:3b')
+    await dialog.getByLabel('Cache KV di Ollama').selectOption('q8_0')
     await dialog.getByRole('button', { name: 'Salva' }).click()
     await dialog.waitFor({ state: 'detached' })
     await page.waitForFunction(() => document.documentElement.classList.contains('dark'))
     const saved = (await page.evaluate(() => window.api.settings.get())).data
     assert.equal(saved.theme, 'dark')
     assert.equal(saved.defaultModel, 'llama3.2:3b')
+    assert.equal(saved.kvCacheType, 'q8_0')
     await page.getByTestId('new-conversation').click()
     await page.waitForFunction(() => document.querySelector('#model-select')?.value === 'llama3.2:3b')
+    // la cache quantizzata entra nel calcolo della memoria (qui limitata dal massimo del modello) e nella spiegazione
+    await openTab('Modello')
+    await page.getByTestId('model-settings').getByText(/con cache KV q8_0\./).waitFor()
   })
 
   await step('campo di scrittura: altezza dinamica fino al 40% della finestra; barre invisibili', async () => {

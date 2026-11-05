@@ -7,7 +7,7 @@ type Check = { state: 'idle' } | { state: 'checking' } | { state: 'ok'; count: n
 /** Impostazioni generali: URL di Ollama, tema, modello predefinito per le nuove conversazioni. */
 export function SettingsDialog({ onClose }: { onClose(): void }): React.JSX.Element {
   const { settings, models, saveSettings } = useModels()
-  const [draft, setDraft] = useState<AppSettings>(() => settings ?? { ollamaUrl: '', theme: 'system', defaultModel: null })
+  const [draft, setDraft] = useState<AppSettings>(() => settings ?? { ollamaUrl: '', theme: 'system', defaultModel: null, kvCacheType: 'f16' })
   const [check, setCheck] = useState<Check>({ state: 'idle' })
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -116,6 +116,22 @@ export function SettingsDialog({ onClose }: { onClose(): void }): React.JSX.Elem
             ))}
           </select>
           <span className="text-xs text-zinc-500">Usato per le nuove conversazioni.</span>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium">Cache KV di Ollama</span>
+          <select
+            className={field}
+            value={draft.kvCacheType}
+            onChange={(e) => setDraft({ ...draft, kvCacheType: e.target.value as AppSettings['kvCacheType'] })}
+          >
+            <option value="f16">f16 (predefinito di Ollama)</option>
+            <option value="q8_0">q8_0 (circa metà memoria per token)</option>
+            <option value="q4_0">q4_0 (circa un quarto)</option>
+          </select>
+          <span className="text-xs text-zinc-500">
+            Deve corrispondere a OLLAMA_KV_CACHE_TYPE del server (richiede OLLAMA_FLASH_ATTENTION=1). Cambia solo la memoria della conversazione suggerita.
+          </span>
         </label>
 
         {error && (

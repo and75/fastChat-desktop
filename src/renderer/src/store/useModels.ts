@@ -83,6 +83,8 @@ export const useModels = create<ModelsState>((set, get) => ({
     if (patch.ollamaUrl !== undefined && patch.ollamaUrl !== before?.ollamaUrl) {
       set({ capabilities: {} })
       await Promise.all([get().refresh(), get().loadSystem()])
+    } else if (patch.kvCacheType !== undefined && patch.kvCacheType !== before?.kvCacheType) {
+      await get().loadSystem()
     }
     return null
   },
