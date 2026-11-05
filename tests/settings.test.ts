@@ -36,27 +36,26 @@ describe('memoria della conversazione suggerita dalla RAM', () => {
     expect(floorPow2(43_000)).toBe(32768)
   })
 
-  it('esempi: Mac 8 GB + 4B → 8k; Mac 16 GB + 8B → 32k; Mac 64 GB + 30B → 64k; PC 32 GB + 8B → 64k', () => {
-    // (RAM × quota − pesi − 1 GB) ÷ 128 KB per token, potenza di 2 inferiore
-    expect(suggestNumCtx({ system: mac(8), modelBytes: 2.5 * GB, caps: big(262_144) })).toBe(8192)
-    expect(suggestNumCtx({ system: mac(16), modelBytes: 5 * GB, caps: big(262_144) })).toBe(32768)
-    expect(suggestNumCtx({ system: mac(64), modelBytes: 18 * GB, caps: big(262_144, 256 * 1024) })).toBe(65536)
-    // PC: stessa quota del 65% → (20,8 − 5 − 1) GB ÷ 128 KiB ≈ 121k → 65.536
-    expect(suggestNumCtx({ system: pc(32), modelBytes: 5 * GB, caps: big(262_144) })).toBe(65536)
-    expect(suggestNumCtx({ system: pc(16), modelBytes: 5 * GB, caps: big(262_144) })).toBe(32768)
+  it('esempi: (RAM − pesi) ÷ costo per token, potenza di 2 inferiore', () => {
+    expect(suggestNumCtx({ system: mac(8), modelBytes: 2.5 * GB, caps: big(262_144) })).toBe(32768) // 5,5 GB → 45k
+    expect(suggestNumCtx({ system: mac(16), modelBytes: 5 * GB, caps: big(262_144) })).toBe(65536) // 11 GB → 90k
+    expect(suggestNumCtx({ system: mac(64), modelBytes: 18 * GB, caps: big(262_144, 256 * 1024) })).toBe(131_072) // 46 GB → 188k
+    expect(suggestNumCtx({ system: pc(32), modelBytes: 5 * GB, caps: big(262_144) })).toBe(131_072) // 27 GB → 221k
+    expect(suggestNumCtx({ system: pc(16), modelBytes: 5 * GB, caps: big(262_144) })).toBe(65536)
   })
 
   it('mai sopra il massimo del modello, mai sotto 2k', () => {
     expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: big(262_144) })).toBe(262_144)
     expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: big(8192) })).toBe(8192)
-    expect(suggestNumCtx({ system: mac(4), modelBytes: 3 * GB, caps: big(8192) })).toBe(2048)
+    // modello più grande della RAM
+    expect(suggestNumCtx({ system: mac(2), modelBytes: 3 * GB, caps: big(8192) })).toBe(2048)
     // massimo ignoto: 32k
     expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: bare })).toBe(32768)
   })
 
   it('usa il costo per token dichiarato dal modello', () => {
     const cheap = big(262_144, 64 * 1024)
-    expect(suggestNumCtx({ system: mac(16), modelBytes: 5 * GB, caps: cheap })).toBe(65536)
+    expect(suggestNumCtx({ system: mac(16), modelBytes: 5 * GB, caps: cheap })).toBe(131_072) // 11 GB ÷ 64 KiB → 180k
   })
 
   it('senza RAM (Ollama remoto) o senza dimensione del modello: nessun suggerimento', () => {
@@ -80,7 +79,7 @@ describe('valori suggeriti per il modello', () => {
   })
 
   it('num_ctx: calcolato dalla RAM vince sul Modelfile; senza RAM il Modelfile, entro il massimo', () => {
-    expect(suggestSettings({ system: mac(16), modelBytes: 5 * GB, caps, ...noThink }).numCtx).toBe(8192)
+    expect(suggestSettings({ system: mac(16), modelBytes: 5 * GB, caps, ...noThink }).numCtx).toBe(8192) // massimo del modello
     expect(suggestSettings({ system: null, modelBytes: null, caps: { ...caps, defaults: { ...caps.defaults, numCtx: 100_000 } }, ...noThink }).numCtx).toBe(8192)
   })
 

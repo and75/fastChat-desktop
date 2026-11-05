@@ -30,14 +30,6 @@ export interface SystemInfo {
 
 // ---------------------------------------------------------------- calibrazione di num_ctx
 
-/**
- * Quota della RAM che Ollama può usare per il modello. Su Mac Apple Silicon è circa quanto macOS
- * lascia alla GPU per la memoria unificata; sugli altri sistemi è la stessa quota, applicata alla RAM
- * (con una GPU dedicata piccola può essere ottimistica: il cursore resta modificabile).
- */
-export const RAM_SHARE = { unified: 0.65, other: 0.65 } as const
-/** Byte lasciati liberi oltre a pesi e contesto (sistema operativo, altre app). */
-export const RAM_MARGIN_BYTES = 1024 ** 3
 /** Costo in memoria di un token di contesto quando il modello non lo dichiara (~modelli da 3 a 14B). */
 export const DEFAULT_KV_BYTES_PER_TOKEN = 128 * 1024
 /** Limiti del suggerimento: sotto 2k il modello non è utilizzabile; sopra il massimo del modello non ha senso. */
@@ -60,13 +52,13 @@ export const maxNumCtx = (caps: ModelCapabilities | null | undefined): number =>
 
 /**
  * Memoria della conversazione suggerita per questa macchina e questo modello, in token.
- * Calcolo di massima dalla RAM: (RAM × quota − pesi − margine) ÷ costo per token, arrotondato alla
- * potenza di 2 inferiore, tra MIN_NUM_CTX e il massimo del modello. null se mancano RAM o modello.
+ * Calcolo di massima dalla RAM: (RAM − pesi) ÷ costo per token, arrotondato alla potenza di 2
+ * inferiore, tra MIN_NUM_CTX e il massimo del modello. null se mancano RAM o modello.
  */
 export function suggestNumCtx({ system, modelBytes, caps }: SuggestNumCtxInput): number | null {
   if (!system?.ramBytes || !modelBytes) return null
-  const usable = system.ramBytes * (system.unified ? RAM_SHARE.unified : RAM_SHARE.other)
-  const forContext = usable - modelBytes - RAM_MARGIN_BYTES
+  // Nessuna quota prudenziale: tutta la RAM meno i pesi del modello. L'utente abbassa se serve.
+  const forContext = system.ramBytes - modelBytes
   const perToken = caps?.kvBytesPerToken ?? DEFAULT_KV_BYTES_PER_TOKEN
   const tokens = forContext > 0 ? floorPow2(forContext / perToken) : 0
   return Math.max(MIN_NUM_CTX, Math.min(tokens, maxNumCtx(caps)))

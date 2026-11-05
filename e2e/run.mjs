@@ -84,8 +84,8 @@ const app = await electron.launch({
     OLLAMA_URL: fake.url,
     FASTCHAT_USER_DATA: userData,
     FASTCHAT_EXPORT_PATH: join(userData, 'export'),
-    // Macchina finta: 16 GB di RAM (quota 65%). Con un modello da 2 GB e 128 KiB per token la memoria
-    // suggerita è ~61k → 32.768 (massimo di thinker:8b), 8.192 per i modelli con contesto massimo 8k.
+    // Macchina finta: 16 GB di RAM. Con un modello da 2 GB e 128 KiB per token la memoria suggerita
+    // è ~115k, limitata al massimo del modello: 32.768 (thinker:8b), 8.192 per quelli con contesto 8k.
     FASTCHAT_SYSTEM_RAM: String(16 * 1024 ** 3),
     FASTCHAT_SYSTEM_UNIFIED: '0',
     NODE_ENV: 'production'
