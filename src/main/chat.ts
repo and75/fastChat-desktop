@@ -8,8 +8,8 @@ import {
   PLAN_SCHEMA,
   selectHistory
 } from '@shared/prompt'
-import { resolveNumCtx, resolveSettings } from '@shared/settings'
-import { DEFAULT_TITLE, type Conversation, type ModelCapabilities, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
+import { resolveSettings } from '@shared/settings'
+import { DEFAULT_TITLE, type Conversation, type DoneReason, type ModelCapabilities, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
 import type { Db } from './db/client'
 import {
   addMessage,
@@ -59,21 +59,23 @@ type Mode =
  */
 export function buildOptions(conv: Conversation, caps: ModelCapabilities | null = null): ChatOptions {
   const s = resolveSettings(conv, caps)
-  const options: ChatOptions = { temperature: s.temperature, top_p: s.topP, num_ctx: s.numCtx }
+  const options: ChatOptions = { temperature: s.temperature, top_p: s.topP, num_ctx: s.numCtx, num_predict: s.numPredict }
   if (s.seed != null) options.seed = s.seed
   return options
 }
 
 /**
- * Messaggi da inviare: system prompt (di default il brief; mai troncato) + coda dello storico che sta nel contesto.
+ * Messaggi da inviare: system prompt (di default il brief; mai troncato) + coda dello storico che sta nel
+ * contesto, lasciando libera la riserva per la risposta (num_predict: la risposta non può sforare).
  */
 export function buildChatMessages(
   conv: Conversation,
   history: Message[],
   system: string = buildSystemPrompt(conv),
-  maxTokens: number = resolveNumCtx(conv, null)
+  caps: ModelCapabilities | null = null
 ): ChatMessage[] {
-  const picked = selectHistory(history, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens })
+  const s = resolveSettings(conv, caps)
+  const picked = selectHistory(history, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.numPredict })
   const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
   for (const m of picked) out.push({ role: m.role, content: m.content })
   return out
@@ -197,6 +199,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
       evalCount: number | null
       promptEvalCount: number | null
       durationMs: number | null
+      doneReason: DoneReason | null
       aborted: boolean
     }
   ): Promise<Partial<StreamEvent>> {
@@ -217,7 +220,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
         model: conv.model,
         evalCount: result.evalCount,
         promptEvalCount: result.promptEvalCount,
-        durationMs: result.durationMs
+        durationMs: result.durationMs,
+        doneReason: result.aborted ? null : result.doneReason
       })
     }
     const out: Partial<StreamEvent> = { message, aborted: result.aborted }
@@ -234,7 +238,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated }: C
     const history = await listMessages(db, conv.id)
     const request: ChatRequest = {
       model: conv.model,
-      messages: buildChatMessages(conv, history, systemFor(conv, mode), resolveNumCtx(conv, caps)),
+      messages: buildChatMessages(conv, history, systemFor(conv, mode), caps),
       options: buildOptions(conv, caps)
     }
     if (mode.kind === 'plan') request.format = PLAN_SCHEMA as unknown as Record<string, unknown>

@@ -7,6 +7,7 @@ import {
   type Conversation,
   type ConversationListQuery,
   type ConversationPatch,
+  type DoneReason,
   type Message,
   type MessageRole,
   type Plan,
@@ -56,6 +57,7 @@ const PATCHABLE: (keyof ConversationPatch)[] = [
   'planMode',
   'topP',
   'numCtx',
+  'numPredict',
   'seed',
   'archived'
 ]
@@ -70,6 +72,7 @@ export function sanitizePatch(patch: ConversationPatch): ConversationPatch {
   if ('temperature' in out) out.temperature = clampNumber(out.temperature, 0, 2) ?? 0.7
   if ('topP' in out) out.topP = clampNumber(out.topP, 0, 1)
   if ('numCtx' in out) out.numCtx = toInt(out.numCtx, 256, 1_048_576)
+  if ('numPredict' in out) out.numPredict = toInt(out.numPredict, 64, 1_048_576)
   if ('seed' in out) out.seed = toInt(out.seed, -2_147_483_648, 2_147_483_647)
   for (const key of ['think', 'planMode', 'archived'] as const) {
     if (key in out) out[key] = out[key] === true
@@ -159,6 +162,7 @@ export interface NewMessage {
   evalCount?: number | null
   promptEvalCount?: number | null
   durationMs?: number | null
+  doneReason?: DoneReason | null
 }
 
 export async function addMessage(db: Db, msg: NewMessage): Promise<Message> {
@@ -172,6 +176,7 @@ export async function addMessage(db: Db, msg: NewMessage): Promise<Message> {
     evalCount: msg.evalCount ?? null,
     promptEvalCount: msg.promptEvalCount ?? null,
     durationMs: msg.durationMs ?? null,
+    doneReason: msg.doneReason ?? null,
     createdAt: Date.now()
   }
   await db.insert(messages).values(row)

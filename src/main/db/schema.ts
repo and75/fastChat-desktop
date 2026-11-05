@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
-import type { PlanStatus, PlanStep } from '@shared/types'
+import type { DoneReason, PlanStatus, PlanStep } from '@shared/types'
 
 const now = sql`(unixepoch('subsec') * 1000)`
 
@@ -19,6 +19,8 @@ export const conversations = sqliteTable(
     planMode: integer('plan_mode', { mode: 'boolean' }).notNull().default(false),
     topP: real('top_p'),
     numCtx: integer('num_ctx'),
+    /** Token massimi per la risposta (num_predict): è anche lo spazio riservato alla risposta nel contesto. */
+    numPredict: integer('num_predict'),
     seed: integer('seed'),
     archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
     createdAt: integer('created_at').notNull().default(now),
@@ -42,6 +44,8 @@ export const messages = sqliteTable(
     /** Token del prompt della richiesta che ha prodotto questa risposta (da Ollama). */
     promptEvalCount: integer('prompt_eval_count'),
     durationMs: integer('duration_ms'),
+    /** Perché Ollama ha chiuso la risposta: 'stop' (finita) o 'length' (limite di token raggiunto). */
+    doneReason: text('done_reason', { enum: ['stop', 'length'] }).$type<DoneReason>(),
     createdAt: integer('created_at').notNull().default(now)
   },
   (t) => [index('messages_conversation_idx').on(t.conversationId, t.createdAt)]

@@ -24,7 +24,8 @@ beforeAll(async () => {
     { name: 'llama3.2', capabilities: ['completion'] },
     { name: 'small', capabilities: ['completion'], contextLength: 4096, parameters: 'num_ctx 2048' },
     { name: 'slow', capabilities: ['completion'], delayMs: 20, chunks: Array.from({ length: 40 }, (_, i) => ({ content: `${i} ` })) },
-    { name: 'badplan', capabilities: ['completion'], plan: 'scusa, non so fare piani' }
+    { name: 'badplan', capabilities: ['completion'], plan: 'scusa, non so fare piani' },
+    { name: 'cut', capabilities: ['completion'], doneReason: 'length', chunks: [{ content: 'Inizio della risposta' }] }
   ])
 })
 afterAll(() => fake.close())
@@ -71,12 +72,13 @@ describe('buildOptions / buildChatMessages', () => {
   } as Conversation
 
   it('opzioni: valori effettivi sempre espliciti, seed solo se impostato', () => {
-    expect(buildOptions(conv)).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, seed: 7 })
-    expect(buildOptions({ ...conv, seed: null, numCtx: null })).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096 })
+    expect(buildOptions(conv)).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, num_predict: 1024, seed: 7 })
+    expect(buildOptions({ ...conv, seed: null, numCtx: null })).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, num_predict: 1024 })
+    expect(buildOptions({ ...conv, seed: null, numPredict: 512 })).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, num_predict: 512 })
     const caps = { capabilities: [], thinking: false, contextLength: 8192, kvBytesPerToken: null, defaults: { temperature: 0.6, topP: 0.95, numCtx: 2048 } }
     // in automatico: consigliati dal modello; la scelta dell'utente non supera il massimo del modello
-    expect(buildOptions({ ...conv, seed: null, numCtx: null, topP: null }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 2048 })
-    expect(buildOptions({ ...conv, seed: null, numCtx: 65536 }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 8192 })
+    expect(buildOptions({ ...conv, seed: null, numCtx: null, topP: null }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 2048, num_predict: 1024 })
+    expect(buildOptions({ ...conv, seed: null, numCtx: 65536 }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 8192, num_predict: 2048 })
   })
 
   it('brief come primo messaggio system, poi lo storico', () => {
@@ -89,6 +91,16 @@ describe('buildOptions / buildChatMessages', () => {
       { role: 'user', content: 'ciao' },
       { role: 'assistant', content: 'salve' }
     ])
+  })
+
+  it('lo storico lascia libera la riserva per la risposta (num_predict)', () => {
+    // 4096 di memoria; ogni messaggio da 4000 caratteri costa 1004 token
+    const big = (i: number) => ({ role: i % 2 ? 'assistant' : 'user', content: 'x'.repeat(4000) }) as never
+    const history = [big(0), big(1), big(2), big(3), big(4)]
+    // riserva 1024 → 3072 per lo storico: gli ultimi 3 messaggi
+    expect(buildChatMessages({ ...conv, role: '', constraints: '', numPredict: 1024 }, history)).toHaveLength(3)
+    // riserva 2048 → 2048: ci starebbero 2, ma il primo sarebbe una risposta orfana → resta solo la domanda
+    expect(buildChatMessages({ ...conv, role: '', constraints: '', numPredict: 2048 }, history)).toHaveLength(1)
   })
 
   it('senza brief non c\'è messaggio system', () => {
@@ -111,7 +123,7 @@ describe('chat service', () => {
       { role: 'user', content: 'ciao' }
     ])
     // nessuna scelta esplicita: predefiniti di Ollama, ma sempre inviati (= ciò che l'interfaccia mostra)
-    expect(body.options).toEqual({ temperature: 1.1, top_p: 0.9, num_ctx: 4096 })
+    expect(body.options).toEqual({ temperature: 1.1, top_p: 0.9, num_ctx: 4096, num_predict: 1024 })
     // llama3.2 non supporta il ragionamento: il parametro think non va inviato
     expect(body).not.toHaveProperty('think')
 
@@ -349,6 +361,8 @@ describe('titolo automatico', () => {
     }
     expect(req.think).toBe(false)
     expect(req.options).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, num_predict: 32 })
+    // la risposta normale finisce con done_reason 'stop'
+    expect(events.find((e) => e.type === 'done')?.message?.doneReason).toBe('stop')
     expect(req.messages[1].content).toContain('Parlami di Roma')
     expect((await getConversation(h.db, conv.id))?.title).toBe('Ciao mondo!')
     expect(updated.map((c) => c.title)).toEqual(['Ciao mondo!'])
@@ -388,6 +402,17 @@ describe('titolo automatico', () => {
     expect(cleanTitle('x '.repeat(50)).length).toBeLessThanOrEqual(61)
     expect(fallbackTitle('\n  Breve  \nsecondo')).toBe('Breve')
     expect(fallbackTitle('   ')).toBe('Nuova conversazione')
+  })
+})
+
+describe('risposta tagliata al limite di token', () => {
+  it('done_reason length viene salvato sul messaggio', async () => {
+    const c = await createConversation(h.db, { model: 'cut' })
+    const chat = service()
+    await chat.wait((await chat.send(target, c.id, 'ciao')).streamId)
+    const done = events.find((e) => e.type === 'done')!
+    expect(done.message).toMatchObject({ content: 'Inizio della risposta', doneReason: 'length' })
+    expect((await listMessages(h.db, c.id)).at(-1)?.doneReason).toBe('length')
   })
 })
 

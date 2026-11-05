@@ -1,4 +1,4 @@
-import type { ModelCapabilities, ModelDefaults, OllamaModel } from '@shared/types'
+import type { DoneReason, ModelCapabilities, ModelDefaults, OllamaModel } from '@shared/types'
 
 export type OllamaErrorCode = 'unreachable' | 'http' | 'model' | 'parse'
 
@@ -48,6 +48,8 @@ export interface ChatResult {
   /** Token del prompt valutati da Ollama (system + storico + domanda). */
   promptEvalCount: number | null
   durationMs: number | null
+  /** 'length' se Ollama ha fermato la risposta al limite di token (num_predict), 'stop' se è finita. */
+  doneReason: DoneReason | null
   /** true se la generazione è stata interrotta: content/thinking contengono il parziale. */
   aborted: boolean
 }
@@ -57,6 +59,7 @@ type FetchLike = typeof fetch
 interface ChatChunk {
   message?: { role?: string; content?: string; thinking?: string }
   done?: boolean
+  done_reason?: string
   eval_count?: number
   prompt_eval_count?: number
   total_duration?: number
@@ -195,7 +198,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     handlers: ChatHandlers,
     signal?: AbortSignal
   ): Promise<ChatResult> {
-    const result: ChatResult = { content: '', thinking: '', evalCount: null, promptEvalCount: null, durationMs: null, aborted: false }
+    const result: ChatResult = { content: '', thinking: '', evalCount: null, promptEvalCount: null, durationMs: null, doneReason: null, aborted: false }
 
     const handleLine = (line: string): void => {
       if (!line.trim()) return
@@ -220,6 +223,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
         result.evalCount = chunk.eval_count ?? null
         result.promptEvalCount = chunk.prompt_eval_count ?? null
         result.durationMs = chunk.total_duration != null ? Math.round(chunk.total_duration / 1e6) : null
+        result.doneReason = chunk.done_reason === 'length' ? 'length' : chunk.done_reason === 'stop' ? 'stop' : null
       }
     }
 

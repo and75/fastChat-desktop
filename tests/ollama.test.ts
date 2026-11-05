@@ -103,6 +103,7 @@ describe('chatStream', () => {
       promptEvalCount: undefined,
       evalCount: 42,
       durationMs: 1500,
+      doneReason: 'stop',
       aborted: false
     })
     const sent = fake.requests.at(-1)?.body as Record<string, unknown>

@@ -10,6 +10,7 @@ import {
   type Result
 } from '@shared/types'
 import { normalizeSteps } from '@shared/prompt'
+import { followNumPredict } from '@shared/settings'
 import { calibrationPatch, type CalibrateDeps } from './calibrate'
 import { createChatService } from './chat'
 import type { Db } from './db/client'
@@ -180,7 +181,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     }
     // I parametri partono dai valori suggeriti per il modello; il template può fissarne alcuni (temperatura).
     const conv = await createConversation(db, init)
-    const fill = await calibrationPatch(calibrate, conv.model, { ...conv, temperature: init.temperature ?? null }, true)
+    const fill = await calibrationPatch(calibrate, conv.model, { ...conv, temperature: init.temperature ?? null, numCtx: null }, true)
     return Object.keys(fill).length ? updateConversation(db, conv.id, fill) : conv
   })
 
@@ -226,13 +227,17 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   handle(IPC.conversationsUpdate, async (_e, id: string, patch: ConversationPatch) => {
     const convId = requireId(id)
     patch = patch ?? {}
-    // Cambio modello: i parametri ripartono dai valori suggeriti per il nuovo modello (salvo quelli nel patch).
-    if (typeof patch.model === 'string') {
-      const current = await getConversation(db, convId)
-      if (current && current.model !== patch.model) {
-        const fill = await calibrationPatch(calibrate, patch.model, {}, false)
-        patch = { ...fill, ...patch }
-      }
+    const current = await getConversation(db, convId)
+    if (current && typeof patch.model === 'string' && current.model !== patch.model) {
+      // Cambio modello: i parametri ripartono dai valori suggeriti per il nuovo modello (salvo quelli nel patch).
+      const fill = await calibrationPatch(calibrate, patch.model, { think: patch.think ?? current.think }, false)
+      patch = { ...fill, ...patch }
+    } else if (current && patch.numPredict === undefined && (patch.numCtx !== undefined || patch.think !== undefined)) {
+      // Memoria o ragionamento cambiati: la lunghezza della risposta, se era quella suggerita, segue.
+      const caps = await ollama.showModel(current.model).catch(() => null)
+      const after = { numCtx: patch.numCtx ?? current.numCtx, think: patch.think ?? current.think }
+      const next = followNumPredict(current, after, caps)
+      if (next != null) patch = { ...patch, numPredict: next }
     }
     return updateConversation(db, convId, patch)
   })

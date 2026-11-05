@@ -15,6 +15,13 @@
       "when": 1793749302196,
       "tag": "0001_prompt_eval_count",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793915577397,
+      "tag": "0002_num_predict",
+      "breakpoints": true
     }
   ]
 }

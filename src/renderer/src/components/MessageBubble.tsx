@@ -16,6 +16,8 @@ interface Props {
   /** Inizio della richiesta in corso (solo durante lo streaming). */
   startedAt?: number
   actions?: React.ReactNode
+  /** La risposta è stata fermata al limite di token (num_predict). */
+  truncated?: boolean
   /** Identificativo per la cronologia (attributo `data-message-id`). */
   anchorId?: string
 }
@@ -38,6 +40,7 @@ export function MessageBubble({
   startedAt,
   createdAt,
   actions,
+  truncated = false,
   anchorId
 }: Props): React.JSX.Element {
   if (role === 'user') {
@@ -73,8 +76,17 @@ export function MessageBubble({
         {streaming && content && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-zinc-400 align-middle" />}
       </div>
       {!streaming && (
-        <div className="flex items-center gap-3 text-xs text-zinc-400">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400">
           {meta && <span>{formatMeta(meta)}</span>}
+          {truncated && (
+            <span
+              className="text-amber-700 dark:text-amber-400"
+              title="Il modello ha raggiunto la lunghezza massima della risposta (num_predict). Alza il limite nel pannello Modello, o chiedi di continuare."
+              data-testid="truncated-note"
+            >
+              Risposta interrotta: limite di lunghezza
+            </span>
+          )}
           {actions}
         </div>
       )}

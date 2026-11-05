@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { describeSuggestion, maxNumCtx, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
+import { describeSuggestion, maxNumCtx, numPredictSteps, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
 import type { Conversation, ConversationPatch } from '@shared/types'
 import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
@@ -325,13 +325,16 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
   const modelBytes = useModels((s) => s.models.find((m) => m.name === conversation.model)?.size ?? null)
 
   // Stessi calcoli del main: ciò che si mostra come "suggerito" è ciò che la calibrazione scriverebbe.
-  const input = { system, modelBytes, caps: caps ?? null }
+  const effective = resolveSettings(conversation, caps)
+  const input = { system, modelBytes, caps: caps ?? null, think: effective.think, numCtx: effective.numCtx }
   const suggested = suggestSettings(input)
   const machineCtx = suggestNumCtx(input)
-  const effective = resolveSettings(conversation, caps)
   const ctxSteps = contextSteps(maxNumCtx(caps))
   const allSuggested =
-    effective.temperature === suggested.temperature && effective.topP === suggested.topP && effective.numCtx === suggested.numCtx
+    effective.temperature === suggested.temperature &&
+    effective.topP === suggested.topP &&
+    effective.numCtx === suggested.numCtx &&
+    effective.numPredict === suggested.numPredict
 
   return (
     <section className="flex flex-col gap-4" aria-label="Impostazioni del modello" data-testid="model-settings">
@@ -383,6 +386,22 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
         format={(v) => `${fmt(v)} token`}
         extra={approxWords}
         onChange={(v) => save({ numCtx: v })}
+      />
+      <SettingSlider
+        label="Lunghezza massima della risposta"
+        technical="num_predict"
+        description={
+          'Quanti token al massimo può avere una risposta' +
+          (effective.think ? ', ragionamento compreso' : '') +
+          '. Questo spazio resta riservato alla risposta: il resto della memoria va a brief e storico. Se il modello lo raggiunge, la risposta si ferma e compare «Continua».'
+        }
+        value={effective.numPredict}
+        suggested={suggested.numPredict}
+        suggestedSource={effective.think ? 'in base alla memoria, con ragionamento' : 'in base alla memoria'}
+        steps={numPredictSteps(effective.numCtx)}
+        format={(v) => `${fmt(v)} token`}
+        extra={approxWords}
+        onChange={(v) => save({ numPredict: v })}
       />
       <NumberField
         label="Risposte ripetibili"

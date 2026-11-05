@@ -13,6 +13,8 @@ export interface ConversationSettings {
   planMode: boolean
   topP: number | null
   numCtx: number | null
+  /** Token massimi per la risposta (num_predict): anche lo spazio riservato alla risposta nel contesto. */
+  numPredict: number | null
   seed: number | null
 }
 
@@ -41,8 +43,12 @@ export interface Message {
   /** Token del prompt (system + storico + domanda) usati per generare la risposta, da Ollama. */
   promptEvalCount: number | null
   durationMs: number | null
+  /** Come Ollama ha chiuso la risposta: 'length' = tagliata al limite di token (num_predict). */
+  doneReason: DoneReason | null
   createdAt: number
 }
+
+export type DoneReason = 'stop' | 'length'
 
 export interface PlanStep {
   title: string
@@ -115,6 +121,7 @@ export type ConversationPatch = Partial<
     | 'planMode'
     | 'topP'
     | 'numCtx'
+    | 'numPredict'
     | 'seed'
     | 'archived'
   >

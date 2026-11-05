@@ -126,8 +126,11 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
   )
 }
 
+/** Messaggio inviato da "Continua": la risposta tagliata al limite di token riprende da dove si è fermata. */
+export const CONTINUE_PROMPT = 'Continua da dove ti sei fermato, senza ripetere quanto già scritto.'
+
 export function ChatView(): React.JSX.Element {
-  const { conversation, messages, plans, streams, error, regenerate, retry, clearError } = useChat()
+  const { conversation, messages, plans, streams, error, regenerate, retry, clearError, send } = useChat()
   const create = useConversations((s) => s.create)
   const live = conversation ? streams[conversation.id] : undefined
   const scroller = useRef<HTMLDivElement>(null)
@@ -207,9 +210,21 @@ export function ChatView(): React.JSX.Element {
                   thinking={m.thinking}
                   createdAt={m.createdAt}
                   meta={m.role === 'assistant' ? m : undefined}
+                  truncated={m.doneReason === 'length'}
                   actions={
                     m.role === 'assistant' ? (
                       <>
+                        {canRegenerate && m === last && m.doneReason === 'length' && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 font-medium text-brand-700 hover:text-brand-800 dark:text-brand-300 dark:hover:text-brand-200"
+                            title="Chiede al modello di proseguire la risposta da dove si è fermato"
+                            onClick={() => void send(CONTINUE_PROMPT)}
+                            data-testid="continue-answer"
+                          >
+                            Continua
+                          </button>
+                        )}
                         {canRegenerate && m === last && (
                           <button
                             type="button"

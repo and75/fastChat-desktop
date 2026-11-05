@@ -17,6 +17,8 @@ export interface FakeModel {
   parameters?: string
   /** Chunk da inviare su /api/chat. Default: un breve pensiero + risposta. */
   chunks?: Array<{ thinking?: string; content?: string }>
+  /** done_reason dell'ultimo chunk: 'length' simula una risposta tagliata al limite di token. Default 'stop'. */
+  doneReason?: 'stop' | 'length'
   /** Ritardo tra un chunk e l'altro, ms. */
   delayMs?: number
   /** Attesa prima del primo chunk, ms (simula il caricamento del modello). */
@@ -116,7 +118,7 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
           model: model.name,
           message: { role: 'assistant', content: '' },
           done: true,
-          done_reason: 'stop',
+          done_reason: model.doneReason ?? 'stop',
           eval_count: 42,
           prompt_eval_count: Math.max(1, Math.ceil(JSON.stringify((body as { messages?: unknown }).messages ?? []).length / 4)),
           total_duration: 1_500_000_000

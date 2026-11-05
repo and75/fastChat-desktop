@@ -25,6 +25,8 @@ const fake = await startFakeOllama([
       ...Array.from({ length: 30 }, (_, i) => ({ content: `risposta${i} ` }))
     ]
   },
+  // risponde sempre con done_reason "length": simula una risposta tagliata al limite di token
+  { name: 'cut:1b', capabilities: ['completion'], doneReason: 'length', chunks: [{ content: 'Inizio della risposta…' }] },
   {
     name: 'slow:1b',
     capabilities: ['completion'],
@@ -131,7 +133,7 @@ try {
     const select = page.locator('#model-select')
     await select.locator('option', { hasText: 'qwen3:4b' }).waitFor({ state: 'attached' })
     const options = await select.locator('option').allTextContents()
-    assert.deepEqual(options, ['lento-avvio:1b', 'llama3.2:3b', 'qwen3:4b', 'slow:1b', 'thinker:8b'])
+    assert.deepEqual(options, ['cut:1b', 'lento-avvio:1b', 'llama3.2:3b', 'qwen3:4b', 'slow:1b', 'thinker:8b'])
   })
 
   await step('capabilities: llama3.2 senza ragionamento, qwen3 con ragionamento', async () => {
@@ -437,7 +439,8 @@ try {
 
     const body = lastChat()
     assert.equal(body.think, true)
-    assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, num_ctx: 16384, seed: 7 })
+    // num_predict: era il suggerito (8.192 senza ragionamento su 32k), ha seguito ragionamento (16k) e poi memoria 16k → 8.192
+    assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, num_ctx: 16384, num_predict: 8192, seed: 7 })
   })
 
   await step('cursore della memoria: "↺ Suggerito" riporta al valore calcolato, che è ciò che va a Ollama', async () => {
@@ -454,7 +457,8 @@ try {
     await composer.press('Enter')
     await page.getByTestId('message-assistant').nth(1).waitFor()
     assert.equal(lastChat().think, false)
-    assert.deepEqual(lastChat().options, { temperature: 1.2, top_p: 0.9, num_ctx: 32768, seed: 7 })
+    // memoria tornata a 32k e ragionamento spento: num_predict suggerito 8.192
+    assert.deepEqual(lastChat().options, { temperature: 1.2, top_p: 0.9, num_ctx: 32768, num_predict: 8192, seed: 7 })
     assert.equal(await page.getByTestId('message-assistant').nth(1).getByTestId('thinking-block').count(), 0)
   })
 
@@ -469,6 +473,51 @@ try {
       return c.temperature === 0.6 && c.topP === 0.95 && c.numCtx === 32768 && c.seed === 7
     })
     assert.equal(await settings.getByRole('button', { name: '↺ Tutti i valori suggeriti' }).count(), 0)
+  })
+
+  await step('lunghezza massima della risposta: cursore num_predict e riserva nel misuratore', async () => {
+    const settings = page.getByTestId('model-settings')
+    await settings.getByTestId('num_predict-value').filter({ hasText: '8.192 token ≈ 6.100 parole (in base alla memoria)' }).waitFor()
+    // con il ragionamento acceso il suggerimento raddoppia e il valore (che era il suggerito) lo segue
+    await setSwitch(settings, 'Ragionamento', true)
+    await settings.getByTestId('num_predict-value').filter({ hasText: '16.384 token ≈ 12.300 parole (in base alla memoria, con ragionamento)' }).waitFor()
+    await setSwitch(settings, 'Ragionamento', false)
+    await settings.getByTestId('num_predict-value').filter({ hasText: '8.192 token' }).waitFor()
+    // un valore scelto a mano resta
+    const slider = settings.getByLabel('Lunghezza massima della risposta')
+    await slider.focus()
+    await slider.press('Home')
+    await settings.getByTestId('num_predict-value').filter({ hasText: /^256 token/ }).waitFor()
+    await waitUntil(async () => (await latestConversation()).numPredict === 256)
+    await setSwitch(settings, 'Ragionamento', true)
+    await page.waitForTimeout(400)
+    assert.equal((await latestConversation()).numPredict, 256)
+    await setSwitch(settings, 'Ragionamento', false)
+    await settings.getByRole('button', { name: 'Torna al valore suggerito: Lunghezza massima della risposta' }).click()
+    await settings.getByTestId('num_predict-value').filter({ hasText: '8.192 token' }).waitFor()
+    // il misuratore mostra la riserva: 8.192 su 32.768 = 25% della barra
+    const reserve = page.getByTestId('context-usage').getByTestId('context-reserve')
+    await waitUntil(async () => (await reserve.getAttribute('style')) === 'width: 25%;')
+    assert.match(await page.getByTestId('context-usage').getAttribute('title'), /Riserva per la risposta: 8\.192 token/)
+  })
+
+  await step('risposta tagliata al limite: avviso e "Continua" che chiede di proseguire', async () => {
+    await page.selectOption('#model-select', 'cut:1b')
+    // (con i pallini della cronologia, "Messaggio" non è più un'etichetta univoca)
+    const box = page.getByRole('textbox', { name: 'Messaggio' })
+    await box.fill('Scrivi un testo lungo')
+    await box.press('Enter')
+    const msg = page.getByTestId('message-assistant').last()
+    await msg.getByTestId('truncated-note').filter({ hasText: 'Risposta interrotta: limite di lunghezza' }).waitFor()
+    await msg.getByTestId('continue-answer').click()
+    await page.getByTestId('message-user').last().filter({ hasText: 'Continua da dove ti sei fermato' }).waitFor()
+    await page.getByTestId('message-assistant').last().getByTestId('truncated-note').waitFor()
+    const body = lastChat()
+    assert.equal(body.messages.at(-1).content, 'Continua da dove ti sei fermato, senza ripetere quanto già scritto.')
+    assert.equal(body.messages.at(-2).content, 'Inizio della risposta…')
+    // il pulsante compare solo sull'ultima risposta
+    assert.equal(await page.getByTestId('continue-answer').count(), 1)
+    await page.selectOption('#model-select', 'thinker:8b')
   })
 
   await step('nessun errore JavaScript nel renderer (fase 3)', async () => {
@@ -634,7 +683,7 @@ try {
     const url = dialog.getByLabel('URL di Ollama')
     assert.equal(await url.inputValue(), fake.url)
     await dialog.getByRole('button', { name: 'Verifica' }).click()
-    await dialog.getByTestId('settings-check').filter({ hasText: 'Connesso · 5 modelli' }).waitFor()
+    await dialog.getByTestId('settings-check').filter({ hasText: 'Connesso · 6 modelli' }).waitFor()
     await url.fill('http://127.0.0.1:1')
     await dialog.getByRole('button', { name: 'Verifica' }).click()
     await dialog.getByTestId('settings-check').filter({ hasText: 'non raggiungibile' }).waitFor()

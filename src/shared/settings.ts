@@ -12,6 +12,8 @@ export interface EffectiveSettings {
   topP: number
   /** Memoria della conversazione (num_ctx), mai oltre il contesto massimo del modello. */
   numCtx: number
+  /** Token massimi per la risposta (num_predict): lo spazio riservato alla risposta nel contesto. */
+  numPredict: number
   /** null = casuale a ogni risposta. */
   seed: number | null
   /** Ragionamento: solo se il modello lo supporta. */
@@ -74,6 +76,28 @@ export function describeSuggestion(input: SuggestNumCtxInput): string {
   return `Calcolato su ${gb(input.system.ramBytes)} di RAM${input.system.unified ? ' unificata' : ''} e un modello da ${gb(input.modelBytes)}.`
 }
 
+// ---------------------------------------------------------------- lunghezza della risposta
+
+/** Limiti del suggerimento per num_predict. */
+export const NUM_PREDICT = { min: 1024, max: 8192, maxThinking: 16384, floor: 256 } as const
+
+/**
+ * Token massimi per la risposta: un quarto della memoria, tra 1k e 8k; il doppio con il ragionamento
+ * (i token "pensati" contano), fino a 16k. Mai oltre metà della memoria: il resto è per brief e storico.
+ */
+export function suggestNumPredict(numCtx: number, think: boolean): number {
+  const base = Math.min(NUM_PREDICT.max, Math.max(NUM_PREDICT.min, floorPow2(numCtx / 4)))
+  const value = think ? Math.min(NUM_PREDICT.maxThinking, base * 2) : base
+  return Math.max(NUM_PREDICT.floor, Math.min(value, floorPow2(numCtx / 2)))
+}
+
+/** Valori del cursore della lunghezza della risposta: potenze di 2 da 256 a metà della memoria. */
+export function numPredictSteps(numCtx: number): number[] {
+  const steps: number[] = []
+  for (let v = NUM_PREDICT.floor; v <= Math.max(NUM_PREDICT.floor, numCtx / 2); v *= 2) steps.push(v)
+  return steps
+}
+
 // ---------------------------------------------------------------- valori suggeriti e calibrazione
 
 /** Valori con cui una conversazione parte per un dato modello: quelli che l'utente poi può cambiare. */
@@ -81,20 +105,45 @@ export interface SuggestedSettings {
   temperature: number
   topP: number
   numCtx: number
+  numPredict: number
+}
+
+export interface SuggestSettingsInput extends SuggestNumCtxInput {
+  /** Ragionamento acceso: la risposta suggerita è più lunga. */
+  think: boolean
+  /** Memoria già configurata, se c'è: la lunghezza della risposta si suggerisce su quella. */
+  numCtx?: number | null
 }
 
 /**
  * Suggerimenti per il modello: num_ctx calibrato sulla macchina, altrimenti il Modelfile, altrimenti
- * Ollama; temperatura e top_p dal Modelfile, altrimenti Ollama.
+ * Ollama; temperatura e top_p dal Modelfile, altrimenti Ollama; num_predict dalla memoria.
  */
-export function suggestSettings(input: SuggestNumCtxInput): SuggestedSettings {
+export function suggestSettings(input: SuggestSettingsInput): SuggestedSettings {
   const { caps } = input
   const numCtx = suggestNumCtx(input) ?? Math.min(caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx, maxNumCtx(caps))
   return {
     temperature: caps?.defaults.temperature ?? OLLAMA_DEFAULTS.temperature,
     topP: caps?.defaults.topP ?? OLLAMA_DEFAULTS.topP,
-    numCtx
+    numCtx,
+    numPredict: suggestNumPredict(input.numCtx ?? numCtx, input.think)
   }
+}
+
+/**
+ * Se la lunghezza della risposta era quella suggerita, segue il nuovo suggerimento quando cambiano
+ * memoria o ragionamento; un valore scelto dall'utente resta suo. Restituisce il nuovo numPredict o null.
+ */
+export function followNumPredict(
+  before: Pick<ConversationSettings, 'numCtx' | 'numPredict' | 'think'>,
+  after: Pick<ConversationSettings, 'numCtx' | 'think'>,
+  caps: ModelCapabilities | null | undefined
+): number | null {
+  if (before.numPredict == null) return null
+  const thinks = caps?.thinking === true
+  const was = suggestNumPredict(resolveNumCtx(before, caps), thinks && before.think)
+  const now = suggestNumPredict(resolveNumCtx(after, caps), thinks && after.think)
+  return before.numPredict === was && was !== now ? now : null
 }
 
 // ---------------------------------------------------------------- valori effettivi
@@ -112,11 +161,15 @@ export function resolveTopP(conv: Pick<ConversationSettings, 'topP'>, caps: Mode
 
 /** Tutti i parametri effettivi della conversazione con il modello indicato. */
 export function resolveSettings(conv: ConversationSettings, caps: ModelCapabilities | null | undefined): EffectiveSettings {
+  const numCtx = resolveNumCtx(conv, caps)
+  const think = caps?.thinking === true && conv.think
   return {
     temperature: conv.temperature,
     topP: resolveTopP(conv, caps),
-    numCtx: resolveNumCtx(conv, caps),
+    numCtx,
+    // La risposta non può occupare tutta la memoria: resta sempre almeno metà per brief e storico.
+    numPredict: Math.min(conv.numPredict ?? suggestNumPredict(numCtx, think), floorPow2(Math.max(2, numCtx / 2))),
     seed: conv.seed,
-    think: caps?.thinking === true && conv.think
+    think
   }
 }
