@@ -16,7 +16,7 @@ type Check = { state: 'idle' } | { state: 'checking' } | { state: 'ok'; count: n
 /** Impostazioni generali: URL di Ollama, tema, modello predefinito per le nuove conversazioni. */
 export function SettingsDialog({ onClose }: { onClose(): void }): React.JSX.Element {
   const { settings, models, saveSettings } = useModels()
-  const [draft, setDraft] = useState<AppSettings>(() => settings ?? { ollamaUrl: '', theme: 'system', defaultModel: null, kvCacheType: 'f16' })
+  const [draft, setDraft] = useState<AppSettings>(() => settings ?? { ollamaUrl: '', theme: 'system', defaultModel: null, kvCacheType: 'f16', embeddingModel: 'embeddinggemma' })
   const [check, setCheck] = useState<Check>({ state: 'idle' })
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)

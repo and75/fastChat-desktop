@@ -93,6 +93,8 @@ export interface OllamaClient {
   /** Scarica un modello (/api/pull), riportando l'avanzamento. */
   pullModel(name: string, onProgress: (p: { status: string; completed: number | null; total: number | null }) => void, signal?: AbortSignal): Promise<void>
   deleteModel(name: string): Promise<void>
+  /** Embedding di più testi in una richiesta (/api/embed). */
+  embed(model: string, input: string[], options?: { num_gpu?: number }): Promise<number[][]>
   clearCache(): void
 }
 
@@ -360,5 +362,14 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     capsCache.clear()
   }
 
-  return { listModels, showModel, chatStream, loadedModels, pullModel, deleteModel, clearCache: () => capsCache.clear() }
+  async function embed(model: string, input: string[], options?: { num_gpu?: number }): Promise<number[][]> {
+    const res = await request('/api/embed', { method: 'POST', body: JSON.stringify({ model, input, ...(options ? { options } : {}) }) })
+    const body = (await res.json()) as { embeddings?: number[][] }
+    if (!Array.isArray(body.embeddings) || body.embeddings.length !== input.length) {
+      throw new OllamaError('parse', 'Risposta di /api/embed non valida')
+    }
+    return body.embeddings
+  }
+
+  return { listModels, showModel, chatStream, loadedModels, pullModel, deleteModel, embed, clearCache: () => capsCache.clear() }
 }

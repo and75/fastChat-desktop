@@ -633,6 +633,41 @@ try {
     assert.equal(await memory.getAttribute('data-warning'), null)
   })
 
+  await step('memoria a lungo termine: scarica embeddinggemma, estratti nel prompt e sotto la risposta', async () => {
+    const panel = page.getByTestId('model-settings').getByTestId('memory-panel')
+    // c'è un riassunto, ma il modello di embedding non è installato
+    await panel.getByTestId('memory-status').filter({ hasText: 'Serve il modello di embedding embeddinggemma' }).waitFor()
+    await panel.getByTestId('memory-download').click()
+    await panel.getByTestId('memory-status').filter({ hasText: /pezz[io] (indicizzat|da indicizzare)|da indicizzare/ }).waitFor()
+    const box = page.getByRole('textbox', { name: 'Messaggio' })
+    await box.fill('Ripetimi la risposta sui dati di prima')
+    await box.press('Enter')
+    await page.getByTestId('message-assistant').last().filter({ hasText: 'risposta0' }).waitFor()
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
+    // estratti nel system prompt, dopo il riassunto, con l'avvertenza sulle correzioni
+    const system = lastChat().messages[0].content
+    assert.ok(system.indexOf('# Riassunto della conversazione finora') < system.indexOf('# Dalla conversazione precedente'), 'estratti dopo il riassunto')
+    assert.match(system, /valgono il riassunto e i messaggi recenti/)
+    const embeds = fake.requests.filter((r) => r.path === '/api/embed')
+    assert.ok(embeds.length >= 2, 'indicizzazione + domanda')
+    // sotto la risposta: quali estratti, e un clic porta al messaggio
+    const refs = page.getByTestId('message-assistant').last().getByTestId('memory-refs')
+    await refs.getByText(/Ha usato \d+ estratt[io] della conversazione/).click()
+    await refs.getByRole('button', { name: /Messaggio \d+ · (tu|assistente)/ }).first().click()
+    await panel.getByTestId('memory-status').filter({ hasText: /\d+ pezz[io] indicizzat/ }).waitFor()
+    await refs.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(root, 'test-results', 'e2e-memory.png') })
+    // spenta: niente più estratti
+    await setSwitch(page.getByTestId('model-settings'), 'Memoria a lungo termine', false)
+    await waitUntil(async () => (await latestConversation()).longMemory === false)
+    await box.fill('E ancora sui dati?')
+    await box.press('Enter')
+    await page.getByTestId('message-assistant').last().filter({ hasText: 'risposta0' }).waitFor()
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
+    assert.doesNotMatch(lastChat().messages[0].content, /# Dalla conversazione precedente/)
+    await setSwitch(page.getByTestId('model-settings'), 'Memoria a lungo termine', true)
+  })
+
   await step('nessun errore JavaScript nel renderer (fase 3)', async () => {
     assert.deepEqual(errors, [])
   })
@@ -796,7 +831,7 @@ try {
     const url = dialog.getByLabel('URL di Ollama')
     assert.equal(await url.inputValue(), fake.url)
     await dialog.getByRole('button', { name: 'Verifica' }).click()
-    await dialog.getByTestId('settings-check').filter({ hasText: 'Connesso · 6 modelli' }).waitFor()
+    await dialog.getByTestId('settings-check').filter({ hasText: 'Connesso · 7 modelli' }).waitFor()
     await url.fill('http://127.0.0.1:1')
     await dialog.getByRole('button', { name: 'Verifica' }).click()
     await dialog.getByTestId('settings-check').filter({ hasText: 'non raggiungibile' }).waitFor()
@@ -849,7 +884,7 @@ try {
     await dialog.getByRole('tab', { name: 'Modelli' }).click()
     const manager = dialog.getByTestId('model-manager')
     await manager.getByTestId('model-row').first().waitFor()
-    assert.equal(await manager.getByTestId('model-row').count(), 6)
+    assert.equal(await manager.getByTestId('model-row').count(), 7) // + embeddinggemma, scaricato per la memoria
     const llama = manager.getByTestId('model-row').filter({ hasText: 'llama3.2:3b' })
     assert.equal(await llama.getByTestId('benchmark-table').locator('tbody tr').count(), 2)
     await page.screenshot({ path: join(root, 'test-results', 'e2e-models.png') })
@@ -864,7 +899,7 @@ try {
     page.once('dialog', (d) => void d.accept())
     await manager.getByTestId('model-row').filter({ hasText: 'nuovo:1b' }).getByRole('button', { name: 'Elimina' }).click()
     await manager.getByTestId('model-row').filter({ hasText: 'nuovo:1b' }).waitFor({ state: 'detached' })
-    assert.equal(await manager.getByTestId('model-row').count(), 6)
+    assert.equal(await manager.getByTestId('model-row').count(), 7)
 
     // Ollama: fuori da Windows l'app mostra i comandi invece di applicarli
     await dialog.getByRole('tab', { name: 'Ollama' }).click()

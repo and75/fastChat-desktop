@@ -215,6 +215,7 @@ export function ChatView(): React.JSX.Element {
                   thinking={m.thinking}
                   createdAt={m.createdAt}
                   meta={m.role === 'assistant' ? m : undefined}
+                  memoryRefs={m.role === 'assistant' ? m.memoryRefs : null}
                   truncated={m.doneReason === 'length'}
                   actions={
                     m.role === 'assistant' ? (
@@ -268,6 +269,7 @@ export function ChatView(): React.JSX.Element {
                 content={live.content}
                 thinking={live.thinking}
                 summarizing={live.summarizing}
+                remembering={live.remembering}
                 streaming
                 startedAt={live.startedAt}
               />

@@ -42,6 +42,7 @@ import {
 } from './db/repo'
 import { suggestedFileName, toJson, toMarkdown, type ExportFormat } from './export'
 import { createOllamaClient, OllamaError, type OllamaClient } from './ollama'
+import { createMemory } from './memory'
 import { createSummarizer } from './summary'
 import { isLocalOllama, systemInfo } from './system'
 import { runBenchmark } from './benchmark'
@@ -96,10 +97,12 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   const system = async (): Promise<SystemInfo> => systemInfo(getOllamaUrl(), (await getSettings(db)).kvCacheType)
   const calibrate: CalibrateDeps = { ollama, system }
   const summarizer = createSummarizer({ db, ollama })
+  const memory = createMemory({ db, ollama })
   const chat = createChatService({
     db,
     ollama,
     summarizer,
+    memory,
     emit: (target, event) => {
       const wc = target as WebContents
       if (!wc.isDestroyed()) wc.send(IPC.chatStream, event)
@@ -244,6 +247,11 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   handle(IPC.settingsGet, () => getSettings(db))
   handle(IPC.settingsSet, async (_e, patch: Partial<AppSettings>) => {
     if (patch.ollamaUrl !== undefined) patch.ollamaUrl = validOllamaUrl(patch.ollamaUrl)
+    if (patch.embeddingModel !== undefined) {
+      const name = String(patch.embeddingModel).trim()
+      if (!/^[\w.\-/:]+$/.test(name)) throw new Error('Nome del modello di embedding non valido')
+      patch.embeddingModel = name
+    }
     if (patch.kvCacheType !== undefined && !KV_CACHE_TYPES.includes(patch.kvCacheType)) throw new Error('Tipo di cache KV non valido')
     const next = await setSettings(db, patch)
     if (patch.ollamaUrl !== undefined) {
@@ -262,6 +270,8 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     // Conversazioni non ancora calibrate (versioni precedenti, o Ollama assente alla creazione).
     const fill = await calibrationPatch(calibrate, conversation.model, conversation, true)
     if (Object.keys(fill).length) conversation = await updateConversation(db, conversation.id, fill)
+    // Conversazioni già riassunte: la memoria si costruisce in sottofondo alla prima apertura.
+    void memory.indexQuietly(conversation)
     return {
       conversation,
       messages: await listMessages(db, conversation.id),
@@ -292,6 +302,24 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     const conv = await createConversation(db, init)
     const fill = await calibrationPatch(calibrate, conv.model, { ...conv, temperature: init.temperature ?? null }, true)
     return Object.keys(fill).length ? updateConversation(db, conv.id, fill) : conv
+  })
+
+  // ---- memoria della conversazione
+  const convOrThrow = async (id: string) => {
+    const conv = await getConversation(db, requireId(id))
+    if (!conv) throw new Error('Conversazione non trovata')
+    return conv
+  }
+  handle(IPC.memoryStatus, async (_e, id: string) => memory.status(await convOrThrow(id)))
+  handle(IPC.memoryRebuild, async (_e, id: string) => {
+    const conv = await convOrThrow(id)
+    try {
+      await memory.rebuild(conv)
+    } catch (err) {
+      if (memory.isMissingModel(err)) throw new Error(`Modello di embedding non installato: scaricalo da Impostazioni → Modelli`)
+      throw err
+    }
+    return memory.status(conv)
   })
 
   /** Riporta temperatura, top_p e num_ctx ai valori suggeriti per il modello e la macchina. */
@@ -336,7 +364,10 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   /** Riassunto manuale: riassume i messaggi più vecchi anche sotto la soglia. */
   handle(IPC.conversationsSummarize, async (_e, id: string) => {
     const r = await summarizer.summarize(requireId(id), true)
-    if (r.outcome === 'updated' && r.conversation) return r.conversation
+    if (r.outcome === 'updated' && r.conversation) {
+      void memory.indexQuietly(r.conversation)
+      return r.conversation
+    }
     if (r.outcome === 'not-needed') throw new Error('Niente da riassumere: la conversazione sta nella memoria, a parte l\'ultimo scambio')
     throw new Error('Il modello non ha prodotto un riassunto. Riprova')
   })

@@ -61,6 +61,21 @@ const json = (res: ServerResponse, status: number, body: unknown): void => {
   res.end(JSON.stringify(body))
 }
 
+/**
+ * Embedding finto ma prevedibile: parole (≥ 4 lettere, minuscole) distribuite su 64 dimensioni e normalizzate.
+ * Testi che condividono parole hanno similarità alta: basta per verificare la ricerca.
+ */
+export function fakeEmbedding(text: string): number[] {
+  const v = new Array<number>(64).fill(0)
+  for (const w of text.toLowerCase().match(/[a-zàèéìòù]{4,}/g) ?? []) {
+    let h = 0
+    for (const c of w) h = (h * 31 + c.charCodeAt(0)) >>> 0
+    v[h % 64] += 1
+  }
+  const norm = Math.sqrt(v.reduce((n, x) => n + x * x, 0)) || 1
+  return v.map((x) => x / norm)
+}
+
 export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> {
   const requests: FakeOllama['requests'] = []
   /** Modelli "caricati" e il num_gpu dell'ultima richiesta (per /api/ps). */
@@ -103,6 +118,15 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
       res.write(JSON.stringify({ status: 'downloading', completed: 100, total: 100 }) + '\n')
       if (!models.some((m) => m.name === name)) models.push({ name, capabilities: ['completion'] })
       return res.end(JSON.stringify({ status: 'success' }) + '\n')
+    }
+
+    if (req.url === '/api/embed') {
+      const name = (body as { model?: string }).model
+      const m = models.find((x) => x.name === name || x.name === `${name}:latest`)
+      if (!m) return json(res, 404, { error: `model '${name}' not found` })
+      const input = (body as { input?: string[] | string }).input
+      const texts = Array.isArray(input) ? input : [input ?? '']
+      return json(res, 200, { model: name, embeddings: texts.map(fakeEmbedding) })
     }
 
     if (req.url === '/api/delete') {

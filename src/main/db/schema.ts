@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm'
-import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
-import type { BenchmarkRun, DoneReason, PlanStatus, PlanStep, ResponseStyle } from '@shared/types'
+import { blob, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import type { BenchmarkRun, DoneReason, MemoryRef, PlanStatus, PlanStep, ResponseStyle } from '@shared/types'
 
 const now = sql`(unixepoch('subsec') * 1000)`
 
@@ -29,6 +29,7 @@ export const conversations = sqliteTable(
     /** Id dell'ultimo messaggio coperto dal riassunto: i successivi vengono inviati per intero. */
     summaryUpTo: text('summary_up_to'),
     summaryUpdatedAt: integer('summary_updated_at'),
+    longMemory: integer('long_memory', { mode: 'boolean' }).notNull().default(true),
     createdAt: integer('created_at').notNull().default(now),
     updatedAt: integer('updated_at').notNull().default(now)
   },
@@ -52,6 +53,7 @@ export const messages = sqliteTable(
     durationMs: integer('duration_ms'),
     /** Perché Ollama ha chiuso la risposta: 'stop' (finita) o 'length' (limite di token raggiunto). */
     doneReason: text('done_reason', { enum: ['stop', 'length'] }).$type<DoneReason>(),
+    memoryRefs: text('memory_refs', { mode: 'json' }).$type<MemoryRef[]>(),
     createdAt: integer('created_at').notNull().default(now)
   },
   (t) => [index('messages_conversation_idx').on(t.conversationId, t.createdAt)]
@@ -103,3 +105,31 @@ export const modelSettings = sqliteTable('model_settings', {
   gpuAvailable: integer('gpu_available', { mode: 'boolean' }),
   dismissed: integer('dismissed', { mode: 'boolean' }).notNull().default(false)
 })
+
+/**
+ * Memoria delle conversazioni: pezzi di messaggi con il loro embedding. Pensata già per cercare in tutte le
+ * conversazioni; per ora la ricerca resta nella conversazione in corso.
+ */
+export const messageChunks = sqliteTable(
+  'message_chunks',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    /** Messaggio a cui rimanda l'estratto (la risposta per una coppia domanda+risposta). */
+    messageId: text('message_id')
+      .notNull()
+      .references(() => messages.id, { onDelete: 'cascade' }),
+    /** Chi l'ha detto: le frasi dell'utente pesano di più di quelle del modello. */
+    role: text('role', { enum: ['user', 'assistant'] }).notNull(),
+    /** Ordine del pezzo dentro il messaggio. */
+    part: integer('part').notNull().default(0),
+    text: text('text').notNull(),
+    /** Modello di embedding: vettori di modelli diversi non sono confrontabili. */
+    model: text('model').notNull(),
+    embedding: blob('embedding', { mode: 'buffer' }).notNull(),
+    createdAt: integer('created_at').notNull().default(now)
+  },
+  (t) => [index('message_chunks_conversation_idx').on(t.conversationId, t.model)]
+)

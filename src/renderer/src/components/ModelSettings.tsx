@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { STYLE_INSTRUCTIONS, STYLE_LABELS } from '@shared/prompt'
 import { describeSuggestion, maxNumCtx, minNumCtx, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
-import { RESPONSE_STYLES, type Conversation, type ConversationPatch, type ResponseStyle } from '@shared/types'
+import { RESPONSE_STYLES, type Conversation, type ConversationPatch, type MemoryStatus, type ResponseStyle } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { BenchmarkButton, needsBenchmark, NumGpuSelect } from './ModelManager'
 import { useConversations } from '../store/useConversations'
@@ -260,6 +260,8 @@ export function SummaryPanel({ conversation }: { conversation: Conversation }): 
   const busy = useChat((s) => !!s.streams[conversation.id])
   const [working, setWorking] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
+  // Un avviso vale per lo stato in cui è nato: cambiata conversazione o riassunto, sparisce.
+  useEffect(() => setFeedback(null), [conversation.id, conversation.summaryUpdatedAt])
 
   const covered = conversation.summary && conversation.summaryUpTo ? messages.findIndex((m) => m.id === conversation.summaryUpTo) + 1 : 0
 
@@ -316,6 +318,93 @@ export function SummaryPanel({ conversation }: { conversation: Conversation }): 
         )}
       </div>
       {feedback && <span className="text-xs text-red-700 dark:text-red-300">{feedback}</span>}
+    </div>
+  )
+}
+
+/**
+ * Memoria della conversazione (RAG): dopo il primo riassunto, prima di ogni risposta si cercano nei messaggi
+ * riassunti gli estratti più pertinenti alla domanda e si aggiungono al system prompt.
+ */
+export function MemoryPanel({ conversation }: { conversation: Conversation }): React.JSX.Element {
+  const update = useConversations((s) => s.update)
+  const settings = useModels((s) => s.settings)
+  const pull = useModels((s) => s.pull)
+  const pulling = useModels((s) => (settings ? s.pulls[settings.embeddingModel] : undefined))
+  const messagesCount = useChat((s) => s.messages.length)
+  const busy = useChat((s) => !!s.streams[conversation.id])
+  const [status, setStatus] = useState<MemoryStatus | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [working, setWorking] = useState(false)
+
+  const load = async (): Promise<void> => {
+    const res = await window.api.memory.status(conversation.id)
+    if (res.ok) setStatus(res.data)
+  }
+  // Si aggiorna quando cambiano riassunto, messaggi o fine di una risposta.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => void load(), [conversation.id, conversation.summaryUpTo, messagesCount, busy, settings?.embeddingModel, pulling])
+
+  const model = settings?.embeddingModel ?? 'embeddinggemma'
+  const text = !conversation.longMemory
+    ? 'Spenta: dopo il riassunto il modello vede solo il riassunto e i messaggi recenti.'
+    : !conversation.summary
+      ? 'Si attiva dopo il primo riassunto: fino ad allora tutti i messaggi sono già nel prompt.'
+      : status && !status.modelInstalled
+        ? `Serve il modello di embedding ${model}, non installato.`
+        : status
+          ? `${status.chunks} ${status.chunks === 1 ? 'pezzo indicizzato' : 'pezzi indicizzati'}${status.pending ? `, ${status.pending} da indicizzare` : ''} con ${model}.`
+          : 'Lettura dello stato…'
+
+  return (
+    <div className="flex flex-col gap-2" data-testid="memory-panel">
+      <Switch
+        label="Memoria a lungo termine"
+        checked={conversation.longMemory}
+        title="Dopo il primo riassunto, prima di ogni risposta cerca nei messaggi riassunti gli estratti più pertinenti alla domanda e li fornisce al modello"
+        color="bg-brand-600"
+        onChange={(longMemory) => void update(conversation.id, { longMemory })}
+      />
+      <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400" data-testid="memory-status">
+        {text}
+      </span>
+      {conversation.longMemory && status && !status.modelInstalled && (
+        <button
+          type="button"
+          disabled={!!pulling}
+          className="self-start rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          onClick={() => void pull(model).then((e) => (e ? setError(e) : load()))}
+          data-testid="memory-download"
+        >
+          {pulling ? `Scarico ${model}… ${pulling.total ? `${Math.round(((pulling.completed ?? 0) / pulling.total) * 100)}%` : ''}` : `Scarica ${model}`}
+        </button>
+      )}
+      {conversation.longMemory && conversation.summary && status?.modelInstalled && (
+        <button
+          type="button"
+          disabled={working || busy}
+          className="self-start rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          title="Rifà l'indice da zero (es. dopo aver cambiato il modello di embedding)"
+          onClick={() => {
+            setWorking(true)
+            setError(null)
+            void window.api.memory.rebuild(conversation.id).then((res) => {
+              setWorking(false)
+              if (res.ok) setStatus(res.data)
+              else setError(res.error)
+            })
+          }}
+          data-testid="memory-rebuild"
+        >
+          {working ? 'Indicizzo…' : 'Ricostruisci l\'indice'}
+        </button>
+      )}
+      {conversation.longMemory && (
+        <span className="text-xs text-zinc-400">
+          Consigliato: in Impostazioni → Ollama, «Modelli caricati insieme» almeno 2, altrimenti Ollama ricarica il modello di chat a ogni ricerca.
+        </span>
+      )}
+      {error && <span className="text-xs text-red-700 dark:text-red-300">{error}</span>}
     </div>
   )
 }
@@ -605,6 +694,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
       <ExecutionRow model={conversation.model} />
       <StyleControl conversation={conversation} />
       <SummaryPanel conversation={conversation} />
+      <MemoryPanel conversation={conversation} />
       <NumberField
         label="Risposte ripetibili"
         technical="seed"

@@ -139,6 +139,7 @@ export function ModelManager(): React.JSX.Element {
 
   return (
     <div className="flex flex-col gap-4 text-sm" data-testid="model-manager">
+      <EmbeddingModelField />
       <form
         className="flex flex-col gap-1"
         onSubmit={(e) => {
@@ -209,6 +210,55 @@ export function ModelManager(): React.JSX.Element {
         })}
         {models.length === 0 && <li className="text-zinc-500">Nessun modello installato.</li>}
       </ul>
+    </div>
+  )
+}
+
+/** Modello per la memoria delle conversazioni (embedding). */
+function EmbeddingModelField(): React.JSX.Element {
+  const { settings, models, saveSettings, pull, pulls } = useModels()
+  const current = settings?.embeddingModel ?? 'embeddinggemma'
+  const [draft, setDraft] = useState(current)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => setDraft(current), [current])
+  const installed = models.some((m) => m.name === current || m.name === `${current}:latest`)
+  const progress = pulls[current]
+  return (
+    <div className="flex flex-col gap-1" data-testid="embedding-model">
+      <span className="font-medium">Modello per la memoria delle conversazioni</span>
+      <div className="flex gap-2">
+        <input
+          aria-label="Modello di embedding"
+          list="embedding-models"
+          className="flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            const v = draft.trim()
+            if (v && v !== current) void saveSettings({ embeddingModel: v }).then(setError)
+          }}
+        />
+        <datalist id="embedding-models">
+          {['embeddinggemma', 'bge-m3', ...models.map((m) => m.name)].map((n) => (
+            <option key={n} value={n} />
+          ))}
+        </datalist>
+        {!installed && (
+          <button
+            type="button"
+            disabled={!!progress}
+            className="rounded-lg border border-zinc-300 px-3 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            onClick={() => void pull(current).then(setError)}
+          >
+            {progress ? 'Scarico…' : 'Scarica'}
+          </button>
+        )}
+      </div>
+      <span className="text-xs text-zinc-500">
+        {installed ? 'Installato. ' : 'Non installato: scaricalo per usare la memoria. '}
+        Serve un modello multilingue (embeddinggemma è leggero; bge-m3 più preciso e più pesante). Cambiandolo, l'indice delle conversazioni si rifà.
+      </span>
+      {error && <span className="text-xs text-red-700 dark:text-red-400">{error}</span>}
     </div>
   )
 }

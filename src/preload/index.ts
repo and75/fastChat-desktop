@@ -28,6 +28,10 @@ const api: Api = {
     onPullProgress: (cb) => subscribe<PullProgress>(IPC.pullProgress, cb),
     onBenchmarkProgress: (cb) => subscribe<BenchmarkProgress>(IPC.benchmarkProgress, cb)
   },
+  memory: {
+    status: (id) => invoke(IPC.memoryStatus, id),
+    rebuild: (id) => invoke(IPC.memoryRebuild, id)
+  },
   ollamaEnv: {
     get: () => invoke(IPC.ollamaEnvGet),
     apply: (values) => invoke(IPC.ollamaEnvApply, values)

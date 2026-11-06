@@ -11,6 +11,7 @@ import {
   RESPONSE_STYLES,
   type ResponseStyle,
   type Message,
+  type MemoryRef,
   type MessageRole,
   type ModelSetting,
   type Plan,
@@ -18,7 +19,7 @@ import {
   type PlanStep
 } from '@shared/types'
 import type { Db } from './client'
-import { briefTemplates, conversations, messages, modelSettings, plans, settings } from './schema'
+import { briefTemplates, conversations, messageChunks, messages, modelSettings, plans, settings } from './schema'
 
 // ---------------------------------------------------------------- impostazioni
 
@@ -66,7 +67,8 @@ const PATCHABLE: (keyof ConversationPatch)[] = [
   'autoSummary',
   'summary',
   'summaryUpTo',
-  'summaryUpdatedAt'
+  'summaryUpdatedAt',
+  'longMemory'
 ]
 
 /** Tiene solo i campi ammessi: il patch arriva dal renderer e non va preso alla lettera. */
@@ -81,7 +83,7 @@ export function sanitizePatch(patch: ConversationPatch): ConversationPatch {
   if ('numCtx' in out) out.numCtx = toInt(out.numCtx, 256, 1_048_576)
   if ('style' in out && !RESPONSE_STYLES.includes(out.style as ResponseStyle)) out.style = 'normal'
   if ('seed' in out) out.seed = toInt(out.seed, -2_147_483_648, 2_147_483_647)
-  for (const key of ['think', 'planMode', 'archived', 'autoSummary'] as const) {
+  for (const key of ['think', 'planMode', 'archived', 'autoSummary', 'longMemory'] as const) {
     if (key in out) out[key] = out[key] === true
   }
   if ('summary' in out) {
@@ -180,6 +182,7 @@ export interface NewMessage {
   promptEvalCount?: number | null
   durationMs?: number | null
   doneReason?: DoneReason | null
+  memoryRefs?: MemoryRef[] | null
 }
 
 export async function addMessage(db: Db, msg: NewMessage): Promise<Message> {
@@ -194,6 +197,7 @@ export async function addMessage(db: Db, msg: NewMessage): Promise<Message> {
     promptEvalCount: msg.promptEvalCount ?? null,
     durationMs: msg.durationMs ?? null,
     doneReason: msg.doneReason ?? null,
+    memoryRefs: msg.memoryRefs?.length ? msg.memoryRefs : null,
     createdAt: Date.now()
   }
   await db.insert(messages).values(row)
@@ -357,4 +361,37 @@ export async function saveModelSetting(db: Db, model: string, patch: Partial<Omi
 
 export async function removeModelSetting(db: Db, model: string): Promise<void> {
   await db.delete(modelSettings).where(eq(modelSettings.model, model))
+}
+
+// ---------------------------------------------------------------- memoria (pezzi con embedding)
+
+export interface ChunkRow {
+  id: string
+  conversationId: string
+  messageId: string
+  role: MessageRole
+  part: number
+  text: string
+  model: string
+  embedding: Buffer
+}
+
+export async function listChunks(db: Db, conversationId: string, model: string): Promise<ChunkRow[]> {
+  return db
+    .select()
+    .from(messageChunks)
+    .where(and(eq(messageChunks.conversationId, conversationId), eq(messageChunks.model, model)))
+}
+
+export async function addChunks(db: Db, rows: Array<Omit<ChunkRow, 'id'>>): Promise<void> {
+  if (rows.length === 0) return
+  await db.insert(messageChunks).values(rows.map((r) => ({ ...r, id: randomUUID(), createdAt: Date.now() })))
+}
+
+/** Toglie i pezzi della conversazione: tutti, o quelli di un modello di embedding diverso da `keepModel`. */
+export async function removeChunks(db: Db, conversationId: string, keepModel?: string): Promise<void> {
+  const where = keepModel
+    ? and(eq(messageChunks.conversationId, conversationId), sql`${messageChunks.model} <> ${keepModel}`)
+    : eq(messageChunks.conversationId, conversationId)
+  await db.delete(messageChunks).where(where)
 }

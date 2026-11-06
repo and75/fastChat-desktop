@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   BenchmarkProgress,
+  MemoryStatus,
   ModelSetting,
   ModelSettingPatch,
   PullProgress,
@@ -44,6 +45,12 @@ export interface Api {
     benchmark(name: string): Promise<Result<ModelSetting>>
     onPullProgress(cb: (p: PullProgress) => void): () => void
     onBenchmarkProgress(cb: (p: BenchmarkProgress) => void): () => void
+  }
+  memory: {
+    /** Stato della memoria della conversazione: pezzi indicizzati, da indicizzare, modello installato. */
+    status(conversationId: string): Promise<Result<MemoryStatus>>
+    /** Rifà l'indice da zero (es. dopo aver cambiato il modello di embedding). */
+    rebuild(conversationId: string): Promise<Result<MemoryStatus>>
   }
   ollamaEnv: {
     /** Variabili d'ambiente di Ollama: valori attuali (Windows) e se l'app può applicarle da sola. */

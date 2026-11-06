@@ -11,6 +11,8 @@ export interface LiveStream {
   startedAt: number
   /** I messaggi più vecchi vengono riassunti prima della risposta. */
   summarizing: boolean
+  /** Si cercano estratti pertinenti nei messaggi riassunti, prima della risposta. */
+  remembering: boolean
 }
 
 interface ChatState {
@@ -47,7 +49,7 @@ const replacePlan = (plans: Plan[], plan: Plan): Plan[] => plans.map((p) => (p.i
 export const useChat = create<ChatState>((set, get) => {
   /** Registra un nuovo stream e applica gli eventi eventualmente già arrivati. */
   const startStream = (conversationId: string, streamId: string, kind: StreamKind): void => {
-    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '', startedAt: Date.now(), summarizing: false } } }))
+    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '', startedAt: Date.now(), summarizing: false, remembering: false } } }))
     const early = pending.get(streamId) ?? []
     pending.delete(streamId)
     early.forEach((e) => get().handleStream(e))
@@ -166,13 +168,16 @@ export const useChat = create<ChatState>((set, get) => {
 
       switch (event.type) {
         case 'summarizing':
-          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: true } } }))
+          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: true, remembering: false } } }))
+          return
+        case 'remembering':
+          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: true } } }))
           return
         case 'thinking':
         case 'content': {
           const key = event.type === 'thinking' ? 'thinking' : 'content'
           set((s) => ({
-            streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, [key]: live[key] + (event.delta ?? '') } }
+            streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: false, [key]: live[key] + (event.delta ?? '') } }
           }))
           return
         }

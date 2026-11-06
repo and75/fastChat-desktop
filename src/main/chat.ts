@@ -4,6 +4,7 @@ import {
   buildPlanPrompt,
   buildSystemPrompt,
   DEFAULT_HISTORY_LIMITS,
+  estimateTokens,
   historyAfter,
   parsePlan,
   PLAN_SCHEMA,
@@ -11,7 +12,7 @@ import {
   withSummary
 } from '@shared/prompt'
 import { resolveSettings } from '@shared/settings'
-import { DEFAULT_TITLE, type Conversation, type DoneReason, type ModelCapabilities, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
+import { DEFAULT_TITLE, type Conversation, type DoneReason, type MemoryRef, type ModelCapabilities, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
 import type { Db } from './db/client'
 import {
   addMessage,
@@ -28,6 +29,7 @@ import {
   updatePlan
 } from './db/repo'
 import type { ChatMessage, ChatOptions, ChatRequest, OllamaClient } from './ollama'
+import { memoryBudget, type Memory, type Recall } from './memory'
 import type { Summarizer } from './summary'
 
 /** Destinatario degli eventi di stream (in produzione: il WebContents che ha fatto la richiesta). */
@@ -41,6 +43,8 @@ export interface ChatServiceDeps {
   onConversationUpdated?(target: StreamTarget, conversation: Conversation): void
   /** Riassunto automatico, eseguito dopo ogni risposta. */
   summarizer?: Summarizer
+  /** Memoria della conversazione (RAG sui messaggi riassunti). */
+  memory?: Memory
 }
 
 interface ActiveStream {
@@ -80,11 +84,14 @@ export function buildChatMessages(
   conv: Conversation,
   history: Message[],
   system: string = buildSystemPrompt(conv, conv.style),
-  caps: ModelCapabilities | null = null
+  caps: ModelCapabilities | null = null,
+  /** Estratti della memoria della conversazione (sezione già pronta), dopo il riassunto. */
+  memory = ''
 ): ChatMessage[] {
   const s = resolveSettings(conv, caps)
   const { recent, aligned } = historyAfter(history, conv.summaryUpTo)
   if (aligned) system = withSummary(system, conv.summary)
+  if (memory) system = system ? `${system}\n\n${memory}` : memory
   const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.reserveTokens })
   const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
   for (const m of picked) out.push({ role: m.role, content: m.content })
@@ -126,7 +133,7 @@ function systemFor(conv: Conversation, mode: Mode): string {
   }
 }
 
-export function createChatService({ db, ollama, emit, onConversationUpdated, summarizer }: ChatServiceDeps) {
+export function createChatService({ db, ollama, emit, onConversationUpdated, summarizer, memory }: ChatServiceDeps) {
   const streams = new Map<string, ActiveStream>()
 
   const isBusy = (conversationId: string): boolean =>
@@ -216,7 +223,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
       durationMs: number | null
       doneReason: DoneReason | null
       aborted: boolean
-    }
+    },
+    memoryRefs: MemoryRef[] = []
   ): Promise<Partial<StreamEvent>> {
     if (mode.kind === 'plan') {
       if (result.aborted) return { aborted: true }
@@ -236,7 +244,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         evalCount: result.evalCount,
         promptEvalCount: result.promptEvalCount,
         durationMs: result.durationMs,
-        doneReason: result.aborted ? null : result.doneReason
+        doneReason: result.aborted ? null : result.doneReason,
+        memoryRefs
       })
     }
     const out: Partial<StreamEvent> = { message, aborted: result.aborted }
@@ -247,11 +256,11 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
   }
 
   /** Richiesta a Ollama per lo stato attuale della conversazione. */
-  async function buildRequest(conv: Conversation, mode: Mode, caps: ModelCapabilities | null): Promise<ChatRequest> {
+  async function buildRequest(conv: Conversation, mode: Mode, caps: ModelCapabilities | null, memorySection = ''): Promise<ChatRequest> {
     const history = await listMessages(db, conv.id)
     const request: ChatRequest = {
       model: conv.model,
-      messages: buildChatMessages(conv, history, systemFor(conv, mode), caps),
+      messages: buildChatMessages(conv, history, systemFor(conv, mode), caps, memorySection),
       options: buildOptions(conv, caps, await numGpuOf(conv.model))
     }
     if (mode.kind === 'plan') request.format = PLAN_SCHEMA as unknown as Record<string, unknown>
@@ -285,7 +294,16 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
           emit(target, { ...base, type: 'done', aborted: true })
           return
         }
-        const request = await buildRequest(conv, mode, caps)
+        // Memoria della conversazione: dopo il primo riassunto, estratti pertinenti dei messaggi riassunti.
+        let recall: Recall = { section: '', refs: [] }
+        if (memory && conv.longMemory && conv.summary) {
+          emit(target, { ...base, type: 'remembering' })
+          const draft = await buildRequest(conv, mode, caps)
+          const s = resolveSettings(conv, caps)
+          const used = draft.messages.reduce((n, m) => n + estimateTokens(m.content), 0)
+          recall = await memory.recall(conv, memoryBudget(s.numCtx, s.reserveTokens, used)).catch(() => recall)
+        }
+        const request = await buildRequest(conv, mode, caps, recall.section)
         const result = await ollama.chatStream(
           request,
           {
@@ -294,7 +312,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
           },
           controller.signal
         )
-        const done = await finish(conv, mode, result)
+        const done = await finish(conv, mode, result, recall.refs)
         answered = !!done.message
         emit(target, { ...base, type: 'done', ...done })
       } catch (err) {
@@ -308,6 +326,9 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         // In anticipo per la domanda successiva: di norma all'invio non resta nulla da riassumere.
         const r = await summarizer?.summarize(conv.id).catch(() => null)
         if (r?.outcome === 'updated' && r.conversation) onConversationUpdated?.(target, r.conversation)
+        // I messaggi appena riassunti entrano nella memoria subito, non alla prossima domanda.
+        const latest = await getConversation(db, conv.id)
+        if (memory && latest) await memory.indexQuietly(latest)
       }
     }
 

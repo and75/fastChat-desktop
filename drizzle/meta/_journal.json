@@ -43,6 +43,13 @@
       "when": 1793963637862,
       "tag": "0005_model_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794005606638,
+      "tag": "0006_memory",
+      "breakpoints": true
     }
   ]
 }

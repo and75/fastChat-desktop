@@ -1,5 +1,5 @@
 import { formatFullDate, formatMessageDate } from '@shared/format'
-import type { Message } from '@shared/types'
+import type { MemoryRef, Message } from '@shared/types'
 import { Markdown } from './Markdown'
 import { WaitingIndicator } from './Loader'
 import { ThinkingBlock } from './ThinkingBlock'
@@ -13,6 +13,10 @@ interface Props {
   streaming?: boolean
   /** Durante lo streaming: i messaggi più vecchi vengono riassunti prima della risposta. */
   summarizing?: boolean
+  /** Durante lo streaming: si cercano estratti nella conversazione prima della risposta. */
+  remembering?: boolean
+  /** Estratti della conversazione forniti al modello per questa risposta. */
+  memoryRefs?: MemoryRef[] | null
   /** Data del messaggio (mostrata sotto i messaggi dell'utente). */
   createdAt?: number
   /** Inizio della richiesta in corso (solo durante lo streaming). */
@@ -40,6 +44,8 @@ export function MessageBubble({
   meta,
   streaming,
   summarizing = false,
+  remembering = false,
+  memoryRefs = null,
   startedAt,
   createdAt,
   actions,
@@ -78,10 +84,11 @@ export function MessageBubble({
         {content ? (
           <Markdown text={content} />
         ) : streaming && !thinking ? (
-          <WaitingIndicator since={startedAt} label={summarizing ? 'Sto riassumendo i messaggi più vecchi' : undefined} />
+          <WaitingIndicator since={startedAt} label={summarizing ? 'Sto riassumendo i messaggi più vecchi' : remembering ? 'Cerco nella conversazione' : undefined} />
         ) : null}
         {streaming && content && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-zinc-400 align-middle" />}
       </div>
+      {!streaming && memoryRefs && memoryRefs.length > 0 && <MemoryRefs refs={memoryRefs} />}
       {!streaming && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400">
           {meta && <span>{formatMeta(meta)}</span>}
@@ -98,5 +105,31 @@ export function MessageBubble({
         </div>
       )}
     </div>
+  )
+}
+
+/** Estratti della conversazione usati per la risposta: chiusi di default, ognuno salta al messaggio originale. */
+function MemoryRefs({ refs }: { refs: MemoryRef[] }): React.JSX.Element {
+  const jump = (id: string): void =>
+    document.querySelector(`[data-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  return (
+    <details className="text-xs text-zinc-500" data-testid="memory-refs">
+      <summary className="cursor-pointer select-none">
+        Ha usato {refs.length === 1 ? '1 estratto' : `${refs.length} estratti`} della conversazione
+      </summary>
+      <ul className="mt-1 flex flex-col gap-1.5 border-l-2 border-brand-200 pl-3 dark:border-brand-900">
+        {refs.map((r) => (
+          <li key={`${r.messageId}-${r.position}`}>
+            <button type="button" className="text-brand-700 hover:underline dark:text-brand-300" onClick={() => jump(r.messageId)}>
+              Messaggio {r.position} · {r.role === 'user' ? 'tu' : 'assistente'}
+            </button>{' '}
+            <span className="tabular-nums text-zinc-400">({Math.round(r.score * 100)}%)</span>
+            <span className="block truncate text-zinc-500" title={r.excerpt}>
+              {r.excerpt.includes('\nRisposta: ') ? r.excerpt.split('\nRisposta: ')[1] : r.excerpt.replace(/^(Utente|Risposta): /, '')}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }

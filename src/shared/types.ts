@@ -35,6 +35,8 @@ export interface Conversation extends Brief, ConversationSettings {
   /** Id dell'ultimo messaggio coperto dal riassunto; i successivi vengono inviati per intero. */
   summaryUpTo: string | null
   summaryUpdatedAt: number | null
+  /** Memoria della conversazione (RAG): dopo il primo riassunto, estratti pertinenti dei messaggi riassunti. */
+  longMemory: boolean
   createdAt: number
   updatedAt: number
 }
@@ -54,7 +56,32 @@ export interface Message {
   durationMs: number | null
   /** Come Ollama ha chiuso la risposta: 'length' = fermata al limite di token (contesto esaurito). */
   doneReason: DoneReason | null
+  /** Estratti della conversazione forniti al modello per questa risposta (memoria della conversazione). */
+  memoryRefs: MemoryRef[] | null
   createdAt: number
+}
+
+/** Un estratto della conversazione usato per una risposta. */
+export interface MemoryRef {
+  /** Messaggio da cui viene l'estratto (per saltarci). */
+  messageId: string
+  /** Posizione del messaggio nella conversazione, 1 = il primo. */
+  position: number
+  role: MessageRole
+  score: number
+  /** Inizio del testo dell'estratto, per l'interfaccia. */
+  excerpt: string
+}
+
+/** Stato dell'indice della memoria di una conversazione. */
+export interface MemoryStatus {
+  /** Pezzi indicizzati con il modello di embedding attuale. */
+  chunks: number
+  /** Messaggi coperti dal riassunto ancora da indicizzare. */
+  pending: number
+  model: string
+  /** Il modello di embedding è installato in Ollama. */
+  modelInstalled: boolean
 }
 
 export type DoneReason = 'stop' | 'length'
@@ -192,6 +219,7 @@ export type ConversationPatch = Partial<
     | 'summary'
     | 'summaryUpTo'
     | 'summaryUpdatedAt'
+    | 'longMemory'
   >
 >
 
@@ -212,8 +240,11 @@ export interface SendResult {
   userMessage?: Message
 }
 
-/** 'summarizing': prima della risposta i messaggi più vecchi vengono riassunti (la risposta arriva dopo). */
-export type StreamEventType = 'summarizing' | 'thinking' | 'content' | 'done' | 'error'
+/**
+ * 'summarizing': prima della risposta i messaggi più vecchi vengono riassunti (la risposta arriva dopo).
+ * 'remembering': prima della risposta si cercano estratti pertinenti nei messaggi riassunti.
+ */
+export type StreamEventType = 'summarizing' | 'remembering' | 'thinking' | 'content' | 'done' | 'error'
 
 /** 'chat': risposta normale o esecuzione di un piano; 'plan': proposta di un piano (content è JSON). */
 export type StreamKind = 'chat' | 'plan'
@@ -250,13 +281,16 @@ export interface AppSettings {
   defaultModel: string | null
   /** Non leggibile dall'API: va impostato uguale a quello del server. */
   kvCacheType: KvCacheType
+  /** Modello di Ollama per gli embedding della memoria delle conversazioni (multilingue). */
+  embeddingModel: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   ollamaUrl: 'http://127.0.0.1:11434',
   theme: 'system',
   defaultModel: null,
-  kvCacheType: 'f16'
+  kvCacheType: 'f16',
+  embeddingModel: 'embeddinggemma'
 }
 
 /** Esito tipizzato delle chiamate IPC: gli errori arrivano al renderer come valori, non come eccezioni. */
@@ -273,6 +307,8 @@ export const IPC = {
   conversationsUpdate: 'conversations:update',
   conversationsCalibrate: 'conversations:calibrate',
   conversationsSummarize: 'conversations:summarize',
+  memoryStatus: 'memory:status',
+  memoryRebuild: 'memory:rebuild',
   modelSettingsList: 'model-settings:list',
   modelSettingsSet: 'model-settings:set',
   modelsPull: 'models:pull',
