@@ -203,7 +203,7 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
         id="panel-model"
         aria-labelledby="panel-tab-model"
         hidden={tab !== 'model'}
-        className="min-h-0 flex-1 overflow-y-auto p-4"
+        className="relative min-h-0 flex-1 overflow-y-auto p-4"
       >
         <ModelSettings conversation={conversation} />
       </div>
@@ -213,7 +213,7 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
         id="panel-brief"
         aria-labelledby="panel-tab-brief"
         hidden={tab !== 'brief'}
-        className="min-h-0 flex-1 overflow-y-auto p-4"
+        className="relative min-h-0 flex-1 overflow-y-auto p-4"
       >
         <div className="mb-3 flex items-baseline justify-between">
           <p className="text-xs text-zinc-500">Inviato al modello come system prompt.</p>

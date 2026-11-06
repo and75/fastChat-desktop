@@ -191,7 +191,7 @@ export function ChatView(): React.JSX.Element {
       <div className="relative flex min-h-0 flex-1">
         <div
           ref={scroller}
-          className="@container min-h-0 flex-1 overflow-y-auto"
+          className="@container relative min-h-0 flex-1 overflow-y-auto"
           onScroll={(e) => {
             const el = e.currentTarget
             stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40

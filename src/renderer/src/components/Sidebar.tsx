@@ -318,7 +318,7 @@ function ExpandedSidebar({ onOpenSettings, onCollapse }: { onOpenSettings(): voi
             className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
         </div>
-        <ul className="flex-1 space-y-1 overflow-y-auto px-2 pb-3" aria-label="Conversazioni">
+        <ul className="relative flex-1 space-y-1 overflow-y-auto px-2 pb-3" aria-label="Conversazioni">
           {conversations.map((c) => (
             <Item key={c.id} conv={c} active={c.id === activeId} />
           ))}

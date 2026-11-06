@@ -63,7 +63,9 @@ function Switch(props: {
       className={
         // Nel pannello: etichetta a sinistra, interruttore allineato al bordo destro.
         // Compatto (sotto il campo di scrittura): interruttore e testo affiancati.
-        'flex select-none items-center gap-2 ' +
+        // relative: l'input nascosto (sr-only, position absolute) resta dentro il pannello che scorre,
+        // altrimenti il documento si allunga fin dove starebbe l'input e la finestra può scorrere.
+        'relative flex select-none items-center gap-2 ' +
         (compact ? 'text-xs ' : 'w-full justify-between text-sm ') +
         (disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer')
       }

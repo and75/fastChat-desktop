@@ -133,7 +133,9 @@ export default function App(): React.JSX.Element {
   return (
     <div className="flex h-full">
       <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* overflow-hidden: con la finestra stretta la colonna si restringe (gli elementi della topbar vengono
+          tagliati) invece di allargare il documento oltre la finestra. */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* La topbar fa da barra del titolo: si trascina per spostare la finestra. */}
         {/* Altezza fissa (TOPBAR_HEIGHT, h-12): la stessa del blocco del logo, così i contenuti sono allineati. */}
         <header className="drag flex h-12 shrink-0 items-center gap-4 border-b border-zinc-200 pl-4 pr-2 dark:border-zinc-800">

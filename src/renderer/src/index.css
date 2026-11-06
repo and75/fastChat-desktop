@@ -38,6 +38,17 @@ body,
 }
 
 /*
+ * L'app occupa esattamente la finestra: scorrono solo i pannelli interni (messaggi, conversazioni,
+ * pannello della conversazione), mai il documento. `clip` blocca anche lo scorrimento programmatico
+ * (scrollIntoView, focus), che con `hidden` resterebbe possibile e farebbe sparire la topbar.
+ */
+html,
+body {
+  overflow: clip;
+  overscroll-behavior: none;
+}
+
+/*
  * Zone di trascinamento della finestra (non c'è la barra del titolo di sistema).
  * Dentro una zona .drag i controlli restano cliccabili.
  */

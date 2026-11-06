@@ -1044,6 +1044,33 @@ try {
     await page.screenshot({ path: join(root, 'test-results', 'e2e-timeline.png') })
   })
 
+  await step('finestra piccola: il documento non scorre mai (né con la rotella né da codice)', async () => {
+    const resize = (w, h) => app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows()[0].setContentSize(s[0], s[1]), [w, h])
+    for (const [w, h] of [[900, 600], [760, 500]]) {
+      await resize(w, h)
+      await page.waitForFunction((w) => innerWidth === w, w)
+      // la cronologia ricalcola i pallini al frame successivo (ResizeObserver → requestAnimationFrame)
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+      const m = await page.evaluate(() => {
+        scrollTo(500, 500)
+        document.querySelector('[data-testid="message-assistant"]')?.scrollIntoView({ block: 'start' })
+        const d = document.documentElement
+        return { scrollW: d.scrollWidth, scrollH: d.scrollHeight, w: innerWidth, h: innerHeight, x: scrollX, y: scrollY }
+      })
+      assert.ok(m.scrollW <= m.w && m.scrollH <= m.h, `documento ${m.scrollW}×${m.scrollH} più grande della finestra ${m.w}×${m.h}`)
+      assert.deepEqual([m.x, m.y], [0, 0])
+      await page.mouse.move(w / 2, h / 2)
+      await page.mouse.wheel(0, 1500)
+      await page.waitForTimeout(150)
+      assert.deepEqual(await page.evaluate(() => [scrollX, scrollY]), [0, 0])
+      // la topbar resta al suo posto
+      const top = await page.locator('header').first().boundingBox()
+      assert.equal(Math.round(top.y), 0)
+    }
+    await resize(1200, 800)
+    await page.waitForFunction(() => innerWidth === 1200)
+  })
+
   await step('nessun errore JavaScript nel renderer (fase 5)', async () => {
     assert.deepEqual(errors, [])
   })
