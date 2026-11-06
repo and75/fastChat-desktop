@@ -31,11 +31,9 @@ const deps = (ramGb: number, unified = true) => ({
 describe('calibrazione', () => {
   it('suggestFor: num_ctx dalla RAM e dal costo per token del modello, temperatura e top_p dal Modelfile', async () => {
     // (16 − 5) GB ÷ 128 KiB ≈ 90k → 65.536
-    expect(await suggestFor(deps(16), 'otto')).toEqual({ temperature: 0.6, topP: 0.95, numCtx: 65536, numPredict: 8192 })
+    expect(await suggestFor(deps(16), 'otto')).toEqual({ temperature: 0.6, topP: 0.95, numCtx: 65536 })
     // modello senza Modelfile né architettura: Ollama + 128 KiB per token, entro il massimo del modello
-    expect(await suggestFor(deps(16), 'nudo')).toEqual({ temperature: 0.8, topP: 0.9, numCtx: 4096, numPredict: 1024 })
-    // num_predict sulla memoria già configurata; il ragionamento conta solo se il modello lo supporta
-    expect((await suggestFor(deps(16), 'otto', { numCtx: 8192, think: true }))?.numPredict).toBe(2048)
+    expect(await suggestFor(deps(16), 'nudo')).toEqual({ temperature: 0.8, topP: 0.9, numCtx: 4096 })
   })
 
   it('suggestFor: null se il modello non esiste o Ollama non risponde', async () => {
@@ -46,11 +44,9 @@ describe('calibrazione', () => {
   })
 
   it('calibrationPatch: solo i campi vuoti, oppure tutti (cambio modello)', async () => {
-    expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: null, numCtx: null, numPredict: null }, true)).toEqual({ topP: 0.95, numCtx: 65536, numPredict: 8192 })
-    // conversazione vecchia con memoria già scelta: num_predict si calcola su quella
-    expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: 0.5, numCtx: 8192, numPredict: null }, true)).toEqual({ numPredict: 2048 })
-    expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: 0.5, numCtx: 1024, numPredict: 256 }, true)).toEqual({})
-    expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: 0.5, numCtx: 1024, numPredict: 256 }, false)).toEqual({ temperature: 0.6, topP: 0.95, numCtx: 65536, numPredict: 8192 })
+    expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: null, numCtx: null }, true)).toEqual({ topP: 0.95, numCtx: 65536 })
+    expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: 0.5, numCtx: 1024 }, true)).toEqual({})
+    expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: 0.5, numCtx: 1024 }, false)).toEqual({ temperature: 0.6, topP: 0.95, numCtx: 65536 })
     // Ollama non risponde: nessuna modifica, si riproverà
     expect(await calibrationPatch({ ...deps(16), ollama: createOllamaClient(() => 'http://127.0.0.1:1') }, 'otto', {}, false)).toEqual({})
   })

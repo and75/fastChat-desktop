@@ -441,8 +441,8 @@ try {
 
     const body = lastChat()
     assert.equal(body.think, true)
-    // num_predict: era il suggerito (8.192 senza ragionamento su 32k), ha seguito ragionamento (16k) e poi memoria 16k → 8.192
-    assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, num_ctx: 16384, num_predict: 8192, seed: 7 })
+    // nessun num_predict: la lunghezza della risposta la governa lo stile nel system prompt
+    assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, num_ctx: 16384, seed: 7 })
   })
 
   await step('cursore della memoria: "↺ Suggerito" riporta al valore calcolato, che è ciò che va a Ollama', async () => {
@@ -459,8 +459,7 @@ try {
     await composer.press('Enter')
     await page.getByTestId('message-assistant').nth(1).waitFor()
     assert.equal(lastChat().think, false)
-    // memoria tornata a 32k e ragionamento spento: num_predict suggerito 8.192
-    assert.deepEqual(lastChat().options, { temperature: 1.2, top_p: 0.9, num_ctx: 32768, num_predict: 8192, seed: 7 })
+    assert.deepEqual(lastChat().options, { temperature: 1.2, top_p: 0.9, num_ctx: 32768, seed: 7 })
     assert.equal(await page.getByTestId('message-assistant').nth(1).getByTestId('thinking-block').count(), 0)
   })
 
@@ -477,30 +476,39 @@ try {
     assert.equal(await settings.getByRole('button', { name: '↺ Tutti i valori suggeriti' }).count(), 0)
   })
 
-  await step('lunghezza massima della risposta: cursore num_predict e riserva nel misuratore', async () => {
+  await step('stile della risposta: istruzione nel system prompt (pannello e composer), nessun limite di token', async () => {
     const settings = page.getByTestId('model-settings')
-    await settings.getByTestId('num_predict-value').filter({ hasText: '8.192 token ≈ 6.100 parole (in base alla memoria)' }).waitFor()
-    // con il ragionamento acceso il suggerimento raddoppia e il valore (che era il suggerito) lo segue
-    await setSwitch(settings, 'Ragionamento', true)
-    await settings.getByTestId('num_predict-value').filter({ hasText: '16.384 token ≈ 12.300 parole (in base alla memoria, con ragionamento)' }).waitFor()
-    await setSwitch(settings, 'Ragionamento', false)
-    await settings.getByTestId('num_predict-value').filter({ hasText: '8.192 token' }).waitFor()
-    // un valore scelto a mano resta
-    const slider = settings.getByLabel('Lunghezza massima della risposta')
-    await slider.focus()
-    await slider.press('Home')
-    await settings.getByTestId('num_predict-value').filter({ hasText: /^256 token/ }).waitFor()
-    await waitUntil(async () => (await latestConversation()).numPredict === 256)
-    await setSwitch(settings, 'Ragionamento', true)
-    await page.waitForTimeout(400)
-    assert.equal((await latestConversation()).numPredict, 256)
-    await setSwitch(settings, 'Ragionamento', false)
-    await settings.getByRole('button', { name: 'Torna al valore suggerito: Lunghezza massima della risposta' }).click()
-    await settings.getByTestId('num_predict-value').filter({ hasText: '8.192 token' }).waitFor()
-    // il misuratore mostra la riserva: 8.192 su 32.768 = 25% della barra
-    const reserve = page.getByTestId('context-usage').getByTestId('context-reserve')
-    await waitUntil(async () => (await reserve.getAttribute('style')) === 'width: 25%;')
-    assert.match(await page.getByTestId('context-usage').getAttribute('title'), /Riserva per la risposta: 8\.192 token/)
+    const control = settings.getByTestId('style-control')
+    const box = page.getByRole('textbox', { name: 'Messaggio' })
+    assert.equal(await control.getByRole('radio', { name: 'Normale' }).getAttribute('aria-checked'), 'true')
+    assert.equal(await page.getByTestId('composer-style').inputValue(), 'normal')
+    // la riserva per la risposta resta nel misuratore (8.192 su 32.768 = 25%), ma non è un limite
+    await waitUntil(async () => (await page.getByTestId('context-usage').getByTestId('context-reserve').getAttribute('style')) === 'width: 25%;')
+
+    await control.getByRole('radio', { name: 'Conciso' }).click()
+    await waitUntil(async () => (await latestConversation()).style === 'concise')
+    assert.equal(await page.getByTestId('composer-style').inputValue(), 'concise')
+    await control.getByTestId('style-hint').filter({ hasText: 'Dritto al punto' }).waitFor()
+    await openTab('Brief')
+    await page.getByTestId('brief-panel').getByText('Anteprima system prompt').click()
+    await page.getByTestId('system-preview').filter({ hasText: '# Stile della risposta' }).waitFor()
+    await openTab('Modello')
+
+    await box.fill('In breve?')
+    await box.press('Enter')
+    await page.getByTestId('message-assistant').last().filter({ hasText: 'risposta0' }).waitFor()
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
+    const body = lastChat()
+    assert.equal(body.messages[0].role, 'system')
+    assert.match(body.messages[0].content, /^# Stile della risposta\nVai dritto al punto[\s\S]*La brevità non deve costare precisione/)
+    assert.equal('num_predict' in body.options, false)
+
+    // dal composer: Essenziale; poi Normale → nessuna sezione (e nessun system prompt, senza brief)
+    await page.getByTestId('composer-style').selectOption('essential')
+    await waitUntil(async () => (await latestConversation()).style === 'essential')
+    assert.equal(await control.getByRole('radio', { name: 'Essenziale' }).getAttribute('aria-checked'), 'true')
+    await control.getByRole('radio', { name: 'Normale' }).click()
+    await waitUntil(async () => (await latestConversation()).style === 'normal')
   })
 
   await step('risposta tagliata al limite: avviso e "Continua" che chiede di proseguire', async () => {
@@ -510,7 +518,7 @@ try {
     await box.fill('Scrivi un testo lungo')
     await box.press('Enter')
     const msg = page.getByTestId('message-assistant').last()
-    await msg.getByTestId('truncated-note').filter({ hasText: 'Risposta interrotta: limite di lunghezza' }).waitFor()
+    await msg.getByTestId('truncated-note').filter({ hasText: 'Risposta interrotta: memoria esaurita' }).waitFor()
     await msg.getByTestId('continue-answer').click()
     await page.getByTestId('message-user').last().filter({ hasText: 'Continua da dove ti sei fermato' }).waitFor()
     await page.getByTestId('message-assistant').last().getByTestId('truncated-note').waitFor()
@@ -522,61 +530,76 @@ try {
     await page.selectOption('#model-select', 'thinker:8b')
   })
 
-  await step('riassunto automatico: scatta oltre la soglia, entra nel system prompt, si vede e si elimina', async () => {
+  await step('riassunto automatico: prima della risposta, con stato visibile, scheda nel flusso e modifica', async () => {
     const settings = page.getByTestId('model-settings')
     const panel = settings.getByTestId('summary-panel')
     await panel.getByText('Nessun riassunto').waitFor()
-    // memoria minima (1.024 → riserva 512, metà): ~440 token per lo storico; 8 messaggi brevi + uno da 1.200 caratteri superano il 70%
+    // memoria minima (1.024 → riserva 512): ~440 token per lo storico; i messaggi già scambiati + uno da 1.200 caratteri superano il 70%
     const memory = settings.getByRole('slider', { name: 'Memoria della conversazione' })
     await memory.focus()
     await memory.press('Home')
     await waitUntil(async () => (await latestConversation()).numCtx === 1024)
+    const before = (await page.evaluate(() => window.api.conversations.list())).data // (solo per contare)
+    const total = (await page.evaluate(async (id) => (await window.api.conversations.get(id)).data.messages.length, before[0].id))
     const box = page.getByRole('textbox', { name: 'Messaggio' })
+    const summaryRequests = () => fake.requests.filter((r) => isSummaryRequest(r.body)).map((r) => r.body)
+    const firstSummaryIdx = summaryRequests().length
     await box.fill('Dati: ' + 'd'.repeat(1200))
     await box.press('Enter')
-    await page.getByTestId('message-assistant').nth(4).waitFor()
+    // PRIMA della risposta: i messaggi più vecchi vengono riassunti, e si vede
+    await page.getByTestId('message-streaming').getByText('Sto riassumendo i messaggi più vecchi').waitFor()
+    await page.getByTestId('message-assistant').last().filter({ hasText: 'risposta0' }).waitFor()
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
-    // dopo la risposta il main riassume i messaggi più vecchi (ultimo scambio escluso) e aggiorna la conversazione
-    await panel.getByText(/Riassunto in vigore: copre i primi 8 messaggi, aggiornato alle \d{2}:\d{2}\./).waitFor()
-    const conv = await latestConversation()
-    assert.match(conv.summary, /^risposta0 risposta1/)
-    assert.equal((await page.getByTestId('timeline-dot').evaluateAll((els) => els.filter((e) => e.dataset.summarized === 'true').length)), 8)
-    // la richiesta del riassunto: prompt dell'archivista, senza ragionamento, stessa memoria
-    const summaryReq = fake.requests.filter((r) => r.path === '/api/chat' && r.body?.messages?.[0]?.content?.startsWith("Sei l'archivista")).at(-1).body
+
+    // la risposta è partita già con il riassunto nel system prompt e solo i messaggi non coperti
+    const body = lastChat()
+    assert.match(body.messages[0].content, /^# Riassunto della conversazione finora\nrisposta0 risposta1/)
+    assert.equal(body.messages.filter((m) => m.role !== 'system').length, 1) // solo «Dati: …»
+    const summaryReq = summaryRequests()[firstSummaryIdx]
     assert.equal(summaryReq.think, false)
     assert.equal(summaryReq.options.num_ctx, 1024)
     assert.match(summaryReq.messages[1].content, /^Messaggi:\n/)
 
-    // la domanda successiva porta brief + riassunto nel system prompt e solo i messaggi non coperti
+    // la scheda nel flusso, al confine. Prima dell'invio il riassunto ha coperto tutto tranne l'ultimo
+    // scambio; dopo la risposta il passaggio in sottofondo ha coperto anche la risposta precedente.
+    const card = page.getByTestId('summary-card')
+    const covered = total
+    await card.getByText(`copre i ${covered} messaggi qui sopra`).waitFor()
+    await card.getByTestId('summary-preview').filter({ hasText: /^risposta0 risposta1/ }).waitFor()
+    assert.equal((await page.getByTestId('timeline-dot').evaluateAll((els) => els.filter((e) => e.dataset.summarized === 'true').length)), covered)
+    await panel.getByText(/Riassunto in vigore: copre i primi \d+ messaggi, aggiornato alle \d{2}:\d{2}\./).waitFor()
+    assert.match(await page.getByTestId('context-usage').getAttribute('title'), /nel riassunto automatico/)
+    // la scheda sta subito dopo l'ultimo messaggio coperto
+    const order = await page.evaluate(() => [...document.querySelectorAll('[data-message-id]')].map((e) => e.dataset.messageId))
+    assert.equal(order.indexOf('summary'), covered)
+
+    // la domanda successiva: il riassunto si aggiorna in modo incrementale (riassunto precedente + nuovi messaggi)
     await box.fill('E quindi?')
     await box.press('Enter')
-    await page.getByTestId('message-assistant').nth(5).waitFor()
-    const body = lastChat()
-    // (questa conversazione non ha brief: il system prompt è il solo riassunto)
-    assert.match(body.messages[0].content, /^# Riassunto della conversazione finora\nrisposta0 risposta1/)
-    assert.equal(body.messages.filter((m) => m.role !== 'system').length, 3)
-    assert.match(await page.getByTestId('context-usage').getAttribute('title'), /nel riassunto automatico/)
-    // anche dopo questa risposta i recenti superano la soglia: il riassunto si aggiorna (incrementale) e copre altri 2 messaggi
-    await panel.getByText(/Riassunto in vigore: copre i primi 10 messaggi/).waitFor()
-    const incremental = fake.requests.filter((r) => isSummaryRequest(r.body)).at(-1).body
-    assert.match(incremental.messages[1].content, /^Riassunto finora:\nrisposta0 [\s\S]*\n\nNuovi messaggi:\nUtente: Dati: d/)
+    await page.getByTestId('message-assistant').last().filter({ hasText: 'risposta0' }).waitFor()
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
+    await card.getByText(`copre i ${covered + 1} messaggi qui sopra`).waitFor()
+    const incremental = summaryRequests().at(-1)
+    assert.match(incremental.messages[1].content, /^Riassunto finora:\nrisposta0 [\s\S]*\n\nNuovi messaggi:\n[\s\S]*Utente: Dati: d/)
 
-    // mostra e modifica, poi elimina
-    await panel.getByTestId('summary-toggle').click()
-    const text = panel.getByTestId('summary-text')
+    // mostra e modifica nella scheda, poi elimina
+    await card.getByTestId('summary-toggle').click()
+    const text = card.getByTestId('summary-text')
     assert.match(await text.inputValue(), /^risposta0/)
     await text.fill('Riassunto scritto a mano.')
     await text.blur()
     await waitUntil(async () => (await latestConversation()).summary === 'Riassunto scritto a mano.')
-    await panel.getByTestId('summary-clear').click()
+    await panel.getByTestId('summary-goto').click()
+    await card.getByTestId('summary-clear').click()
+    await card.waitFor({ state: 'detached' })
     await panel.getByText('Nessun riassunto').waitFor()
     await waitUntil(async () => (await latestConversation()).summary === null && (await latestConversation()).summaryUpTo === null)
     assert.equal((await page.getByTestId('timeline-dot').evaluateAll((els) => els.filter((e) => e.dataset.summarized === 'true').length)), 0)
-    // interruttore: spento, "Riassumi ora" funziona comunque (manuale)
+    // interruttore spento: all'invio non si riassume; "Riassumi ora" funziona comunque (manuale)
     await setSwitch(settings, 'Riassunto automatico', false)
     await waitUntil(async () => (await latestConversation()).autoSummary === false)
     await panel.getByTestId('summary-now').click()
-    await panel.getByText(/Riassunto in vigore/).waitFor()
+    await card.waitFor()
     await setSwitch(settings, 'Riassunto automatico', true)
     await memory.focus()
     await memory.press('End')

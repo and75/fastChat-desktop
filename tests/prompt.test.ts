@@ -3,7 +3,9 @@ import {
   buildExecutePrompt,
   buildPlanPrompt,
   buildSystemPrompt,
+  buildStyleSection,
   buildSummaryRequest,
+  STYLE_INSTRUCTIONS,
   charsPerToken,
   cleanSummary,
   computeContextUsage,
@@ -255,9 +257,9 @@ describe('riassunto automatico', () => {
 
   it('planSummary: sotto la soglia non fa nulla', () => {
     // 8 × 104 = 832 token; budget 2000 → 42% < 70%
-    expect(planSummary({ recent: eight, systemPrompt: '', numCtx: 2000, numPredict: 0 })).toBeNull()
+    expect(planSummary({ recent: eight, systemPrompt: '', numCtx: 2000, reserveTokens: 0 })).toBeNull()
     // ma con force copre finché i recenti scendono sotto il 40% (800): toglie i primi 2
-    const forced = planSummary({ recent: eight, systemPrompt: '', numCtx: 2000, numPredict: 0, force: true })!
+    const forced = planSummary({ recent: eight, systemPrompt: '', numCtx: 2000, reserveTokens: 0, force: true })!
     expect(forced.cover.map((m) => m.id)).toEqual(['m0', 'm1'])
     expect(forced.keep).toHaveLength(6)
   })
@@ -265,17 +267,17 @@ describe('riassunto automatico', () => {
   it('planSummary: sopra la soglia copre i più vecchi fino all\'obiettivo, chiudendo su una risposta', () => {
     // budget 1000 − riserva 100 = 900; 832 > 630 (70%) → scende sotto 360 (40%): tiene 3 (312), copre 5…
     // …ma il 5º coperto sarebbe una domanda (m4): si chiude sulla risposta m5
-    const plan = planSummary({ recent: eight, systemPrompt: '', numCtx: 1000, numPredict: 100 })!
+    const plan = planSummary({ recent: eight, systemPrompt: '', numCtx: 1000, reserveTokens: 100 })!
     expect(plan.cover.map((m) => m.id)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4', 'm5'])
     expect(plan.keep.map((m) => m.id)).toEqual(['m6', 'm7'])
   })
 
   it('planSummary: l\'ultimo scambio resta sempre per intero; il system prompt pesa sul budget', () => {
-    const tiny = planSummary({ recent: eight, systemPrompt: '', numCtx: 300, numPredict: 100 })!
+    const tiny = planSummary({ recent: eight, systemPrompt: '', numCtx: 300, reserveTokens: 100 })!
     expect(tiny.keep.map((m) => m.id)).toEqual(['m6', 'm7'])
-    expect(planSummary({ recent: eight.slice(0, 2), systemPrompt: '', numCtx: 100, numPredict: 50 })).toBeNull()
+    expect(planSummary({ recent: eight.slice(0, 2), systemPrompt: '', numCtx: 100, reserveTokens: 50 })).toBeNull()
     // system prompt enorme: budget negativo → niente
-    expect(planSummary({ recent: eight, systemPrompt: 'x'.repeat(10_000), numCtx: 1000, numPredict: 100 })).toBeNull()
+    expect(planSummary({ recent: eight, systemPrompt: 'x'.repeat(10_000), numCtx: 1000, reserveTokens: 100 })).toBeNull()
   })
 
   it('transcript: dalla più recente a ritroso, entro il limite di caratteri', () => {
@@ -309,5 +311,25 @@ describe('riassunto automatico', () => {
     ]
     expect(computeContextUsage({ brief: brief({}), messages: msgs, numCtx: 4096 })).toMatchObject({ used: 42, estimated: false })
     expect(computeContextUsage({ brief: brief({}), messages: msgs, numCtx: 4096, summary: 'x', summaryUpdatedAt: 3000 }).estimated).toBe(true)
+  })
+})
+
+describe('stile della risposta nel system prompt', () => {
+  it('sezione dopo il brief; niente per lo stile normale', () => {
+    expect(buildStyleSection('normal')).toBe('')
+    expect(buildStyleSection(null)).toBe('')
+    expect(buildStyleSection('concise')).toMatch(/^# Stile della risposta\nVai dritto al punto/)
+    expect(buildSystemPrompt(brief({ role: 'Tutor' }), 'essential')).toMatch(/^# Ruolo\nTutor\n\n# Stile della risposta\nRispondi nel modo più breve possibile/)
+    expect(buildSystemPrompt(brief({ role: 'Tutor' }), 'normal')).toBe('# Ruolo\nTutor')
+    // brief vuoto: solo lo stile
+    expect(buildSystemPrompt(brief({}), 'extended')).toMatch(/^# Stile della risposta\nRispondi in modo completo/)
+  })
+
+  it('i livelli sintetici proteggono la precisione; il piano viene dopo lo stile', () => {
+    for (const style of ['essential', 'concise'] as const) expect(STYLE_INSTRUCTIONS[style]).toContain('La brevità non deve costare precisione')
+    expect(STYLE_INSTRUCTIONS.normal).toBeNull()
+    const plan = buildPlanPrompt(brief({ role: 'Tutor' }), 'concise')
+    expect(plan.indexOf('# Stile della risposta')).toBeGreaterThan(plan.indexOf('# Ruolo'))
+    expect(plan.indexOf('# Modalità piano')).toBeGreaterThan(plan.indexOf('# Stile della risposta'))
   })
 })

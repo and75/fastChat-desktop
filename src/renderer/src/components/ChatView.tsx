@@ -6,8 +6,9 @@ import { ConversationTimeline, type TimelineItem } from './ConversationTimeline'
 import { CopyAction } from './CopyButton'
 import { RegenerateIcon } from './icons'
 import { MessageBubble } from './MessageBubble'
-import { PlanModeToggle, ThinkToggle } from './ModelSettings'
+import { PlanModeToggle, ThinkToggle, StyleControl } from './ModelSettings'
 import { PlanChecklist, PlanLoading, PlanSummary } from './PlanChecklist'
+import { SummaryCard } from './SummaryCard'
 
 function Composer({ disabled, streaming }: { disabled: boolean; streaming: boolean }): React.JSX.Element {
   const [text, setText] = useState('')
@@ -119,6 +120,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
           <ThinkToggle conversation={conversation} compact />
           <PlanModeToggle conversation={conversation} compact />
           <span data-testid="composer-temperature">Temperatura {conversation.temperature.toFixed(2)}</span>
+          <StyleControl conversation={conversation} compact />
           <ContextMeter />
         </div>
       )}
@@ -243,6 +245,8 @@ export function ChatView(): React.JSX.Element {
                     ) : undefined
                   }
                 />
+                {/* Confine tra la parte riassunta e quella inviata per intero. */}
+                {m.id === summaryUpTo && <SummaryCard conversation={conversation} covered={messages.indexOf(m) + 1} />}
                 {plans
                   .filter((p) => p.userMessageId === m.id)
                   .map((p) =>
@@ -254,13 +258,16 @@ export function ChatView(): React.JSX.Element {
                   )}
               </Fragment>
             ))}
-            {live?.kind === 'plan' && <PlanLoading thinking={live.thinking} content={live.content} startedAt={live.startedAt} />}
+            {live?.kind === 'plan' && (
+              <PlanLoading thinking={live.thinking} content={live.content} startedAt={live.startedAt} summarizing={live.summarizing} />
+            )}
             {live?.kind === 'chat' && (
               <MessageBubble
                 anchorId="live"
                 role="assistant"
                 content={live.content}
                 thinking={live.thinking}
+                summarizing={live.summarizing}
                 streaming
                 startedAt={live.startedAt}
               />

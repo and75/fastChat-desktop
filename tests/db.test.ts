@@ -147,8 +147,8 @@ describe('conversazioni e messaggi', () => {
     expect(up).toMatchObject({ topP: 1, numCtx: 4097, seed: 42, temperature: 0 })
     up = await updateConversation(h.db, a.id, { topP: null, numCtx: 10, seed: null })
     expect(up).toMatchObject({ topP: null, numCtx: 256, seed: null })
-    up = await updateConversation(h.db, a.id, { numCtx: Number.NaN as number, think: 'si' as unknown as boolean })
-    expect(up).toMatchObject({ numCtx: null, think: false })
+    up = await updateConversation(h.db, a.id, { numCtx: Number.NaN as number, think: 'si' as unknown as boolean, style: 'boh' as never })
+    expect(up).toMatchObject({ numCtx: null, think: false, style: 'normal' })
     up = await updateConversation(h.db, a.id, { think: true })
     expect(up.think).toBe(true)
   })
@@ -194,15 +194,17 @@ describe('template del brief', () => {
       temperature: 0.2,
       think: true,
       planMode: true,
-      seed: 5
+      seed: 5,
+      style: 'concise'
     })
     const t = await createTemplateFromConversation(h.db, src.id, '  Tutor  ')
-    expect(t).toMatchObject({ name: 'Tutor', model: 'qwen3', role: 'Sei un tutor', temperature: 0.2, think: true, planMode: true })
+    expect(t).toMatchObject({ name: 'Tutor', model: 'qwen3', role: 'Sei un tutor', temperature: 0.2, think: true, planMode: true, style: 'concise' })
 
     const conv = await createConversation(h.db, conversationFromTemplate(t, 'llama3.2'))
     expect(conv).toMatchObject({
       title: 'Nuova conversazione',
       model: 'qwen3',
+      style: 'concise',
       role: 'Sei un tutor',
       constraints: 'Solo italiano',
       temperature: 0.2,

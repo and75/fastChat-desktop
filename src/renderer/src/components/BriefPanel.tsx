@@ -143,7 +143,7 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
     timer.current = setTimeout(flush, 500)
   }
 
-  const preview = buildSystemPrompt(draft)
+  const preview = buildSystemPrompt(draft, conversation.style)
   const [tab, setTab] = usePanelTab()
 
   const tabs: Array<{ id: PanelTab; label: string; icon: React.ReactNode; filled?: boolean }> = [

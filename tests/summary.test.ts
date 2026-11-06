@@ -13,8 +13,8 @@ let h: DbHandle
 
 beforeAll(async () => {
   fake = await startFakeOllama([
-    // 1024 di contesto: con num_predict 256 restano 768 token per lo storico
-    { name: 'mini', capabilities: ['completion', 'thinking'], contextLength: 1024, parameters: 'num_ctx 1024', chunks: [{ content: 'Breve.' }] }
+    // 2048 di contesto: riserva 1024, ~1000 token per lo storico
+    { name: 'mini', capabilities: ['completion', 'thinking'], contextLength: 2048, parameters: 'num_ctx 2048', chunks: [{ content: 'Breve.' }] }
   ])
 })
 afterAll(() => fake.close())
@@ -32,7 +32,7 @@ const chatRequests = () =>
 
 /** Conversazione con messaggi lunghi già scambiati (400 caratteri = ~104 token l'uno). */
 async function seeded(count: number): Promise<Conversation> {
-  const conv = await createConversation(h.db, { model: 'mini', numCtx: 1024, numPredict: 256, role: 'Tutor' })
+  const conv = await createConversation(h.db, { model: 'mini', numCtx: 2048, role: 'Tutor' })
   for (let i = 0; i < count; i++) {
     await addMessage(h.db, { conversationId: conv.id, role: i % 2 ? 'assistant' : 'user', content: `${i} ` + 'x'.repeat(398) })
   }
@@ -42,7 +42,7 @@ async function seeded(count: number): Promise<Conversation> {
 describe('summarizer', () => {
   it('sotto la soglia non riassume; con force sì, lasciando l\'ultimo scambio per intero', async () => {
     const s = createSummarizer({ db: h.db, ollama: createOllamaClient(() => fake.url) })
-    const conv = await seeded(4) // 4 × 104 = 416 su 768 - brief → ~55%, sotto il 70%
+    const conv = await seeded(4) // 4 × 104 = 416 su ~1000 → ~41%, sotto il 70%
     expect((await s.summarize(conv.id)).outcome).toBe('not-needed')
     expect(summaryRequests()).toHaveLength(0)
 
@@ -56,16 +56,16 @@ describe('summarizer', () => {
     const req = summaryRequests().at(-1)!.body as { messages: Array<{ role: string; content: string }>; think?: boolean; options: Record<string, unknown> }
     expect(req.messages[1].content).toMatch(/^Messaggi:\nUtente: 0 x+\n\nAssistente: 1 x+$/)
     expect(req.think).toBe(false)
-    expect(req.options).toMatchObject({ num_ctx: 1024, num_predict: 600, temperature: 0.2 })
+    expect(req.options).toMatchObject({ num_ctx: 2048, num_predict: 600, temperature: 0.2 })
   })
 
   it('sopra la soglia riassume in modo incrementale (riassunto precedente + nuovi messaggi)', async () => {
     const s = createSummarizer({ db: h.db, ollama: createOllamaClient(() => fake.url) })
-    const conv = await seeded(8) // 832 token > 768
+    const conv = await seeded(8) // 832 token > 70% di ~1000
     expect((await s.summarize(conv.id)).outcome).toBe('updated')
     const msgs = await listMessages(h.db, conv.id)
     const first = (await getConversation(h.db, conv.id))!
-    expect(first.summaryUpTo).toBe(msgs[5].id) // tiene gli ultimi 2 (sotto il 40% di ~750)
+    expect(first.summaryUpTo).toBe(msgs[5].id) // tiene gli ultimi 2 (sotto il 40% di ~1000)
 
     for (let i = 8; i < 14; i++) {
       await addMessage(h.db, { conversationId: conv.id, role: i % 2 ? 'assistant' : 'user', content: `${i} ` + 'x'.repeat(398) })
@@ -73,8 +73,7 @@ describe('summarizer', () => {
     expect((await s.summarize(conv.id)).outcome).toBe('updated')
     const req = summaryRequests().at(-1)!.body as { messages: Array<{ content: string }> }
     expect(req.messages[1].content.startsWith('Riassunto finora:\nBreve.\n\nNuovi messaggi:\n')).toBe(true)
-    // con 1k di contesto la trascrizione sta in ~2.000 caratteri: i 4 messaggi coperti più recenti (8–11)
-    expect(req.messages[1].content).toMatch(/Nuovi messaggi:\nUtente: 8 /)
+    expect(req.messages[1].content).toMatch(/Nuovi messaggi:\nUtente: 6 /)
     expect((await getConversation(h.db, conv.id))!.summaryUpTo).toBe((await listMessages(h.db, conv.id))[11].id)
   })
 
@@ -114,9 +113,15 @@ describe('chat con riassunto', () => {
     const conv = await seeded(7) // 7 messaggi, l'ultimo è una risposta; la domanda nuova porta oltre la soglia
     await chat.wait((await chat.send({}, conv.id, 'domanda ' + 'y'.repeat(392))).streamId)
 
+    // il riassunto avviene PRIMA della risposta (evento 'summarizing'), così la risposta ha la riserva intera
+    expect(events.map((e) => e.type)).toEqual(['summarizing', 'content', 'done'])
     const after = (await getConversation(h.db, conv.id))!
     expect(after.summary).toBe('Breve.')
     expect(updated.some((c) => c.summary === 'Breve.')).toBe(true)
+    // la richiesta della risposta porta già il riassunto e solo i messaggi non coperti
+    const first = chatRequests().at(-1)!.body as { messages: Array<{ role: string; content: string }> }
+    expect(first.messages[0].content).toContain('# Riassunto della conversazione finora\nBreve.')
+    expect(first.messages.filter((m) => m.role !== 'system')).toHaveLength(2) // m6 e la domanda
     const msgs = await listMessages(h.db, conv.id)
     // copre m0–m5: restano m6, la domanda nuova e la risposta (sotto il 40% dello spazio)
     expect(after.summaryUpTo).toBe(msgs[5].id)

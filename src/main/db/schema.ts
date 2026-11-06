@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
-import type { DoneReason, PlanStatus, PlanStep } from '@shared/types'
+import type { DoneReason, PlanStatus, PlanStep, ResponseStyle } from '@shared/types'
 
 const now = sql`(unixepoch('subsec') * 1000)`
 
@@ -19,9 +19,9 @@ export const conversations = sqliteTable(
     planMode: integer('plan_mode', { mode: 'boolean' }).notNull().default(false),
     topP: real('top_p'),
     numCtx: integer('num_ctx'),
-    /** Token massimi per la risposta (num_predict): è anche lo spazio riservato alla risposta nel contesto. */
-    numPredict: integer('num_predict'),
     seed: integer('seed'),
+    /** Stile della risposta: istruzione nel system prompt, dal più sintetico al più esteso. */
+    style: text('style', { enum: ['essential', 'concise', 'normal', 'extended'] }).$type<ResponseStyle>().notNull().default('normal'),
     archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
     /** Riassunto automatico dei messaggi più vecchi, inviato nel system prompt al posto loro. */
     autoSummary: integer('auto_summary', { mode: 'boolean' }).notNull().default(true),
@@ -84,6 +84,7 @@ export const briefTemplates = sqliteTable('brief_templates', {
   temperature: real('temperature').notNull().default(0.7),
   think: integer('think', { mode: 'boolean' }).notNull().default(false),
   planMode: integer('plan_mode', { mode: 'boolean' }).notNull().default(false),
+  style: text('style', { enum: ['essential', 'concise', 'normal', 'extended'] }).$type<ResponseStyle>().notNull().default('normal'),
   createdAt: integer('created_at').notNull().default(now)
 })
 

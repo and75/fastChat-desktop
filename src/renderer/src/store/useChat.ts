@@ -9,6 +9,8 @@ export interface LiveStream {
   thinking: string
   /** Inizio della richiesta (ms), per mostrare il tempo trascorso. */
   startedAt: number
+  /** I messaggi più vecchi vengono riassunti prima della risposta. */
+  summarizing: boolean
 }
 
 interface ChatState {
@@ -45,7 +47,7 @@ const replacePlan = (plans: Plan[], plan: Plan): Plan[] => plans.map((p) => (p.i
 export const useChat = create<ChatState>((set, get) => {
   /** Registra un nuovo stream e applica gli eventi eventualmente già arrivati. */
   const startStream = (conversationId: string, streamId: string, kind: StreamKind): void => {
-    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '', startedAt: Date.now() } } }))
+    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '', startedAt: Date.now(), summarizing: false } } }))
     const early = pending.get(streamId) ?? []
     pending.delete(streamId)
     early.forEach((e) => get().handleStream(e))
@@ -163,11 +165,14 @@ export const useChat = create<ChatState>((set, get) => {
       const isActive = get().conversation?.id === event.conversationId
 
       switch (event.type) {
+        case 'summarizing':
+          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: true } } }))
+          return
         case 'thinking':
         case 'content': {
           const key = event.type === 'thinking' ? 'thinking' : 'content'
           set((s) => ({
-            streams: { ...s.streams, [event.conversationId]: { ...live, [key]: live[key] + (event.delta ?? '') } }
+            streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, [key]: live[key] + (event.delta ?? '') } }
           }))
           return
         }

@@ -64,25 +64,25 @@ type Mode =
  */
 export function buildOptions(conv: Conversation, caps: ModelCapabilities | null = null): ChatOptions {
   const s = resolveSettings(conv, caps)
-  const options: ChatOptions = { temperature: s.temperature, top_p: s.topP, num_ctx: s.numCtx, num_predict: s.numPredict }
+  const options: ChatOptions = { temperature: s.temperature, top_p: s.topP, num_ctx: s.numCtx }
   if (s.seed != null) options.seed = s.seed
   return options
 }
 
 /**
- * Messaggi da inviare: system prompt (brief + riassunto; mai troncato) + coda dei messaggi non coperti
- * dal riassunto che sta nel contesto, lasciando libera la riserva per la risposta (num_predict).
+ * Messaggi da inviare: system prompt (brief + stile + riassunto; mai troncato) + coda dei messaggi non
+ * coperti dal riassunto che sta nel contesto, lasciando liberi i token di riserva per la risposta.
  */
 export function buildChatMessages(
   conv: Conversation,
   history: Message[],
-  system: string = buildSystemPrompt(conv),
+  system: string = buildSystemPrompt(conv, conv.style),
   caps: ModelCapabilities | null = null
 ): ChatMessage[] {
   const s = resolveSettings(conv, caps)
   const { recent, aligned } = historyAfter(history, conv.summaryUpTo)
   if (aligned) system = withSummary(system, conv.summary)
-  const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.numPredict })
+  const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.reserveTokens })
   const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
   for (const m of picked) out.push({ role: m.role, content: m.content })
   return out
@@ -115,11 +115,11 @@ export function fallbackTitle(question: string): string {
 function systemFor(conv: Conversation, mode: Mode): string {
   switch (mode.kind) {
     case 'plan':
-      return buildPlanPrompt(conv)
+      return buildPlanPrompt(conv, conv.style)
     case 'execute':
-      return buildExecutePrompt(conv, mode.plan.steps)
+      return buildExecutePrompt(conv, mode.plan.steps, conv.style)
     default:
-      return buildSystemPrompt(conv)
+      return buildSystemPrompt(conv, conv.style)
   }
 }
 
@@ -238,10 +238,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     return out
   }
 
-  async function startStream(target: StreamTarget, conv: Conversation, mode: Mode): Promise<string> {
-    const streamId = randomUUID()
-    const controller = new AbortController()
-    const caps = await capsOf(conv)
+  /** Richiesta a Ollama per lo stato attuale della conversazione. */
+  async function buildRequest(conv: Conversation, mode: Mode, caps: ModelCapabilities | null): Promise<ChatRequest> {
     const history = await listMessages(db, conv.id)
     const request: ChatRequest = {
       model: conv.model,
@@ -250,12 +248,34 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     }
     if (mode.kind === 'plan') request.format = PLAN_SCHEMA as unknown as Record<string, unknown>
     if (caps?.thinking) request.think = resolveSettings(conv, caps).think
+    return request
+  }
+
+  async function startStream(target: StreamTarget, original: Conversation, mode: Mode): Promise<string> {
+    const streamId = randomUUID()
+    const controller = new AbortController()
+    const caps = await capsOf(original)
 
     const kind: StreamKind = mode.kind === 'plan' ? 'plan' : 'chat'
-    const base = { streamId, conversationId: conv.id, kind }
+    const base = { streamId, conversationId: original.id, kind }
     const run = async (): Promise<void> => {
       let answered = false
+      let conv = original
       try {
+        // Prima della risposta: se la memoria è oltre la soglia, i messaggi più vecchi vengono riassunti,
+        // così la risposta parte con la riserva intera. Lo stato è visibile; se fallisce si risponde comunque.
+        const summarized = await summarizer
+          ?.summarize(conv.id, false, () => emit(target, { ...base, type: 'summarizing' }))
+          .catch(() => null)
+        if (summarized?.outcome === 'updated' && summarized.conversation) {
+          conv = summarized.conversation
+          onConversationUpdated?.(target, conv)
+        }
+        if (controller.signal.aborted) {
+          emit(target, { ...base, type: 'done', aborted: true })
+          return
+        }
+        const request = await buildRequest(conv, mode, caps)
         const result = await ollama.chatStream(
           request,
           {
@@ -275,12 +295,13 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
       }
       if (answered) {
         await maybeAutoTitle(target, conv.id).catch(() => undefined)
+        // In anticipo per la domanda successiva: di norma all'invio non resta nulla da riassumere.
         const r = await summarizer?.summarize(conv.id).catch(() => null)
         if (r?.outcome === 'updated' && r.conversation) onConversationUpdated?.(target, r.conversation)
       }
     }
 
-    const active: ActiveStream = { conversationId: conv.id, target, controller, done: Promise.resolve() }
+    const active: ActiveStream = { conversationId: original.id, target, controller, done: Promise.resolve() }
     streams.set(streamId, active)
     // Parte al giro successivo: il renderer riceve prima lo streamId, poi gli eventi.
     active.done = new Promise<void>((resolve) => setImmediate(resolve)).then(run)

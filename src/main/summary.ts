@@ -41,7 +41,12 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
    * Aggiorna il riassunto se serve. Con `force` riassume anche sotto la soglia (azione manuale) e
    * riparte da zero se il riassunto non è più allineato ai messaggi.
    */
-  async function summarize(conversationId: string, force = false): Promise<{ outcome: SummaryOutcome; conversation: Conversation | null }> {
+  async function summarize(
+    conversationId: string,
+    force = false,
+    /** Chiamato solo se il riassunto parte davvero (per mostrare lo stato nell'interfaccia). */
+    onStart?: () => void
+  ): Promise<{ outcome: SummaryOutcome; conversation: Conversation | null }> {
     if (inProgress.has(conversationId)) return { outcome: 'not-needed', conversation: null }
     const conv = await getConversation(db, conversationId)
     if (!conv || !conv.model) return { outcome: 'failed', conversation: conv }
@@ -54,14 +59,15 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
     const s = resolveSettings(conv, caps)
     const plan = planSummary({
       recent,
-      systemPrompt: withSummary(buildSystemPrompt(conv), previous),
+      systemPrompt: withSummary(buildSystemPrompt(conv, conv.style), previous),
       numCtx: s.numCtx,
-      numPredict: s.numPredict,
+      reserveTokens: s.reserveTokens,
       force
     })
     if (!plan) return { outcome: 'not-needed', conversation: conv }
 
     inProgress.add(conversationId)
+    onStart?.()
     try {
       // La trascrizione deve stare nella memoria insieme a prompt, riassunto precedente e risposta.
       const cpt = charsPerToken(history)

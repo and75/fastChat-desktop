@@ -11,12 +11,14 @@ interface Props {
   /** Statistiche mostrate sotto le risposte salvate. */
   meta?: Pick<Message, 'model' | 'evalCount' | 'durationMs'>
   streaming?: boolean
+  /** Durante lo streaming: i messaggi più vecchi vengono riassunti prima della risposta. */
+  summarizing?: boolean
   /** Data del messaggio (mostrata sotto i messaggi dell'utente). */
   createdAt?: number
   /** Inizio della richiesta in corso (solo durante lo streaming). */
   startedAt?: number
   actions?: React.ReactNode
-  /** La risposta è stata fermata al limite di token (num_predict). */
+  /** La risposta è stata fermata da Ollama al limite di token (contesto esaurito). */
   truncated?: boolean
   /** Identificativo per la cronologia (attributo `data-message-id`). */
   anchorId?: string
@@ -37,6 +39,7 @@ export function MessageBubble({
   thinking,
   meta,
   streaming,
+  summarizing = false,
   startedAt,
   createdAt,
   actions,
@@ -72,7 +75,11 @@ export function MessageBubble({
       {/* Durante lo streaming il ragionamento resta aperto finché non inizia la risposta. */}
       {thinking && <ThinkingBlock text={thinking} live={!!streaming && !content} startedAt={startedAt} />}
       <div className="max-w-full text-zinc-900 dark:text-zinc-100">
-        {content ? <Markdown text={content} /> : streaming && !thinking ? <WaitingIndicator since={startedAt} /> : null}
+        {content ? (
+          <Markdown text={content} />
+        ) : streaming && !thinking ? (
+          <WaitingIndicator since={startedAt} label={summarizing ? 'Sto riassumendo i messaggi più vecchi' : undefined} />
+        ) : null}
         {streaming && content && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-zinc-400 align-middle" />}
       </div>
       {!streaming && (
@@ -81,10 +88,10 @@ export function MessageBubble({
           {truncated && (
             <span
               className="text-amber-700 dark:text-amber-400"
-              title="Il modello ha raggiunto la lunghezza massima della risposta (num_predict). Alza il limite nel pannello Modello, o chiedi di continuare."
+              title="Ollama ha fermato la risposta perché la memoria della conversazione è esaurita. Chiedi di continuare, o alza la memoria nel pannello Modello."
               data-testid="truncated-note"
             >
-              Risposta interrotta: limite di lunghezza
+              Risposta interrotta: memoria esaurita
             </span>
           )}
           {actions}

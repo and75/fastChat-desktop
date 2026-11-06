@@ -162,11 +162,14 @@ export function PlanSummary({ plan }: { plan: Plan }): React.JSX.Element {
 export function PlanLoading({
   thinking,
   content,
-  startedAt
+  startedAt,
+  summarizing = false
 }: {
   thinking: string
   content: string
   startedAt?: number
+  /** I messaggi più vecchi vengono riassunti prima del piano. */
+  summarizing?: boolean
 }): React.JSX.Element {
   const found = (content.match(/"title"\s*:/g) ?? []).length
   return (
@@ -174,7 +177,10 @@ export function PlanLoading({
       {thinking && <ThinkingBlock text={thinking} live={!content} startedAt={startedAt} />}
       <div role="status" className="flex items-center gap-2 text-sm text-brand-800 dark:text-brand-300">
         <TypingDots />
-        <span>Sto preparando il piano…{found > 0 && ` ${found} ${found === 1 ? 'passo' : 'passi'}`}</span>
+        <span>
+          {summarizing ? 'Sto riassumendo i messaggi più vecchi…' : 'Sto preparando il piano…'}
+          {found > 0 && ` ${found} ${found === 1 ? 'passo' : 'passi'}`}
+        </span>
         <span aria-hidden>·</span>
         <Elapsed since={startedAt} />
       </div>

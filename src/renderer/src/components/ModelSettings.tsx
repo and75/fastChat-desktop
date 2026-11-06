@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { describeSuggestion, maxNumCtx, numPredictSteps, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
-import type { Conversation, ConversationPatch } from '@shared/types'
+import { STYLE_INSTRUCTIONS, STYLE_LABELS } from '@shared/prompt'
+import { describeSuggestion, maxNumCtx, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
+import { RESPONSE_STYLES, type Conversation, type ConversationPatch, type ResponseStyle } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
@@ -120,18 +121,96 @@ export function ThinkToggle({ conversation, compact = false }: { conversation: C
   )
 }
 
-/** Riassunto automatico: i messaggi più vecchi confluiscono in un riassunto quando non stanno più nella memoria. */
+const STYLE_HINTS: Record<ResponseStyle, string> = {
+  essential: 'Solo la risposta: niente premesse, riepiloghi o esempi. Per domande secche; su problemi complessi meglio «Conciso».',
+  concise: 'Dritto al punto, un esempio al massimo. Buon compromesso per l\'uso quotidiano.',
+  normal: 'Nessuna istruzione: il modello scrive come è abituato.',
+  extended: 'Completo: contesto, alternative, esempi, avvertenze.'
+}
+
+/**
+ * Stile della risposta: quattro livelli dal più sintetico al più esteso. Ogni livello è un'istruzione nel
+ * system prompt (sezione «Stile della risposta»), non un limite di token: cambia quanto il modello decide di
+ * dire, non lo ferma a metà frase, e dice di non sacrificare la precisione.
+ */
+export function StyleControl({ conversation, compact = false }: { conversation: Conversation; compact?: boolean }): React.JSX.Element {
+  const update = useConversations((s) => s.update)
+  const set = (style: ResponseStyle): void => {
+    if (style !== conversation.style) void update(conversation.id, { style })
+  }
+  if (compact) {
+    return (
+      <label className="flex items-center gap-1" title={STYLE_HINTS[conversation.style]}>
+        <span>Stile</span>
+        <select
+          aria-label="Stile della risposta"
+          className="rounded border border-zinc-300 bg-transparent px-1 py-0.5 text-xs dark:border-zinc-700"
+          value={conversation.style}
+          onChange={(e) => set(e.target.value as ResponseStyle)}
+          data-testid="composer-style"
+        >
+          {RESPONSE_STYLES.map((st) => (
+            <option key={st} value={st}>
+              {STYLE_LABELS[st]}
+            </option>
+          ))}
+        </select>
+      </label>
+    )
+  }
+  const instruction = STYLE_INSTRUCTIONS[conversation.style]
+  return (
+    <div className="flex flex-col gap-1 text-sm" data-testid="style-control">
+      <span className="flex items-baseline justify-between gap-2">
+        <span className="font-medium text-zinc-700 dark:text-zinc-300">Stile della risposta</span>
+        <code className="text-[11px] text-zinc-400" title="Diventa una sezione del system prompt">
+          system prompt
+        </code>
+      </span>
+      <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+        Quanto il modello scrive, dal più sintetico al più esteso. È un'istruzione nel system prompt, non un limite di token: riduce la verbosità senza fermare la risposta a metà, e chiede di non sacrificare la precisione.
+      </span>
+      <div role="radiogroup" aria-label="Stile della risposta" className="mt-1 grid grid-cols-4 overflow-hidden rounded-lg border border-zinc-300 text-xs dark:border-zinc-700">
+        {RESPONSE_STYLES.map((st) => (
+          <button
+            key={st}
+            type="button"
+            role="radio"
+            aria-checked={conversation.style === st}
+            title={STYLE_HINTS[st]}
+            className={
+              'px-1 py-1.5 transition-colors ' +
+              (conversation.style === st
+                ? 'bg-brand-600 font-medium text-white'
+                : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800')
+            }
+            onClick={() => set(st)}
+          >
+            {STYLE_LABELS[st]}
+          </button>
+        ))}
+      </div>
+      <span className="text-xs text-zinc-500" data-testid="style-hint">
+        {STYLE_HINTS[conversation.style]}
+      </span>
+      {instruction && (
+        <details className="text-xs text-zinc-500">
+          <summary className="cursor-pointer">Istruzione inviata al modello</summary>
+          <p className="mt-1 whitespace-pre-wrap rounded-lg bg-zinc-100 p-2 dark:bg-zinc-900">{instruction}</p>
+        </details>
+      )}
+    </div>
+  )
+}
+
+/** Riassunto automatico: interruttore e stato; il testo e le azioni stanno nella scheda nel flusso dei messaggi. */
 export function SummaryPanel({ conversation }: { conversation: Conversation }): React.JSX.Element {
   const update = useConversations((s) => s.update)
   const summarize = useConversations((s) => s.summarize)
   const messages = useChat((s) => s.messages)
   const busy = useChat((s) => !!s.streams[conversation.id])
-  const [open, setOpen] = useState(false)
-  const [draft, setDraft] = useState(conversation.summary ?? '')
   const [working, setWorking] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => setDraft(conversation.summary ?? ''), [conversation.id, conversation.summary])
 
   const covered = conversation.summary && conversation.summaryUpTo ? messages.findIndex((m) => m.id === conversation.summaryUpTo) + 1 : 0
 
@@ -153,7 +232,7 @@ export function SummaryPanel({ conversation }: { conversation: Conversation }): 
       <Switch
         label="Riassunto automatico"
         checked={conversation.autoSummary}
-        title="Quando i messaggi non stanno più nella memoria, i più vecchi vengono riassunti dal modello e il riassunto prende il loro posto nel system prompt"
+        title="Quando i messaggi non stanno più nella memoria, prima della risposta i più vecchi vengono riassunti dal modello e il riassunto prende il loro posto nel system prompt"
         color="bg-brand-600"
         onChange={(autoSummary) => void update(conversation.id, { autoSummary })}
       />
@@ -161,58 +240,33 @@ export function SummaryPanel({ conversation }: { conversation: Conversation }): 
         {conversation.summary
           ? `Riassunto in vigore: copre ${covered > 0 ? `i primi ${covered} messaggi` : 'i messaggi più vecchi'}` +
             (conversation.summaryUpdatedAt ? `, aggiornato alle ${new Date(conversation.summaryUpdatedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : '') +
-            '.'
+            '. Lo trovi nella conversazione, al confine con i messaggi inviati per intero.'
           : 'Nessun riassunto: tutti i messaggi vengono inviati per intero (finché stanno nella memoria).'}
       </span>
       <div className="flex flex-wrap gap-2 text-xs">
-        {conversation.summary && (
+        {conversation.summary ? (
           <button
             type="button"
             className="rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-            onClick={() => setOpen((o) => !o)}
-            data-testid="summary-toggle"
+            onClick={() => document.querySelector('[data-testid="summary-card"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            data-testid="summary-goto"
           >
-            {open ? 'Nascondi' : 'Mostra e modifica'}
+            Vai al riassunto
           </button>
-        )}
-        <button
-          type="button"
-          className="rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          disabled={working || busy || messages.length < 3}
-          title="Riassume subito i messaggi più vecchi, lasciando per intero l'ultimo scambio"
-          onClick={() => void run()}
-          data-testid="summary-now"
-        >
-          {working ? 'Riassumo…' : conversation.summary ? 'Aggiorna ora' : 'Riassumi ora'}
-        </button>
-        {conversation.summary && (
+        ) : (
           <button
             type="button"
-            className="rounded border border-zinc-300 px-2 py-0.5 text-red-700 hover:bg-red-50 dark:border-zinc-700 dark:text-red-300 dark:hover:bg-red-950"
-            onClick={() => {
-              setOpen(false)
-              void update(conversation.id, { summary: null })
-            }}
-            data-testid="summary-clear"
+            className="rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            disabled={working || busy || messages.length < 3}
+            title="Riassume subito i messaggi più vecchi, lasciando per intero l'ultimo scambio"
+            onClick={() => void run()}
+            data-testid="summary-now"
           >
-            Elimina
+            {working ? 'Riassumo…' : 'Riassumi ora'}
           </button>
         )}
       </div>
       {feedback && <span className="text-xs text-red-700 dark:text-red-300">{feedback}</span>}
-      {open && conversation.summary && (
-        <textarea
-          aria-label="Testo del riassunto"
-          rows={8}
-          value={draft}
-          className="w-full resize-y rounded-lg border border-zinc-300 bg-white p-2 text-xs leading-snug dark:border-zinc-700 dark:bg-zinc-900"
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => {
-            if (draft.trim() !== (conversation.summary ?? '')) void update(conversation.id, { summary: draft })
-          }}
-          data-testid="summary-text"
-        />
-      )}
     </div>
   )
 }
@@ -426,15 +480,12 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
 
   // Stessi calcoli del main: ciò che si mostra come "suggerito" è ciò che la calibrazione scriverebbe.
   const effective = resolveSettings(conversation, caps)
-  const input = { system, modelBytes, caps: caps ?? null, think: effective.think, numCtx: effective.numCtx }
+  const input = { system, modelBytes, caps: caps ?? null }
   const suggested = suggestSettings(input)
   const machineCtx = suggestNumCtx(input)
   const ctxSteps = contextSteps(maxNumCtx(caps))
   const allSuggested =
-    effective.temperature === suggested.temperature &&
-    effective.topP === suggested.topP &&
-    effective.numCtx === suggested.numCtx &&
-    effective.numPredict === suggested.numPredict
+    effective.temperature === suggested.temperature && effective.topP === suggested.topP && effective.numCtx === suggested.numCtx
 
   return (
     <section className="flex flex-col gap-4" aria-label="Impostazioni del modello" data-testid="model-settings">
@@ -487,22 +538,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
         extra={approxWords}
         onChange={(v) => save({ numCtx: v })}
       />
-      <SettingSlider
-        label="Lunghezza massima della risposta"
-        technical="num_predict"
-        description={
-          'Quanti token al massimo può avere una risposta' +
-          (effective.think ? ', ragionamento compreso' : '') +
-          '. Questo spazio resta riservato alla risposta: il resto della memoria va a brief e storico. Se il modello lo raggiunge, la risposta si ferma e compare «Continua».'
-        }
-        value={effective.numPredict}
-        suggested={suggested.numPredict}
-        suggestedSource={effective.think ? 'in base alla memoria, con ragionamento' : 'in base alla memoria'}
-        steps={numPredictSteps(effective.numCtx)}
-        format={(v) => `${fmt(v)} token`}
-        extra={approxWords}
-        onChange={(v) => save({ numPredict: v })}
-      />
+      <StyleControl conversation={conversation} />
       <SummaryPanel conversation={conversation} />
       <NumberField
         label="Risposte ripetibili"

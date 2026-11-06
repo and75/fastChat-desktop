@@ -13,10 +13,13 @@ export interface ConversationSettings {
   planMode: boolean
   topP: number | null
   numCtx: number | null
-  /** Token massimi per la risposta (num_predict): anche lo spazio riservato alla risposta nel contesto. */
-  numPredict: number | null
   seed: number | null
+  /** Stile della risposta: istruzione nel system prompt, dal più sintetico al più esteso. */
+  style: ResponseStyle
 }
+
+export type ResponseStyle = 'essential' | 'concise' | 'normal' | 'extended'
+export const RESPONSE_STYLES: ResponseStyle[] = ['essential', 'concise', 'normal', 'extended']
 
 /** Titolo delle conversazioni appena create: finché resta questo, dopo il primo scambio se ne genera uno. */
 export const DEFAULT_TITLE = 'Nuova conversazione'
@@ -49,7 +52,7 @@ export interface Message {
   /** Token del prompt (system + storico + domanda) usati per generare la risposta, da Ollama. */
   promptEvalCount: number | null
   durationMs: number | null
-  /** Come Ollama ha chiuso la risposta: 'length' = tagliata al limite di token (num_predict). */
+  /** Come Ollama ha chiuso la risposta: 'length' = fermata al limite di token (contesto esaurito). */
   doneReason: DoneReason | null
   createdAt: number
 }
@@ -79,6 +82,7 @@ export interface BriefTemplate extends Brief {
   temperature: number
   think: boolean
   planMode: boolean
+  style: ResponseStyle
   createdAt: number
 }
 
@@ -127,8 +131,8 @@ export type ConversationPatch = Partial<
     | 'planMode'
     | 'topP'
     | 'numCtx'
-    | 'numPredict'
     | 'seed'
+    | 'style'
     | 'archived'
     | 'autoSummary'
     | 'summary'
@@ -154,7 +158,8 @@ export interface SendResult {
   userMessage?: Message
 }
 
-export type StreamEventType = 'thinking' | 'content' | 'done' | 'error'
+/** 'summarizing': prima della risposta i messaggi più vecchi vengono riassunti (la risposta arriva dopo). */
+export type StreamEventType = 'summarizing' | 'thinking' | 'content' | 'done' | 'error'
 
 /** 'chat': risposta normale o esecuzione di un piano; 'plan': proposta di un piano (content è JSON). */
 export type StreamKind = 'chat' | 'plan'

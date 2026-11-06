@@ -1,6 +1,6 @@
 // Funzioni pure per comporre i prompt. Condivise: il main le usa per le chiamate a Ollama,
 // il renderer per l'anteprima del system prompt nel BriefPanel.
-import { OLLAMA_DEFAULTS, type Brief, type PlanStep } from './types'
+import { OLLAMA_DEFAULTS, type Brief, type PlanStep, type ResponseStyle } from './types'
 
 const SECTIONS: Array<[keyof Brief, string]> = [
   ['role', 'Ruolo'],
@@ -9,15 +9,43 @@ const SECTIONS: Array<[keyof Brief, string]> = [
   ['constraints', 'Vincoli']
 ]
 
+const joinSections = (...parts: string[]): string => parts.filter((p) => p.trim()).join('\n\n')
+
+/**
+ * Istruzioni di stile, dal più sintetico al più esteso. Riguardano solo il testo finale: la brevità non
+ * deve costare precisione, e i modelli con ragionamento possono ragionare quanto serve.
+ */
+const ACCURACY = 'La brevità non deve costare precisione: non omettere nulla di necessario alla correttezza o alla sicurezza della risposta. Ragiona quanto serve, ma scrivi solo ciò che è utile a chi legge.'
+export const STYLE_INSTRUCTIONS: Record<ResponseStyle, string | null> = {
+  essential: `Rispondi nel modo più breve possibile: solo ciò che serve a rispondere. Niente premesse, niente ripetizione della domanda, niente riepiloghi finali, niente offerte di aiuto. Elenchi e codice solo se indispensabili. ${ACCURACY}`,
+  concise: `Vai dritto al punto: niente introduzioni né conclusioni. Al massimo un esempio, quando chiarisce. Spiega solo i passaggi non ovvi. ${ACCURACY}`,
+  normal: null,
+  extended: 'Rispondi in modo completo: contesto, alternative, esempi, avvertenze e casi limite. Struttura il testo con titoli ed elenchi quando aiuta.'
+}
+
+export const STYLE_LABELS: Record<ResponseStyle, string> = {
+  essential: 'Essenziale',
+  concise: 'Conciso',
+  normal: 'Normale',
+  extended: 'Esteso'
+}
+
+/** Sezione "# Stile della risposta", o '' per lo stile normale. */
+export function buildStyleSection(style: ResponseStyle | null | undefined): string {
+  const text = style ? STYLE_INSTRUCTIONS[style] : null
+  return text ? `# Stile della risposta\n${text}` : ''
+}
+
 /**
  * Compone il system prompt dal brief: solo le sezioni non vuote, nell'ordine
- * Ruolo, Contesto, Obiettivi, Vincoli. Restituisce '' se il brief è vuoto.
+ * Ruolo, Contesto, Obiettivi, Vincoli, poi lo stile della risposta (se non normale).
+ * Restituisce '' se il brief è vuoto e lo stile è normale.
  */
-export function buildSystemPrompt(brief: Brief): string {
-  return SECTIONS.map(([key, title]) => [title, brief[key]?.trim() ?? ''] as const)
+export function buildSystemPrompt(brief: Brief, style?: ResponseStyle | null): string {
+  const sections = SECTIONS.map(([key, title]) => [title, brief[key]?.trim() ?? ''] as const)
     .filter(([, body]) => body.length > 0)
     .map(([title, body]) => `# ${title}\n${body}`)
-    .join('\n\n')
+  return joinSections(...sections, buildStyleSection(style))
 }
 
 export interface HistoryMessage {
@@ -104,8 +132,6 @@ export function selectHistory<T extends HistoryMessage>(
   return picked
 }
 
-const joinSections = (...parts: string[]): string => parts.filter((p) => p.trim()).join('\n\n')
-
 // ---------------------------------------------------------------- riassunto automatico
 
 /** Soglie del riassunto, in frazione dello spazio per lo storico (memoria − riserva − system prompt). */
@@ -143,9 +169,9 @@ export interface SummaryPlanInput<T extends HistoryMessage> {
   recent: T[]
   /** System prompt completo (brief + riassunto attuale), che si sottrae dal budget. */
   systemPrompt: string
-  /** Memoria della conversazione (num_ctx) e riserva per la risposta (num_predict). */
+  /** Memoria della conversazione (num_ctx) e token lasciati liberi per la risposta. */
   numCtx: number
-  numPredict: number
+  reserveTokens: number
   /** Forza il riassunto anche sotto la soglia (azione manuale). */
   force?: boolean
 }
@@ -157,7 +183,7 @@ export interface SummaryPlanInput<T extends HistoryMessage> {
 export function planSummary<T extends HistoryMessage>(input: SummaryPlanInput<T>): { cover: T[]; keep: T[] } | null {
   const { recent } = input
   const cpt = charsPerToken(recent)
-  const budget = input.numCtx - input.numPredict - (input.systemPrompt ? estimateTokens(input.systemPrompt, cpt) : 0)
+  const budget = input.numCtx - input.reserveTokens - (input.systemPrompt ? estimateTokens(input.systemPrompt, cpt) : 0)
   if (budget <= 0 || recent.length <= SUMMARY.keepLast) return null
   const costs = recent.map((m) => estimateTokens(m.content, cpt))
   let used = costs.reduce((a, b) => a + b, 0)
@@ -235,9 +261,9 @@ Non rispondere ancora alla richiesta dell'utente. Proponi prima un piano per ris
 - Scrivi nella stessa lingua dell'utente.
 Rispondi solo con un oggetto JSON nella forma {"steps":[{"title":"…","detail":"…"}]}.`
 
-/** System prompt per la fase di pianificazione: brief + istruzioni del piano. */
-export function buildPlanPrompt(brief: Brief): string {
-  return joinSections(buildSystemPrompt(brief), PLAN_INSTRUCTIONS)
+/** System prompt per la fase di pianificazione: brief + stile + istruzioni del piano. */
+export function buildPlanPrompt(brief: Brief, style?: ResponseStyle | null): string {
+  return joinSections(buildSystemPrompt(brief, style), PLAN_INSTRUCTIONS)
 }
 
 export function formatPlan(steps: PlanStep[]): string {
@@ -249,10 +275,10 @@ export function formatPlan(steps: PlanStep[]): string {
     .join('\n')
 }
 
-/** System prompt per l'esecuzione: brief + piano approvato dall'utente. */
-export function buildExecutePrompt(brief: Brief, steps: PlanStep[]): string {
+/** System prompt per l'esecuzione: brief + stile + piano approvato dall'utente. */
+export function buildExecutePrompt(brief: Brief, steps: PlanStep[], style?: ResponseStyle | null): string {
   return joinSections(
-    buildSystemPrompt(brief),
+    buildSystemPrompt(brief, style),
     `# Piano approvato
 L'utente ha approvato questo piano per rispondere alla sua ultima richiesta. Seguilo passo per passo, nell'ordine indicato, senza aggiungere né saltare passi. Non ripetere il piano: esegui.
 
@@ -318,6 +344,7 @@ export interface ContextUsage {
 
 export interface ContextUsageInput {
   brief: Brief
+  style?: ResponseStyle | null
   messages: Array<HistoryMessage & { promptEvalCount?: number | null }>
   /** Memoria effettiva della conversazione (num_ctx inviato a Ollama): vedi resolveNumCtx. */
   numCtx: number
@@ -336,7 +363,7 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage {
   const total = input.numCtx
 
   const { recent: messages, aligned } = historyAfter(input.messages, input.summaryUpTo)
-  const system = withSummary(buildSystemPrompt(input.brief), aligned ? input.summary : null)
+  const system = withSummary(buildSystemPrompt(input.brief, input.style), aligned ? input.summary : null)
   const cpt = charsPerToken(input.messages)
   const est = (text: string): number => estimateTokens(text, cpt)
   const estimateAll = (system ? est(system) : 0) + messages.reduce((n, m) => n + est(m.content), 0)

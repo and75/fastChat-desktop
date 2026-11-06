@@ -8,6 +8,8 @@ import {
   type ConversationListQuery,
   type ConversationPatch,
   type DoneReason,
+  RESPONSE_STYLES,
+  type ResponseStyle,
   type Message,
   type MessageRole,
   type Plan,
@@ -57,8 +59,8 @@ const PATCHABLE: (keyof ConversationPatch)[] = [
   'planMode',
   'topP',
   'numCtx',
-  'numPredict',
   'seed',
+  'style',
   'archived',
   'autoSummary',
   'summary',
@@ -76,7 +78,7 @@ export function sanitizePatch(patch: ConversationPatch): ConversationPatch {
   if ('temperature' in out) out.temperature = clampNumber(out.temperature, 0, 2) ?? 0.7
   if ('topP' in out) out.topP = clampNumber(out.topP, 0, 1)
   if ('numCtx' in out) out.numCtx = toInt(out.numCtx, 256, 1_048_576)
-  if ('numPredict' in out) out.numPredict = toInt(out.numPredict, 64, 1_048_576)
+  if ('style' in out && !RESPONSE_STYLES.includes(out.style as ResponseStyle)) out.style = 'normal'
   if ('seed' in out) out.seed = toInt(out.seed, -2_147_483_648, 2_147_483_647)
   for (const key of ['think', 'planMode', 'archived', 'autoSummary'] as const) {
     if (key in out) out[key] = out[key] === true
@@ -300,6 +302,7 @@ export async function createTemplateFromConversation(db: Db, conversationId: str
     temperature: conv.temperature,
     think: conv.think,
     planMode: conv.planMode,
+    style: conv.style,
     createdAt: Date.now()
   }
   await db.insert(briefTemplates).values(row)
@@ -320,6 +323,7 @@ export function conversationFromTemplate(t: BriefTemplate, fallbackModel: string
     constraints: t.constraints,
     temperature: t.temperature,
     think: t.think,
-    planMode: t.planMode
+    planMode: t.planMode,
+    style: t.style
   }
 }

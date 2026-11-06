@@ -72,13 +72,13 @@ describe('buildOptions / buildChatMessages', () => {
   } as Conversation
 
   it('opzioni: valori effettivi sempre espliciti, seed solo se impostato', () => {
-    expect(buildOptions(conv)).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, num_predict: 1024, seed: 7 })
-    expect(buildOptions({ ...conv, seed: null, numCtx: null })).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, num_predict: 1024 })
-    expect(buildOptions({ ...conv, seed: null, numPredict: 512 })).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, num_predict: 512 })
+    // nessun num_predict: la lunghezza della risposta la governa lo stile nel system prompt
+    expect(buildOptions(conv)).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, seed: 7 })
+    expect(buildOptions({ ...conv, seed: null, numCtx: null })).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096 })
     const caps = { capabilities: [], thinking: false, contextLength: 8192, kvBytesPerToken: null, defaults: { temperature: 0.6, topP: 0.95, numCtx: 2048 } }
     // in automatico: consigliati dal modello; la scelta dell'utente non supera il massimo del modello
-    expect(buildOptions({ ...conv, seed: null, numCtx: null, topP: null }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 2048, num_predict: 1024 })
-    expect(buildOptions({ ...conv, seed: null, numCtx: 65536 }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 8192, num_predict: 2048 })
+    expect(buildOptions({ ...conv, seed: null, numCtx: null, topP: null }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 2048 })
+    expect(buildOptions({ ...conv, seed: null, numCtx: 65536 }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 8192 })
   })
 
   it('brief come primo messaggio system, poi lo storico', () => {
@@ -93,14 +93,21 @@ describe('buildOptions / buildChatMessages', () => {
     ])
   })
 
-  it('lo storico lascia libera la riserva per la risposta (num_predict)', () => {
-    // 4096 di memoria; ogni messaggio da 4000 caratteri costa 1004 token
+  it('lo storico lascia liberi i token di riserva per la risposta (un quarto della memoria)', () => {
+    // 4096 di memoria → riserva 1024 → 3072 per lo storico; ogni messaggio da 4000 caratteri costa 1004 token
     const big = (i: number) => ({ role: i % 2 ? 'assistant' : 'user', content: 'x'.repeat(4000) }) as never
     const history = [big(0), big(1), big(2), big(3), big(4)]
-    // riserva 1024 → 3072 per lo storico: gli ultimi 3 messaggi
-    expect(buildChatMessages({ ...conv, role: '', constraints: '', numPredict: 1024 }, history)).toHaveLength(3)
-    // riserva 2048 → 2048: ci starebbero 2, ma il primo sarebbe una risposta orfana → resta solo la domanda
-    expect(buildChatMessages({ ...conv, role: '', constraints: '', numPredict: 2048 }, history)).toHaveLength(1)
+    expect(buildChatMessages({ ...conv, role: '', constraints: '' }, history)).toHaveLength(3)
+    // 2048 di memoria → riserva 1024 → 1024: ci sta solo l'ultima domanda
+    expect(buildChatMessages({ ...conv, role: '', constraints: '', numCtx: 2048 }, history)).toHaveLength(1)
+  })
+
+  it('lo stile della risposta è una sezione del system prompt, dopo il brief', () => {
+    const msgs = buildChatMessages({ ...conv, style: 'concise' }, [{ role: 'user', content: 'ciao' } as never])
+    expect(msgs[0].role).toBe('system')
+    expect(msgs[0].content).toMatch(/^# Ruolo\nSei un tutor\n\n# Vincoli\nSolo italiano\n\n# Stile della risposta\nVai dritto al punto/)
+    // normale: nessuna sezione
+    expect(buildChatMessages({ ...conv, style: 'normal' }, [{ role: 'user', content: 'ciao' } as never])[0].content).toBe('# Ruolo\nSei un tutor\n\n# Vincoli\nSolo italiano')
   })
 
   it('senza brief non c\'è messaggio system', () => {
@@ -123,7 +130,7 @@ describe('chat service', () => {
       { role: 'user', content: 'ciao' }
     ])
     // nessuna scelta esplicita: predefiniti di Ollama, ma sempre inviati (= ciò che l'interfaccia mostra)
-    expect(body.options).toEqual({ temperature: 1.1, top_p: 0.9, num_ctx: 4096, num_predict: 1024 })
+    expect(body.options).toEqual({ temperature: 1.1, top_p: 0.9, num_ctx: 4096 })
     // llama3.2 non supporta il ragionamento: il parametro think non va inviato
     expect(body).not.toHaveProperty('think')
 
