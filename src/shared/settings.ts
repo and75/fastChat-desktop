@@ -107,6 +107,17 @@ export function suggestReserveTokens(numCtx: number, think: boolean): number {
   return Math.max(RESERVE.floor, Math.min(value, floorPow2(Math.max(2, numCtx / 2))))
 }
 
+/**
+ * Riserva per la risposta tenendo conto di quanto scrive davvero il modello in questa conversazione:
+ * almeno la più lunga delle ultime 3 risposte (+10%), mai oltre metà della memoria. Con lo stile «Esteso»
+ * un modello può scrivere ben più di un quarto della memoria: la riserva fissa non basterebbe.
+ */
+export function reserveForHistory(base: number, numCtx: number, messages: ReadonlyArray<{ role: string; evalCount?: number | null }>): number {
+  const recent = messages.filter((m) => m.role === 'assistant' && m.evalCount).slice(-3)
+  const longest = recent.reduce((n, m) => Math.max(n, m.evalCount ?? 0), 0)
+  return Math.min(Math.floor(numCtx / 2), Math.max(base, Math.ceil(longest * 1.1)))
+}
+
 // ---------------------------------------------------------------- valori suggeriti e calibrazione
 
 /** Valori con cui una conversazione parte per un dato modello: quelli che l'utente poi può cambiare. */

@@ -3,6 +3,7 @@ import {
   describeSuggestion,
   floorPow2,
   minNumCtx,
+  reserveForHistory,
   suggestReserveTokens,
   resolveNumCtx,
   resolveSettings,
@@ -143,5 +144,15 @@ describe('parametri effettivi (ciò che l\'utente vede = ciò che va a Ollama)',
     expect(resolveSettings(conv, caps)).toEqual({ temperature: 0.7, topP: 0.95, numCtx: 2048, reserveTokens: 1024, seed: null, think: true })
     expect(resolveSettings(conv, bare).think).toBe(false)
     expect(resolveSettings({ ...conv, think: false }, caps).think).toBe(false)
+  })
+})
+
+describe('riserva misurata sulle risposte reali', () => {
+  it('caso v0.1.13: memoria 4096, risposte da 1.065–1.225 token → riserva 1.348 invece di 1.024', () => {
+    const answers = [1809, 1750, 1420, 1189, 1225, 1177, 1065].map((evalCount) => ({ role: 'assistant', evalCount }))
+    expect(reserveForHistory(1024, 4096, answers)).toBe(Math.ceil(1225 * 1.1))
+    // mai oltre metà della memoria; senza risposte resta la base
+    expect(reserveForHistory(1024, 2048, [{ role: 'assistant', evalCount: 1809 }])).toBe(1024)
+    expect(reserveForHistory(1024, 4096, [])).toBe(1024)
   })
 })

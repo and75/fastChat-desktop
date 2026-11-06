@@ -181,3 +181,54 @@ describe('riassunto a blocchi con memoria piccola (caso reale)', () => {
     }
   })
 })
+
+describe('caso v0.1.13: riassunto in corso quando arriva la domanda', () => {
+  it('la domanda aspetta il riassunto in corso e parte con il riassunto aggiornato', async () => {
+    // modello lento (~300 ms per richiesta): il riassunto in sottofondo è ancora in corso quando arriva la domanda
+    const slow = await startFakeOllama([{ name: 'lento', capabilities: ['completion'], contextLength: 2048, parameters: 'num_ctx 2048', startDelayMs: 300, chunks: [{ content: 'Breve.' }] }])
+    try {
+      const ollama = createOllamaClient(() => slow.url)
+      const events: StreamEvent[] = []
+      const summarizer = createSummarizer({ db: h.db, ollama })
+      const chat = createChatService({ db: h.db, ollama, summarizer, emit: (_t, e) => events.push(e) })
+      const conv = await createConversation(h.db, { model: 'lento', numCtx: 2048, role: 'Tutor' })
+      for (let i = 0; i < 8; i++) {
+        await addMessage(h.db, { conversationId: conv.id, role: i % 2 ? 'assistant' : 'user', content: `${i} ` + 'x'.repeat(398) })
+      }
+      // come dopo una risposta: riassunto in sottofondo, lento
+      const background = summarizer.summarize(conv.id)
+      await new Promise((r) => setTimeout(r, 50))
+      expect(summarizer.isSummarizing(conv.id)).toBe(true)
+
+      // la domanda arriva mentre il riassunto è in corso: deve aspettarlo (evento 'summarizing')
+      const sent = await chat.send({}, conv.id, 'domanda')
+      await chat.wait(sent.streamId)
+      await background
+      expect(events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)[0]).toBe('summarizing')
+      const req = slow.requests
+        .filter((r) => r.path === '/api/chat' && !firstContent(r).startsWith("Sei l'archivista") && !firstContent(r).startsWith('Genera un titolo'))
+        .at(-1)!.body as { messages: Array<{ content: string }> }
+      // …e partire con il riassunto appena fatto, non con lo stato vecchio
+      expect(req.messages[0].content).toContain('# Riassunto della conversazione finora\nBreve.')
+      expect(req.messages.length).toBeLessThan(10)
+    } finally {
+      await slow.close()
+    }
+  })
+
+  it('riassunto tagliato al limite: viene condensato e chiuso su una riga completa', async () => {
+    const cut = await startFakeOllama([{ name: 'taglia', capabilities: ['completion'], contextLength: 2048, parameters: 'num_ctx 2048', doneReason: 'length', chunks: [{ content: '- punto uno\n- punto due\n- punto tr' }] }])
+    try {
+      const s = createSummarizer({ db: h.db, ollama: createOllamaClient(() => cut.url) })
+      const conv = await createConversation(h.db, { model: 'taglia', numCtx: 2048 })
+      for (let i = 0; i < 8; i++) await addMessage(h.db, { conversationId: conv.id, role: i % 2 ? 'assistant' : 'user', content: 'x'.repeat(400) })
+      const r = await s.summarize(conv.id, true)
+      expect(r.outcome).toBe('updated')
+      expect(r.conversation?.summary).toBe('- punto uno\n- punto due')
+      const reqs = cut.requests.filter((q) => q.path === '/api/chat').map((q) => (q.body as { messages: Array<{ content: string }> }).messages[1].content)
+      expect(reqs.some((c) => c.startsWith('Condensa questo riassunto'))).toBe(true)
+    } finally {
+      await cut.close()
+    }
+  })
+})

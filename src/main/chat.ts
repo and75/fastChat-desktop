@@ -10,7 +10,7 @@ import {
   selectHistory,
   withSummary
 } from '@shared/prompt'
-import { resolveSettings } from '@shared/settings'
+import { reserveForHistory, resolveSettings } from '@shared/settings'
 import { DEFAULT_TITLE, type Conversation, type DoneReason, type ModelCapabilities, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
 import type { Db } from './db/client'
 import {
@@ -82,7 +82,8 @@ export function buildChatMessages(
   const s = resolveSettings(conv, caps)
   const { recent, aligned } = historyAfter(history, conv.summaryUpTo)
   if (aligned) system = withSummary(system, conv.summary)
-  const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.reserveTokens })
+  const reserveTokens = reserveForHistory(s.reserveTokens, s.numCtx, history)
+  const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens })
   const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
   for (const m of picked) out.push({ role: m.role, content: m.content })
   return out
@@ -264,8 +265,10 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
       try {
         // Prima della risposta: se la memoria è oltre la soglia, i messaggi più vecchi vengono riassunti,
         // così la risposta parte con la riserva intera. Lo stato è visibile; se fallisce si risponde comunque.
+        // Se un riassunto è già in corso (quello dopo la risposta precedente), si aspetta che finisca:
+        // altrimenti la domanda partirebbe con lo stato vecchio e potrebbe esaurire la memoria.
         const summarized = await summarizer
-          ?.summarize(conv.id, false, () => emit(target, { ...base, type: 'summarizing' }))
+          ?.summarize(conv.id, false, () => emit(target, { ...base, type: 'summarizing' }), true)
           .catch(() => null)
         if (summarized?.outcome === 'updated' && summarized.conversation) {
           conv = summarized.conversation

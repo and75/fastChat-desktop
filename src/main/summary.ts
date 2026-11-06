@@ -14,7 +14,7 @@ import {
   transcriptChunks,
   withSummary
 } from '@shared/prompt'
-import { resolveSettings } from '@shared/settings'
+import { reserveForHistory, resolveSettings } from '@shared/settings'
 import type { Conversation, ModelCapabilities } from '@shared/types'
 import type { Db } from './db/client'
 import { getConversation, listMessages, updateConversation } from './db/repo'
@@ -25,10 +25,17 @@ export interface SummarizerDeps {
   ollama: OllamaClient
 }
 
+/** Testo fino all'ultima riga completa (per un riassunto tagliato a metà frase). */
+export function completeLines(text: string): string {
+  const cut = text.lastIndexOf('\n')
+  return (cut > text.length / 3 ? text.slice(0, cut) : text).trim()
+}
+
 export type SummaryOutcome = 'updated' | 'not-needed' | 'disabled' | 'failed'
 
 export function createSummarizer({ db, ollama }: SummarizerDeps) {
-  const inProgress = new Set<string>()
+  /** Riassunti in corso, per conversazione: chi deve rispondere può aspettarli. */
+  const running = new Map<string, Promise<unknown>>()
 
   async function capsOf(model: string): Promise<ModelCapabilities | null> {
     try {
@@ -45,10 +52,36 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
   async function summarize(
     conversationId: string,
     force = false,
-    /** Chiamato solo se il riassunto parte davvero (per mostrare lo stato nell'interfaccia). */
+    /** Chiamato solo se il riassunto parte davvero, o se si aspetta quello in corso (stato nell'interfaccia). */
+    onStart?: () => void,
+    /** Se un riassunto è già in corso: aspettarlo e poi ricontrollare (prima della risposta), invece di rinunciare. */
+    wait = false
+  ): Promise<{ outcome: SummaryOutcome; conversation: Conversation | null }> {
+    const busy = running.get(conversationId)
+    if (busy) {
+      if (!wait) return { outcome: 'not-needed', conversation: null }
+      onStart?.()
+      await busy.catch(() => undefined)
+      const again = await summarize(conversationId, force, undefined, true)
+      if (again.outcome !== 'not-needed') return again
+      // Nessun nuovo riassunto necessario, ma quello appena finito va usato.
+      return { outcome: 'updated', conversation: await getConversation(db, conversationId) }
+    }
+    let release: () => void = () => undefined
+    running.set(conversationId, new Promise<void>((r) => (release = r)))
+    try {
+      return await run(conversationId, force, onStart)
+    } finally {
+      running.delete(conversationId)
+      release()
+    }
+  }
+
+  async function run(
+    conversationId: string,
+    force: boolean,
     onStart?: () => void
   ): Promise<{ outcome: SummaryOutcome; conversation: Conversation | null }> {
-    if (inProgress.has(conversationId)) return { outcome: 'not-needed', conversation: null }
     const conv = await getConversation(db, conversationId)
     if (!conv || !conv.model) return { outcome: 'failed', conversation: conv }
     if (!conv.autoSummary && !force) return { outcome: 'disabled', conversation: conv }
@@ -58,22 +91,22 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
     const previous = aligned ? conv.summary : null
     const caps = await capsOf(conv.model)
     const s = resolveSettings(conv, caps)
+    const reserveTokens = reserveForHistory(s.reserveTokens, s.numCtx, history)
     const plan = planSummary({
       recent,
       systemPrompt: withSummary(buildSystemPrompt(conv, conv.style), previous),
       numCtx: s.numCtx,
-      reserveTokens: s.reserveTokens,
+      reserveTokens,
       force
     })
     if (!plan) return { outcome: 'not-needed', conversation: conv }
 
-    inProgress.add(conversationId)
     onStart?.()
     try {
       // Ogni richiesta deve stare nella memoria: prompt + riassunto precedente + blocco di trascrizione +
       // riassunto da scrivere. I messaggi coperti vanno in blocchi, riassunti uno dopo l'altro: niente si taglia.
       const cpt = charsPerToken(history)
-      const outTokens = summaryMaxTokens(s.numCtx, s.reserveTokens)
+      const outTokens = summaryMaxTokens(s.numCtx, reserveTokens)
       const prompt = buildSummaryPrompt(Math.max(30, Math.round(outTokens * 0.7)))
       const previousTokens = Math.max(outTokens, previous ? estimateTokens(previous, cpt) : 0)
       const room = s.numCtx - outTokens - previousTokens - estimateTokens(prompt, cpt) - 48
@@ -89,7 +122,21 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
           options: { temperature: 0.2, top_p: s.topP, num_ctx: s.numCtx, num_predict: outTokens }
         }
         if (caps?.thinking) request.think = false
-        const next = cleanSummary((await ollama.chatStream(request, {})).content)
+        const result = await ollama.chatStream(request, {})
+        let next = cleanSummary(result.content)
+        if (next && result.doneReason === 'length') {
+          // Riassunto tagliato al limite: lo si fa condensare, e se serve si chiude sull'ultima riga completa.
+          const condense: ChatRequest = {
+            ...request,
+            messages: [
+              { role: 'system', content: prompt },
+              { role: 'user', content: `Condensa questo riassunto senza perdere fatti, nomi e richieste aperte:\n${completeLines(next)}` }
+            ]
+          }
+          const shorter = await ollama.chatStream(condense, {})
+          const text = cleanSummary(shorter.content)
+          next = text ? (shorter.doneReason === 'length' ? completeLines(text) : text) : completeLines(next)
+        }
         if (!next) return { outcome: 'failed', conversation: conv }
         summary = next
       }
@@ -105,12 +152,10 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
       return { outcome: 'updated', conversation: saved }
     } catch {
       return { outcome: 'failed', conversation: conv }
-    } finally {
-      inProgress.delete(conversationId)
     }
   }
 
-  return { summarize, isSummarizing: (id: string) => inProgress.has(id) }
+  return { summarize, isSummarizing: (id: string) => running.has(id) }
 }
 
 export type Summarizer = ReturnType<typeof createSummarizer>

@@ -1,5 +1,5 @@
 import { computeContextUsage, DEFAULT_CHARS_PER_TOKEN, formatTokensK } from '@shared/prompt'
-import { resolveSettings } from '@shared/settings'
+import { reserveForHistory, resolveSettings } from '@shared/settings'
 import { useChat } from '../store/useChat'
 import { useModels } from '../store/useModels'
 
@@ -14,7 +14,8 @@ export function ContextMeter(): React.JSX.Element | null {
   // Durante lo streaming conta anche la risposta che sta arrivando.
   const all = live?.kind === 'chat' && live.content ? [...messages, { role: 'assistant' as const, content: live.content }] : messages
   // Stessa memoria che il main invia a Ollama come num_ctx; la riserva è lo spazio lasciato alla risposta.
-  const effective = resolveSettings(conversation, caps)
+  const resolved = resolveSettings(conversation, caps)
+  const effective = { ...resolved, reserveTokens: reserveForHistory(resolved.reserveTokens, resolved.numCtx, messages) }
   const usage = computeContextUsage({
     brief: conversation,
     style: conversation.style,
