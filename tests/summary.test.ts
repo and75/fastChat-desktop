@@ -32,7 +32,7 @@ const chatRequests = () =>
 
 /** Conversazione con messaggi lunghi già scambiati (400 caratteri = ~104 token l'uno). */
 async function seeded(count: number): Promise<Conversation> {
-  const conv = await createConversation(h.db, { model: 'mini', numCtx: 2048, role: 'Tutor' })
+  const conv = await createConversation(h.db, { model: 'mini', numCtx: 1024, role: 'Tutor' })
   for (let i = 0; i < count; i++) {
     await addMessage(h.db, { conversationId: conv.id, role: i % 2 ? 'assistant' : 'user', content: `${i} ` + 'x'.repeat(398) })
   }
@@ -42,7 +42,7 @@ async function seeded(count: number): Promise<Conversation> {
 describe('summarizer', () => {
   it('sotto la soglia non riassume; con force sì, lasciando l\'ultimo scambio per intero', async () => {
     const s = createSummarizer({ db: h.db, ollama: createOllamaClient(() => fake.url) })
-    const conv = await seeded(4) // 4 × 104 = 416 su ~1000 → ~41%, sotto il 70%
+    const conv = await seeded(4) // 4 × 104 = 416 su 1024 → 41%, sotto il 70%
     expect((await s.summarize(conv.id)).outcome).toBe('not-needed')
     expect(summaryRequests()).toHaveLength(0)
 
@@ -56,17 +56,17 @@ describe('summarizer', () => {
     const req = summaryRequests().at(-1)!.body as { messages: Array<{ role: string; content: string }>; think?: boolean; options: Record<string, unknown> }
     expect(req.messages[1].content).toMatch(/^Messaggi:\nUtente: 0 x+\n\nAssistente: 1 x+$/)
     expect(req.think).toBe(false)
-    // riassunto proporzionato alla memoria: (2048 − 1024) ÷ 4 = 256 token
-    expect(req.options).toMatchObject({ num_ctx: 2048, num_predict: 256, temperature: 0.2 })
+    // riassunto proporzionato alla memoria: (1024 − 204) ÷ 4 = 205 token
+    expect(req.options).toMatchObject({ num_ctx: 1024, num_predict: 205, temperature: 0.2 })
   })
 
   it('sopra la soglia riassume in modo incrementale (riassunto precedente + nuovi messaggi)', async () => {
     const s = createSummarizer({ db: h.db, ollama: createOllamaClient(() => fake.url) })
-    const conv = await seeded(8) // 832 token > 70% di ~1000
+    const conv = await seeded(8) // 832 token > 70% di 1024
     expect((await s.summarize(conv.id)).outcome).toBe('updated')
     const msgs = await listMessages(h.db, conv.id)
     const first = (await getConversation(h.db, conv.id))!
-    expect(first.summaryUpTo).toBe(msgs[5].id) // tiene gli ultimi 2 (sotto il 40% di ~1000)
+    expect(first.summaryUpTo).toBe(msgs[5].id) // tiene gli ultimi 2 (sotto il 40% di 1024)
 
     for (let i = 8; i < 14; i++) {
       await addMessage(h.db, { conversationId: conv.id, role: i % 2 ? 'assistant' : 'user', content: `${i} ` + 'x'.repeat(398) })
@@ -74,7 +74,8 @@ describe('summarizer', () => {
     expect((await s.summarize(conv.id)).outcome).toBe('updated')
     const req = summaryRequests().at(-1)!.body as { messages: Array<{ content: string }> }
     expect(req.messages[1].content.startsWith('Riassunto finora:\nBreve.\n\nNuovi messaggi:\n')).toBe(true)
-    expect(req.messages[1].content).toMatch(/Nuovi messaggi:\nUtente: 6 /)
+    // i nuovi messaggi coperti (dal 6 in poi) sono stati letti, eventualmente in più blocchi
+    expect(summaryRequests().some((r) => (r.body as { messages: Array<{ content: string }> }).messages[1].content.includes('Utente: 6 '))).toBe(true)
     expect((await getConversation(h.db, conv.id))!.summaryUpTo).toBe((await listMessages(h.db, conv.id))[11].id)
   })
 
@@ -86,9 +87,11 @@ describe('summarizer', () => {
     expect((await s.summarize(conv.id, true)).outcome).toBe('updated')
 
     await updateConversation(h.db, conv.id, { autoSummary: true, summaryUpTo: 'sparito' })
+    const before = summaryRequests().length
     expect((await s.summarize(conv.id)).outcome).toBe('updated')
-    const req = summaryRequests().at(-1)!.body as { messages: Array<{ content: string }> }
-    expect(req.messages[1].content.startsWith('Messaggi:\n')).toBe(true) // niente "Riassunto finora"
+    // il primo blocco riparte da zero: niente "Riassunto finora"
+    const req = summaryRequests()[before].body as { messages: Array<{ content: string }> }
+    expect(req.messages[1].content.startsWith('Messaggi:\n')).toBe(true)
   })
 
   it('Ollama non risponde: failed, niente salvato', async () => {
@@ -172,7 +175,7 @@ describe('riassunto a blocchi con memoria piccola (caso reale)', () => {
       for (const q of reqs) {
         const chars = q.messages.reduce((n, m) => n + m.content.length, 0)
         expect(Math.ceil(chars / 3.4) + q.options.num_predict).toBeLessThanOrEqual(1024)
-        expect(q.options.num_predict).toBe(128)
+        expect(q.options.num_predict).toBe(205)
       }
       // dal secondo blocco in poi il riassunto precedente viene aggiornato
       expect(reqs[1].messages[1].content.startsWith('Riassunto finora:\nSintesi.')).toBe(true)
@@ -185,13 +188,13 @@ describe('riassunto a blocchi con memoria piccola (caso reale)', () => {
 describe('caso v0.1.13: riassunto in corso quando arriva la domanda', () => {
   it('la domanda aspetta il riassunto in corso e parte con il riassunto aggiornato', async () => {
     // modello lento (~300 ms per richiesta): il riassunto in sottofondo è ancora in corso quando arriva la domanda
-    const slow = await startFakeOllama([{ name: 'lento', capabilities: ['completion'], contextLength: 2048, parameters: 'num_ctx 2048', startDelayMs: 300, chunks: [{ content: 'Breve.' }] }])
+    const slow = await startFakeOllama([{ name: 'lento', capabilities: ['completion'], contextLength: 2048, parameters: 'num_ctx 1024', startDelayMs: 300, chunks: [{ content: 'Breve.' }] }])
     try {
       const ollama = createOllamaClient(() => slow.url)
       const events: StreamEvent[] = []
       const summarizer = createSummarizer({ db: h.db, ollama })
       const chat = createChatService({ db: h.db, ollama, summarizer, emit: (_t, e) => events.push(e) })
-      const conv = await createConversation(h.db, { model: 'lento', numCtx: 2048, role: 'Tutor' })
+      const conv = await createConversation(h.db, { model: 'lento', numCtx: 1024, role: 'Tutor' })
       for (let i = 0; i < 8; i++) {
         await addMessage(h.db, { conversationId: conv.id, role: i % 2 ? 'assistant' : 'user', content: `${i} ` + 'x'.repeat(398) })
       }

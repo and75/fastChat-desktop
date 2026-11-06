@@ -6,6 +6,7 @@ import {
   buildSystemPrompt,
   charsPerToken,
   cleanSummary,
+  computeContextUsage,
   historyAfter,
   planSummary,
   buildSummaryPrompt,
@@ -14,7 +15,7 @@ import {
   transcriptChunks,
   withSummary
 } from '@shared/prompt'
-import { reserveForHistory, resolveSettings } from '@shared/settings'
+import { resolveSettings } from '@shared/settings'
 import type { Conversation, ModelCapabilities } from '@shared/types'
 import type { Db } from './db/client'
 import { getConversation, listMessages, updateConversation } from './db/repo'
@@ -91,12 +92,22 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
     const previous = aligned ? conv.summary : null
     const caps = await capsOf(conv.model)
     const s = resolveSettings(conv, caps)
-    const reserveTokens = reserveForHistory(s.reserveTokens, s.numCtx, history)
+    const reserveTokens = s.reserveTokens
+    // Stesso numero del misuratore: i conteggi reali di Ollama dell'ultimo scambio, quando validi.
+    const usage = computeContextUsage({
+      brief: conv,
+      style: conv.style,
+      messages: history,
+      numCtx: s.numCtx,
+      summary: aligned ? conv.summary : null,
+      summaryUpTo: aligned ? conv.summaryUpTo : null,
+      summaryUpdatedAt: aligned ? conv.summaryUpdatedAt : null
+    })
     const plan = planSummary({
       recent,
       systemPrompt: withSummary(buildSystemPrompt(conv, conv.style), previous),
       numCtx: s.numCtx,
-      reserveTokens,
+      measuredTotal: usage.estimated && usage.used === 0 ? null : usage.used,
       force
     })
     if (!plan) return { outcome: 'not-needed', conversation: conv }

@@ -93,29 +93,12 @@ export function describeSuggestion(input: SuggestNumCtxInput): string {
 
 // ---------------------------------------------------------------- riserva per la risposta
 
-/** Limiti della riserva. */
-export const RESERVE = { min: 1024, max: 8192, maxThinking: 16384, floor: 256 } as const
+/** Quota fissa della memoria lasciata sempre libera per la risposta (non è un limite per il modello). */
+export const RESERVE_SHARE = 0.2
 
-/**
- * Spazio lasciato libero per la risposta quando si taglia lo storico: un quarto della memoria, tra 1k e 8k;
- * il doppio con il ragionamento (i token "pensati" contano), fino a 16k. Mai oltre metà della memoria.
- * Non viene inviato a Ollama: la lunghezza della risposta la governa lo stile nel system prompt.
- */
-export function suggestReserveTokens(numCtx: number, think: boolean): number {
-  const base = Math.min(RESERVE.max, Math.max(RESERVE.min, floorPow2(numCtx / 4)))
-  const value = think ? Math.min(RESERVE.maxThinking, base * 2) : base
-  return Math.max(RESERVE.floor, Math.min(value, floorPow2(Math.max(2, numCtx / 2))))
-}
-
-/**
- * Riserva per la risposta tenendo conto di quanto scrive davvero il modello in questa conversazione:
- * almeno la più lunga delle ultime 3 risposte (+10%), mai oltre metà della memoria. Con lo stile «Esteso»
- * un modello può scrivere ben più di un quarto della memoria: la riserva fissa non basterebbe.
- */
-export function reserveForHistory(base: number, numCtx: number, messages: ReadonlyArray<{ role: string; evalCount?: number | null }>): number {
-  const recent = messages.filter((m) => m.role === 'assistant' && m.evalCount).slice(-3)
-  const longest = recent.reduce((n, m) => Math.max(n, m.evalCount ?? 0), 0)
-  return Math.min(Math.floor(numCtx / 2), Math.max(base, Math.ceil(longest * 1.1)))
+/** Token lasciati liberi per la risposta: il 20% della memoria. */
+export function reserveTokensFor(numCtx: number): number {
+  return Math.floor(numCtx * RESERVE_SHARE)
 }
 
 // ---------------------------------------------------------------- valori suggeriti e calibrazione
@@ -162,7 +145,7 @@ export function resolveSettings(conv: ConversationSettings, caps: ModelCapabilit
     temperature: conv.temperature,
     topP: resolveTopP(conv, caps),
     numCtx,
-    reserveTokens: suggestReserveTokens(numCtx, think),
+    reserveTokens: reserveTokensFor(numCtx),
     seed: conv.seed,
     think
   }

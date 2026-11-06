@@ -257,33 +257,48 @@ describe('riassunto automatico', () => {
   })
 
   it('planSummary: sotto la soglia non fa nulla', () => {
-    // 8 × 104 = 832 token; budget 2000 → 42% < 70%
-    expect(planSummary({ recent: eight, systemPrompt: '', numCtx: 2000, reserveTokens: 0 })).toBeNull()
-    // ma con force copre finché i recenti scendono sotto il 40% (800): toglie i primi 2
-    const forced = planSummary({ recent: eight, systemPrompt: '', numCtx: 2000, reserveTokens: 0, force: true })!
-    expect(forced.cover.map((m) => m.id)).toEqual(['m0', 'm1'])
-    expect(forced.keep).toHaveLength(6)
+    // 8 × 104 = 832 token su 2000 → 42% < 70%
+    expect(planSummary({ recent: eight, systemPrompt: '', numCtx: 2000 })).toBeNull()
+    // a mano («Riassumi ora») si riassume tutto tranne l'ultimo scambio, che ci sta
+    const forced = planSummary({ recent: eight, systemPrompt: '', numCtx: 2000, force: true })!
+    expect(forced.cover.map((m) => m.id)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4', 'm5'])
+    expect(forced.keep.map((m) => m.id)).toEqual(['m6', 'm7'])
   })
 
   it('planSummary: sopra la soglia copre i più vecchi fino all\'obiettivo, chiudendo su una risposta', () => {
-    // budget 1000 − riserva 100 = 900; 832 > 630 (70%) → scende sotto 360 (40%): tiene 3 (312), copre 5…
+    // 832 su 1000 > 70% → scende sotto il 40% (400): tiene 3 (312), copre 5…
     // …ma il 5º coperto sarebbe una domanda (m4): si chiude sulla risposta m5
-    const plan = planSummary({ recent: eight, systemPrompt: '', numCtx: 1000, reserveTokens: 100 })!
+    const plan = planSummary({ recent: eight, systemPrompt: '', numCtx: 1000 })!
     expect(plan.cover.map((m) => m.id)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4', 'm5'])
     expect(plan.keep.map((m) => m.id)).toEqual(['m6', 'm7'])
   })
 
   it('planSummary: l\'ultimo scambio resta per intero solo se ci sta; la domanda in attesa sempre', () => {
-    // budget 200: l'ultimo scambio (208) non ci sta → si riassume tutto
-    const tiny = planSummary({ recent: eight, systemPrompt: '', numCtx: 300, reserveTokens: 100 })!
+    // memoria 250: l'ultimo scambio (208) supera il 70% (175) → si riassume tutto
+    const tiny = planSummary({ recent: eight, systemPrompt: '', numCtx: 250 })!
     expect(tiny.cover).toHaveLength(8)
     expect(tiny.keep).toEqual([])
     // con una domanda in attesa: resta solo quella
     const pending = [...eight, msg('q', 'user', 400)]
-    const withQ = planSummary({ recent: pending, systemPrompt: '', numCtx: 300, reserveTokens: 100 })!
+    const withQ = planSummary({ recent: pending, systemPrompt: '', numCtx: 250 })!
     expect(withQ.keep.map((m) => m.id)).toEqual(['q'])
-    // system prompt enorme: budget negativo → niente
-    expect(planSummary({ recent: eight, systemPrompt: 'x'.repeat(10_000), numCtx: 1000, reserveTokens: 100 })).toBeNull()
+    // system prompt enorme: si riassume tutto il riassumibile
+    expect(planSummary({ recent: eight, systemPrompt: 'x'.repeat(10_000), numCtx: 1000 })!.cover).toHaveLength(8)
+  })
+
+  it('caso v0.1.13: la stima dice 44%, Ollama ha contato il 99% → si riassume prima della risposta', () => {
+    const recent = [
+      { id: 'q', role: 'user' as const, content: 'Adorno ha una teoria sull\'amore?' },
+      { id: 'a', role: 'assistant' as const, content: 'z'.repeat(4099), evalCount: 1065 },
+      { id: 'n', role: 'user' as const, content: 'Ci sono filosofi post critici che si occupano dell\'amore?' }
+    ]
+    const system = 's'.repeat(2500)
+    // con la sola stima non scatterebbe
+    expect(planSummary({ recent, systemPrompt: system, numCtx: 4096 })).toBeNull()
+    // con il conteggio reale (3.007 + 1.065 + domanda) sì: si riassume l'ultimo scambio, resta la domanda
+    const plan = planSummary({ recent, systemPrompt: system, numCtx: 4096, measuredTotal: 3007 + 1065 + 20 })!
+    expect(plan.cover.map((m) => m.id)).toEqual(['q', 'a'])
+    expect(plan.keep.map((m) => m.id)).toEqual(['n'])
   })
 
   it('caso reale: memoria 1024, due risposte da ~1.800 token → «Riassumi ora» copre tutti e 4 i messaggi', () => {
@@ -293,10 +308,10 @@ describe('riassunto automatico', () => {
       { id: 'u2', role: 'user' as const, content: "Parlami dell'amore romantico" },
       { id: 'a2', role: 'assistant' as const, content: 'y'.repeat(5900), evalCount: 1750 }
     ]
-    const plan = planSummary({ recent: conv, systemPrompt: '# Stile della risposta\nRispondi in modo completo', numCtx: 1024, reserveTokens: 512, force: true })!
+    const plan = planSummary({ recent: conv, systemPrompt: '# Stile della risposta\nRispondi in modo completo', numCtx: 1024, force: true })!
     expect(plan.cover.map((m) => m.id)).toEqual(['u1', 'a1', 'u2', 'a2'])
     // e la domanda successiva: si riassume tutto tranne la domanda stessa
-    const next = planSummary({ recent: [...conv, { id: 'u3', role: 'user' as const, content: 'E poi?' }], systemPrompt: '', numCtx: 1024, reserveTokens: 512 })!
+    const next = planSummary({ recent: [...conv, { id: 'u3', role: 'user' as const, content: 'E poi?' }], systemPrompt: '', numCtx: 1024 })!
     expect(next.keep.map((m) => m.id)).toEqual(['u3'])
   })
 

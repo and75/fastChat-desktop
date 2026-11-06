@@ -3,8 +3,7 @@ import {
   describeSuggestion,
   floorPow2,
   minNumCtx,
-  reserveForHistory,
-  suggestReserveTokens,
+  reserveTokensFor,
   resolveNumCtx,
   resolveSettings,
   resolveTopP,
@@ -102,21 +101,10 @@ describe('memoria minima consigliata', () => {
 })
 
 describe('riserva per la risposta (non inviata a Ollama)', () => {
-  it('un quarto della memoria tra 1k e 8k; il doppio con il ragionamento, fino a 16k', () => {
-    expect(suggestReserveTokens(4096, false)).toBe(1024)
-    expect(suggestReserveTokens(8192, false)).toBe(2048)
-    expect(suggestReserveTokens(16384, false)).toBe(4096)
-    expect(suggestReserveTokens(32768, false)).toBe(8192)
-    expect(suggestReserveTokens(131_072, false)).toBe(8192)
-    expect(suggestReserveTokens(4096, true)).toBe(2048)
-    expect(suggestReserveTokens(32768, true)).toBe(16384)
-    expect(suggestReserveTokens(131_072, true)).toBe(16384)
-  })
-
-  it('mai oltre metà della memoria', () => {
-    expect(suggestReserveTokens(2048, false)).toBe(1024)
-    expect(suggestReserveTokens(2048, true)).toBe(1024)
-    expect(suggestReserveTokens(512, false)).toBe(256)
+  it('quota fissa: il 20% della memoria', () => {
+    expect(reserveTokensFor(4096)).toBe(819)
+    expect(reserveTokensFor(1024)).toBe(204)
+    expect(reserveTokensFor(32768)).toBe(6553)
   })
 })
 
@@ -141,18 +129,8 @@ describe('parametri effettivi (ciò che l\'utente vede = ciò che va a Ollama)',
   })
 
   it('think solo se il modello lo supporta', () => {
-    expect(resolveSettings(conv, caps)).toEqual({ temperature: 0.7, topP: 0.95, numCtx: 2048, reserveTokens: 1024, seed: null, think: true })
+    expect(resolveSettings(conv, caps)).toEqual({ temperature: 0.7, topP: 0.95, numCtx: 2048, reserveTokens: 409, seed: null, think: true })
     expect(resolveSettings(conv, bare).think).toBe(false)
     expect(resolveSettings({ ...conv, think: false }, caps).think).toBe(false)
-  })
-})
-
-describe('riserva misurata sulle risposte reali', () => {
-  it('caso v0.1.13: memoria 4096, risposte da 1.065–1.225 token → riserva 1.348 invece di 1.024', () => {
-    const answers = [1809, 1750, 1420, 1189, 1225, 1177, 1065].map((evalCount) => ({ role: 'assistant', evalCount }))
-    expect(reserveForHistory(1024, 4096, answers)).toBe(Math.ceil(1225 * 1.1))
-    // mai oltre metà della memoria; senza risposte resta la base
-    expect(reserveForHistory(1024, 2048, [{ role: 'assistant', evalCount: 1809 }])).toBe(1024)
-    expect(reserveForHistory(1024, 4096, [])).toBe(1024)
   })
 })

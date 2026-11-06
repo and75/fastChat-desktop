@@ -10,7 +10,7 @@ import {
   selectHistory,
   withSummary
 } from '@shared/prompt'
-import { reserveForHistory, resolveSettings } from '@shared/settings'
+import { resolveSettings } from '@shared/settings'
 import { DEFAULT_TITLE, type Conversation, type DoneReason, type ModelCapabilities, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
 import type { Db } from './db/client'
 import {
@@ -82,8 +82,7 @@ export function buildChatMessages(
   const s = resolveSettings(conv, caps)
   const { recent, aligned } = historyAfter(history, conv.summaryUpTo)
   if (aligned) system = withSummary(system, conv.summary)
-  const reserveTokens = reserveForHistory(s.reserveTokens, s.numCtx, history)
-  const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens })
+  const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.reserveTokens })
   const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
   for (const m of picked) out.push({ role: m.role, content: m.content })
   return out

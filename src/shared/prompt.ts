@@ -136,9 +136,9 @@ export function selectHistory<T extends HistoryMessage>(
 
 /** Soglie del riassunto, in frazione dello spazio per lo storico (memoria − riserva − system prompt). */
 export const SUMMARY = {
-  /** Sopra questa quota si riassume. */
+  /** Quando prompt + storico + domanda superano questa quota della memoria, si riassume prima di rispondere. */
   trigger: 0.7,
-  /** Si riassumono i messaggi più vecchi finché i recenti scendono sotto questa quota. */
+  /** Si riassumono i messaggi più vecchi finché il totale scende sotto questa quota della memoria. */
   target: 0.4,
   /** Token massimi del riassunto generato (con memoria grande); con memoria piccola si scala. */
   maxTokens: 600,
@@ -171,39 +171,55 @@ export function historyAfter<T extends HistoryMessage>(history: T[], summaryUpTo
 export interface SummaryPlanInput<T extends HistoryMessage> {
   /** Messaggi non ancora coperti dal riassunto, in ordine. */
   recent: T[]
-  /** System prompt completo (brief + riassunto attuale), che si sottrae dal budget. */
+  /** System prompt completo (brief + stile + riassunto attuale). */
   systemPrompt: string
-  /** Memoria della conversazione (num_ctx) e token lasciati liberi per la risposta. */
+  /** Memoria della conversazione (num_ctx). */
   numCtx: number
-  reserveTokens: number
+  /**
+   * Totale misurato da Ollama (prompt + risposta dell'ultimo scambio, più i messaggi arrivati dopo), se valido:
+   * le stime a caratteri possono sbagliare, i conteggi reali no. Vedi computeContextUsage.
+   */
+  measuredTotal?: number | null
   /** Forza il riassunto anche sotto la soglia (azione manuale). */
   force?: boolean
 }
 
 /**
- * Decide quali messaggi far confluire nel riassunto: i più vecchi, finché i recenti stanno nella quota
- * obiettivo. null se non serve (sotto la soglia) o non c'è nulla da coprire.
+ * Decide quali messaggi far confluire nel riassunto. Regola: se system prompt + messaggi superano il 70%
+ * della memoria, si riassumono i più vecchi finché il totale scende al 40%. La domanda in attesa resta sempre
+ * per intero; l'ultimo scambio solo se ci sta sotto la soglia. null se non serve.
  */
 export function planSummary<T extends HistoryMessage>(input: SummaryPlanInput<T>): { cover: T[]; keep: T[] } | null {
-  const { recent } = input
+  const { recent, numCtx } = input
+  if (recent.length === 0 || numCtx <= 0) return null
   const cpt = charsPerToken(recent)
-  const budget = input.numCtx - input.reserveTokens - (input.systemPrompt ? estimateTokens(input.systemPrompt, cpt) : 0)
-  if (budget <= 0 || recent.length === 0) return null
-  const costs = recent.map((m) => estimateTokens(m.content, cpt))
-  let used = costs.reduce((a, b) => a + b, 0)
-  if (!input.force && used <= budget * SUMMARY.trigger) return null
+  const system = input.systemPrompt ? estimateTokens(input.systemPrompt, cpt) : 0
+  let costs = recent.map((m) => estimateTokens(m.content, cpt))
+  const estimated = system + costs.reduce((a, b) => a + b, 0)
+  // Se Ollama ha contato di più della stima, si corregge la stima nella stessa proporzione.
+  const measured = input.measuredTotal ?? 0
+  if (measured > estimated && estimated > 0) {
+    const k = measured / estimated
+    costs = costs.map((c) => c * k)
+  }
+  const sys = measured > estimated && estimated > 0 ? system * (measured / estimated) : system
+  let used = sys + costs.reduce((a, b) => a + b, 0)
+  const trigger = numCtx * SUMMARY.trigger
+  // A mano («Riassumi ora») si riassume tutto il riassumibile, anche sotto la soglia.
+  const target = input.force ? 0 : numCtx * SUMMARY.target
+  if (!input.force && used <= trigger) return null
 
   // Cosa resta sempre per intero: la domanda in attesa (ultimo messaggio, se è dell'utente). L'ultimo scambio
-  // resta per intero solo se ci sta nella soglia; altrimenti finisce anche lui nel riassunto.
+  // resta per intero solo se ci sta sotto la soglia; altrimenti finisce anche lui nel riassunto.
   const last = recent.length - 1
   const pending = recent[last].role === 'user' ? 1 : 0
   const prevRole = last > 0 ? recent[last - 1].role : null
   const tailStart = pending ? (prevRole === 'assistant' ? last - 1 : last) : prevRole === 'user' ? last - 1 : last
   const tailCost = costs.slice(tailStart).reduce((a, b) => a + b, 0)
-  const keepMin = tailCost <= budget * SUMMARY.trigger ? recent.length - tailStart : pending
+  const keepMin = sys + tailCost <= trigger ? recent.length - tailStart : pending
 
   let n = 0
-  while (n < recent.length - keepMin && used > budget * SUMMARY.target) used -= costs[n++]
+  while (n < recent.length - keepMin && used > target) used -= costs[n++]
   // Si chiude su una risposta, così i messaggi tenuti iniziano con una domanda.
   while (n > 0 && n < recent.length - keepMin && recent[n - 1].role === 'user') n++
   if (n === 0) return null

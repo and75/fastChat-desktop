@@ -482,8 +482,9 @@ try {
     const box = page.getByRole('textbox', { name: 'Messaggio' })
     assert.equal(await control.getByRole('radio', { name: 'Normale' }).getAttribute('aria-checked'), 'true')
     assert.equal(await page.getByTestId('composer-style').inputValue(), 'normal')
-    // la riserva per la risposta resta nel misuratore (8.192 su 32.768 = 25%), ma non è un limite
-    await waitUntil(async () => (await page.getByTestId('context-usage').getByTestId('context-reserve').getAttribute('style')) === 'width: 25%;')
+    // il misuratore mostra la soglia del riassunto (70%) e la spiega nel tooltip
+    assert.equal(await page.getByTestId('context-usage').getByTestId('context-threshold').getAttribute('style'), 'left: 70%;')
+    assert.match(await page.getByTestId('context-usage').getAttribute('title'), /Oltre il 70% i messaggi più vecchi vengono riassunti prima della risposta/)
 
     await control.getByRole('radio', { name: 'Conciso' }).click()
     await waitUntil(async () => (await latestConversation()).style === 'concise')
@@ -534,7 +535,7 @@ try {
     const settings = page.getByTestId('model-settings')
     const panel = settings.getByTestId('summary-panel')
     await panel.getByText('Nessun riassunto').waitFor()
-    // memoria minima (1.024 → riserva 512): ~440 token per lo storico; i messaggi già scambiati + uno da 1.200 caratteri superano il 70%
+    // memoria minima (1.024): i messaggi già scambiati + uno da 1.200 caratteri superano il 70%
     const memory = settings.getByRole('slider', { name: 'Memoria della conversazione' })
     await memory.focus()
     await memory.press('Home')
@@ -548,7 +549,8 @@ try {
     const box = page.getByRole('textbox', { name: 'Messaggio' })
     const summaryRequests = () => fake.requests.filter((r) => isSummaryRequest(r.body)).map((r) => r.body)
     const firstSummaryIdx = summaryRequests().length
-    await box.fill('Dati: ' + 'd'.repeat(1200))
+    // ~2.400 caratteri: con i messaggi già scambiati il totale supera il 70% di 1.024 token
+    await box.fill('Dati: ' + 'd'.repeat(2400))
     await box.press('Enter')
     // PRIMA della risposta: i messaggi più vecchi vengono riassunti, e si vede
     await page.getByTestId('message-streaming').getByText('Sto riassumendo i messaggi più vecchi').waitFor()
@@ -558,16 +560,23 @@ try {
     // la risposta è partita già con il riassunto nel system prompt e solo i messaggi non coperti
     const body = lastChat()
     assert.match(body.messages[0].content, /^# Riassunto della conversazione finora\nrisposta0 risposta1/)
-    assert.equal(body.messages.filter((m) => m.role !== 'system').length, 1) // solo «Dati: …»
+    const sentAfterSummary = body.messages.filter((m) => m.role !== 'system')
+    assert.ok(sentAfterSummary.length <= 2, `inviati ${sentAfterSummary.length} messaggi oltre al riassunto`)
+    assert.match(sentAfterSummary.at(-1).content, /^Dati: d/)
     const summaryReq = summaryRequests()[firstSummaryIdx]
     assert.equal(summaryReq.think, false)
     assert.equal(summaryReq.options.num_ctx, 1024)
     assert.match(summaryReq.messages[1].content, /^Messaggi:\n/)
 
-    // la scheda nel flusso, al confine. Prima dell'invio il riassunto ha coperto tutto tranne la domanda;
-    // dopo la risposta, con 1.024 token nemmeno l'ultimo scambio ci sta: il passaggio in sottofondo copre tutto.
+    // la scheda nel flusso, al confine con i messaggi inviati per intero: stesso numero del database
     const card = page.getByTestId('summary-card')
-    const covered = total + 2
+    const coveredNow = async () => {
+      const c = await latestConversation()
+      const msgs = (await page.evaluate(async (id) => (await window.api.conversations.get(id)).data.messages, c.id))
+      return msgs.findIndex((m) => m.id === c.summaryUpTo) + 1
+    }
+    const covered = await coveredNow()
+    assert.ok(covered >= total - 1, `coperti ${covered} su ${total} messaggi precedenti`)
     await card.getByText(`copre i ${covered} messaggi qui sopra`).waitFor()
     await card.getByTestId('summary-preview').filter({ hasText: /^risposta0 risposta1/ }).waitFor()
     assert.equal((await page.getByTestId('timeline-dot').evaluateAll((els) => els.filter((e) => e.dataset.summarized === 'true').length)), covered)
@@ -577,24 +586,25 @@ try {
     const order = await page.evaluate(() => [...document.querySelectorAll('[data-message-id]')].map((e) => e.dataset.messageId))
     assert.equal(order.indexOf('summary'), covered)
 
-    // uno scambio breve sta nella memoria: resta per intero, nessun nuovo riassunto
-    const countBefore = summaryRequests().length
+    // la conversazione continua normalmente
     await box.fill('E quindi?')
     await box.press('Enter')
     await page.getByTestId('message-assistant').last().filter({ hasText: 'risposta0' }).waitFor()
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
-    await page.waitForTimeout(300)
-    assert.equal(summaryRequests().length, countBefore)
-    await card.getByText(`copre i ${covered} messaggi qui sopra`).waitFor()
+    const coveredBeforeLong = await coveredNow()
+    const countBefore = summaryRequests().length
 
-    // uno scambio lungo non ci sta: il riassunto si aggiorna in modo incrementale (riassunto precedente + nuovi messaggi)
-    await box.fill('Altri dati: ' + 'e'.repeat(1200))
+    // un messaggio lungo porta oltre il 70%: prima della risposta il riassunto si aggiorna in modo incrementale
+    await box.fill('Altri dati: ' + 'e'.repeat(2400))
     await box.press('Enter')
+    await page.getByTestId('message-streaming').getByText('Sto riassumendo i messaggi più vecchi').waitFor()
     await page.getByTestId('message-assistant').last().filter({ hasText: 'risposta0' }).waitFor()
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
-    await card.getByText(`copre i ${covered + 4} messaggi qui sopra`).waitFor()
-    const incremental = summaryRequests().at(-1)
-    assert.match(incremental.messages[1].content, /^Riassunto finora:\nrisposta0 [\s\S]*\n\nNuovi messaggi:\n[\s\S]*Utente: Altri dati: e/)
+    await waitUntil(async () => (await coveredNow()) > coveredBeforeLong)
+    await card.getByText(`copre i ${await coveredNow()} messaggi qui sopra`).waitFor()
+    const incremental = summaryRequests()[countBefore]
+    assert.match(incremental.messages[1].content, /^Riassunto finora:\nrisposta0 [\s\S]*\n\nNuovi messaggi:\n/)
+    assert.match(lastChat().messages.filter((m) => m.role !== 'system').at(-1).content, /^Altri dati: e/)
 
     // mostra e modifica nella scheda, poi elimina
     await card.getByTestId('summary-toggle').click()

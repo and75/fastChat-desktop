@@ -1,5 +1,5 @@
-import { computeContextUsage, DEFAULT_CHARS_PER_TOKEN, formatTokensK } from '@shared/prompt'
-import { reserveForHistory, resolveSettings } from '@shared/settings'
+import { computeContextUsage, DEFAULT_CHARS_PER_TOKEN, formatTokensK, SUMMARY } from '@shared/prompt'
+import { resolveSettings } from '@shared/settings'
 import { useChat } from '../store/useChat'
 import { useModels } from '../store/useModels'
 
@@ -14,8 +14,7 @@ export function ContextMeter(): React.JSX.Element | null {
   // Durante lo streaming conta anche la risposta che sta arrivando.
   const all = live?.kind === 'chat' && live.content ? [...messages, { role: 'assistant' as const, content: live.content }] : messages
   // Stessa memoria che il main invia a Ollama come num_ctx; la riserva è lo spazio lasciato alla risposta.
-  const resolved = resolveSettings(conversation, caps)
-  const effective = { ...resolved, reserveTokens: reserveForHistory(resolved.reserveTokens, resolved.numCtx, messages) }
+  const effective = resolveSettings(conversation, caps)
   const usage = computeContextUsage({
     brief: conversation,
     style: conversation.style,
@@ -26,18 +25,20 @@ export function ContextMeter(): React.JSX.Element | null {
     summaryUpdatedAt: conversation.summaryUpdatedAt
   })
   const pct = Math.round(usage.ratio * 100)
-  const reservePct = Math.round((effective.reserveTokens / effective.numCtx) * 100)
-  // Lo storico viene tagliato quando non sta nello spazio che resta oltre la riserva.
-  const over = usage.ratio > 1 - effective.reserveTokens / effective.numCtx
+  // Oltre la soglia, alla prossima domanda i messaggi più vecchi vengono riassunti prima della risposta.
+  const over = usage.ratio > SUMMARY.trigger
   const fmt = (n: number): string => n.toLocaleString('it-IT', { useGrouping: 'always' })
   const title =
     `${usage.estimated ? 'Circa ' : ''}${fmt(usage.used)} token usati su ${fmt(usage.total)} disponibili` +
     (usage.estimated
       ? ` (stima a ${usage.charsPerToken.toLocaleString('it-IT')} caratteri per token${usage.charsPerToken === DEFAULT_CHARS_PER_TOKEN ? '' : ', misurati su questa conversazione'}; il conteggio esatto arriva da Ollama dopo la risposta)`
       : ' (conteggio di Ollama: prompt + risposta)') +
-    `. Riserva per la risposta: ${fmt(effective.reserveTokens)} token` +
     (conversation.summary ? '. I messaggi più vecchi sono nel riassunto automatico' : '') +
-    (over ? '. Oltre lo spazio disponibile, i messaggi più vecchi non vengono inviati.' : '')
+    (conversation.autoSummary
+      ? `. Oltre il ${Math.round(SUMMARY.trigger * 100)}% i messaggi più vecchi vengono riassunti prima della risposta.`
+      : over
+        ? '. Riassunto automatico spento: oltre lo spazio disponibile i messaggi più vecchi non vengono inviati.'
+        : '')
 
   return (
     <span className="flex items-center gap-2" title={title} data-testid="context-usage">
@@ -49,12 +50,8 @@ export function ContextMeter(): React.JSX.Element | null {
         aria-hidden
         className="relative h-1.5 w-14 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
       >
-        {/* Riserva per la risposta: zona tratteggiata in fondo alla barra. */}
-        <span
-          className="absolute inset-y-0 right-0 bg-zinc-300/70 dark:bg-zinc-600/70"
-          style={{ width: `${Math.min(100, reservePct)}%` }}
-          data-testid="context-reserve"
-        />
+        {/* Tacca della soglia del riassunto. */}
+        <span className="absolute inset-y-0 w-px bg-zinc-400 dark:bg-zinc-500" style={{ left: `${SUMMARY.trigger * 100}%` }} data-testid="context-threshold" />
         <span
           className={'absolute inset-y-0 left-0 rounded-full ' + (over ? 'bg-brand-700 dark:bg-brand-400' : 'bg-brand-500')}
           style={{ width: `${Math.min(100, Math.max(usage.used > 0 ? 3 : 0, pct))}%` }}
