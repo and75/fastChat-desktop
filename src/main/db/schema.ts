@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
-import type { DoneReason, PlanStatus, PlanStep, ResponseStyle } from '@shared/types'
+import type { BenchmarkRun, DoneReason, PlanStatus, PlanStep, ResponseStyle } from '@shared/types'
 
 const now = sql`(unixepoch('subsec') * 1000)`
 
@@ -91,4 +91,15 @@ export const briefTemplates = sqliteTable('brief_templates', {
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value', { mode: 'json' }).notNull()
+})
+
+/** Configurazione di esecuzione per modello (CPU/GPU) e risultati del test. */
+export const modelSettings = sqliteTable('model_settings', {
+  model: text('model').primaryKey(),
+  digest: text('digest'),
+  numGpu: integer('num_gpu'),
+  benchmark: text('benchmark', { mode: 'json' }).$type<BenchmarkRun[]>(),
+  benchmarkedAt: integer('benchmarked_at'),
+  gpuAvailable: integer('gpu_available', { mode: 'boolean' }),
+  dismissed: integer('dismissed', { mode: 'boolean' }).notNull().default(false)
 })

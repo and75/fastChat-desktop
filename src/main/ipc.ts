@@ -1,9 +1,14 @@
+import { execFile, spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { BrowserWindow, clipboard, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import {
   IPC,
   KV_CACHE_TYPES,
   type AppSettings,
+  type BenchmarkProgress,
+  type ModelSettingPatch,
+  type PullProgress,
   type ConversationDetail,
   type ConversationListQuery,
   type ConversationPatch,
@@ -23,6 +28,9 @@ import {
   getTemplate,
   getSettings,
   listConversations,
+  listModelSettings,
+  removeModelSetting,
+  saveModelSetting,
   listMessages,
   listPlans,
   listTemplates,
@@ -35,7 +43,9 @@ import {
 import { suggestedFileName, toJson, toMarkdown, type ExportFormat } from './export'
 import { createOllamaClient, OllamaError, type OllamaClient } from './ollama'
 import { createSummarizer } from './summary'
-import { systemInfo } from './system'
+import { isLocalOllama, systemInfo } from './system'
+import { runBenchmark } from './benchmark'
+import { applyEnvWindows, envCommands, OLLAMA_ENV_VARS, readUserEnv, validateEnv, type EnvDeps, type OllamaEnvValues } from './ollamaEnv'
 
 export interface IpcDeps {
   db: Db
@@ -114,6 +124,99 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   handle(IPC.modelsCapabilities, (_e, name: string) => ollama.showModel(requireId(name)))
   handle(IPC.modelsCheck, (_e, url: string) => createOllamaClient(() => validOllamaUrl(url)).listModels())
   handle(IPC.systemInfo, () => system())
+
+  // ---- configurazione per modello (CPU/GPU), download, eliminazione, test
+  handle(IPC.modelSettingsList, () => listModelSettings(db))
+  handle(IPC.modelSettingsSet, (_e, model: string, patch: ModelSettingPatch) => {
+    const clean: ModelSettingPatch = {}
+    if (patch?.numGpu !== undefined) clean.numGpu = patch.numGpu
+    if (patch?.dismissed !== undefined) clean.dismissed = patch.dismissed
+    return saveModelSetting(db, requireId(model), clean)
+  })
+
+  const pulls = new Map<string, AbortController>()
+  handle(IPC.modelsPull, async (e, name: string) => {
+    const model = String(name ?? '').trim()
+    if (!/^[\w.\-/:]+$/.test(model)) throw new Error('Nome del modello non valido (es. qwen3:8b)')
+    if (pulls.has(model)) throw new Error('Download già in corso')
+    const controller = new AbortController()
+    pulls.set(model, controller)
+    const send = (p: Omit<PullProgress, 'model'>): void => {
+      if (!e.sender.isDestroyed()) e.sender.send(IPC.pullProgress, { model, ...p })
+    }
+    try {
+      await ollama.pullModel(model, (p) => send({ ...p, done: false }), controller.signal)
+      send({ status: 'success', completed: null, total: null, done: true })
+    } catch (err) {
+      send({ status: 'error', completed: null, total: null, done: true, error: toMessage(err) })
+      throw err
+    } finally {
+      pulls.delete(model)
+    }
+  })
+
+  handle(IPC.modelsDelete, async (_e, name: string) => {
+    const model = requireId(name)
+    await ollama.deleteModel(model)
+    await removeModelSetting(db, model)
+  })
+
+  handle(IPC.modelsBenchmark, async (e, name: string) => {
+    const model = requireId(name)
+    const caps = await ollama.showModel(model).catch(() => null)
+    const digest = (await ollama.listModels().catch(() => [])).find((m) => m.name === model)?.digest ?? null
+    const result = await runBenchmark(ollama, model, caps, (step, steps, label) => {
+      if (!e.sender.isDestroyed()) e.sender.send(IPC.benchmarkProgress, { model, step, steps, label } satisfies BenchmarkProgress)
+    })
+    return saveModelSetting(db, model, {
+      numGpu: result.best,
+      benchmark: result.runs,
+      benchmarkedAt: Date.now(),
+      gpuAvailable: result.gpuAvailable,
+      digest,
+      dismissed: false
+    })
+  })
+
+  // ---- variabili d'ambiente di Ollama
+  const envDeps: EnvDeps = {
+    platform: process.platform,
+    run: (file, args) =>
+      new Promise((resolve, reject) =>
+        execFile(file, args, { windowsHide: true, timeout: 20_000 }, (err, stdout) => (err ? reject(err) : resolve(String(stdout))))
+      ),
+    spawnDetached: (file, args, env) => spawn(file, args, { detached: true, stdio: 'ignore', env, windowsHide: true }).unref(),
+    exists: existsSync,
+    localAppData: process.env.LOCALAPPDATA ?? '',
+    baseEnv: process.env,
+    waitUntilUp: async () => {
+      for (let i = 0; i < 60; i++) {
+        await new Promise((r) => setTimeout(r, 1000))
+        if (await ollama.listModels().then(() => true, () => false)) return true
+      }
+      return false
+    }
+  }
+
+  handle(IPC.ollamaEnvGet, async () => {
+    const canApply = process.platform === 'win32' && isLocalOllama(getOllamaUrl())
+    const values: OllamaEnvValues = canApply ? await readUserEnv(envDeps).catch(() => ({})) : {}
+    return { platform: process.platform, canApply, values, vars: OLLAMA_ENV_VARS }
+  })
+
+  handle(IPC.ollamaEnvApply, async (_e, values: OllamaEnvValues) => {
+    const clean = validateEnv(values ?? {})
+    if (!(process.platform === 'win32' && isLocalOllama(getOllamaUrl()))) {
+      return { applied: false, restarted: false, commands: envCommands(process.platform, clean) }
+    }
+    chat.abortWhere(() => true)
+    const { restarted } = await applyEnvWindows(envDeps, clean)
+    ollama.clearCache()
+    // La memoria suggerita usa lo stesso tipo di cache KV del server.
+    const kv = clean.OLLAMA_KV_CACHE_TYPE
+    if (kv !== undefined) await setSettings(db, { kvCacheType: (kv ?? 'f16') as AppSettings['kvCacheType'] })
+    return { applied: true, restarted, commands: '' }
+  })
 
   // ---- impostazioni
   // ---- finestra (agisce sulla finestra che ha fatto la richiesta)

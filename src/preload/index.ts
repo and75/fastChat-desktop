@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { Api } from '@shared/api'
-import { IPC, type Conversation, type Result, type StreamEvent } from '@shared/types'
+import { IPC, type BenchmarkProgress, type Conversation, type PullProgress, type Result, type StreamEvent } from '@shared/types'
 
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<Result<T>> =>
   ipcRenderer.invoke(channel, ...args) as Promise<Result<T>>
@@ -19,7 +19,18 @@ const api: Api = {
   models: {
     list: () => invoke(IPC.modelsList),
     capabilities: (name) => invoke(IPC.modelsCapabilities, name),
-    check: (url) => invoke(IPC.modelsCheck, url)
+    check: (url) => invoke(IPC.modelsCheck, url),
+    settings: () => invoke(IPC.modelSettingsList),
+    setSetting: (model, patch) => invoke(IPC.modelSettingsSet, model, patch),
+    pull: (name) => invoke(IPC.modelsPull, name),
+    remove: (name) => invoke(IPC.modelsDelete, name),
+    benchmark: (name) => invoke(IPC.modelsBenchmark, name),
+    onPullProgress: (cb) => subscribe<PullProgress>(IPC.pullProgress, cb),
+    onBenchmarkProgress: (cb) => subscribe<BenchmarkProgress>(IPC.benchmarkProgress, cb)
+  },
+  ollamaEnv: {
+    get: () => invoke(IPC.ollamaEnvGet),
+    apply: (values) => invoke(IPC.ollamaEnvApply, values)
   },
   system: {
     info: () => invoke(IPC.systemInfo)

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { SystemInfo } from '@shared/settings'
-import type { AppSettings, ModelCapabilities, OllamaModel } from '@shared/types'
+import type { AppSettings, BenchmarkProgress, ModelCapabilities, ModelSetting, ModelSettingPatch, OllamaModel, PullProgress } from '@shared/types'
 
 type Status = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -13,6 +13,17 @@ interface ModelsState {
   capabilities: Record<string, ModelCapabilities>
   /** RAM della macchina (se Ollama è locale): per il suggerimento della memoria della conversazione. */
   system: SystemInfo | null
+  /** Configurazione di esecuzione (CPU/GPU) per modello, dal database. */
+  modelSettings: Record<string, ModelSetting>
+  /** Download e test in corso, per modello. */
+  pulls: Record<string, PullProgress>
+  benchmarks: Record<string, BenchmarkProgress>
+
+  loadModelSettings(): Promise<void>
+  setModelSetting(model: string, patch: ModelSettingPatch): Promise<string | null>
+  benchmark(model: string): Promise<string | null>
+  pull(name: string): Promise<string | null>
+  removeModel(name: string): Promise<string | null>
 
   init(): Promise<void>
   refresh(): Promise<void>
@@ -32,11 +43,65 @@ export const useModels = create<ModelsState>((set, get) => ({
   selected: null,
   capabilities: {},
   system: null,
+  modelSettings: {},
+  pulls: {},
+  benchmarks: {},
 
   async init() {
+    window.api.models.onPullProgress((p) => set((s) => ({ pulls: { ...s.pulls, [p.model]: p } })))
+    window.api.models.onBenchmarkProgress((p) => set((s) => ({ benchmarks: { ...s.benchmarks, [p.model]: p } })))
     const res = await window.api.settings.get()
     if (res.ok) set({ settings: res.data, selected: res.data.defaultModel })
-    await Promise.all([get().refresh(), get().loadSystem()])
+    await Promise.all([get().refresh(), get().loadSystem(), get().loadModelSettings()])
+  },
+
+  async loadModelSettings() {
+    const res = await window.api.models.settings()
+    if (res.ok) set({ modelSettings: Object.fromEntries(res.data.map((m) => [m.model, m])) })
+  },
+
+  async setModelSetting(model, patch) {
+    const res = await window.api.models.setSetting(model, patch)
+    if (!res.ok) return res.error
+    set((s) => ({ modelSettings: { ...s.modelSettings, [model]: res.data } }))
+    return null
+  },
+
+  async benchmark(model) {
+    set((s) => ({ benchmarks: { ...s.benchmarks, [model]: { model, step: 0, steps: 3, label: 'Preparazione' } } }))
+    const res = await window.api.models.benchmark(model)
+    set((s) => {
+      const benchmarks = { ...s.benchmarks }
+      delete benchmarks[model]
+      return res.ok ? { benchmarks, modelSettings: { ...s.modelSettings, [model]: res.data } } : { benchmarks }
+    })
+    return res.ok ? null : res.error
+  },
+
+  async pull(name) {
+    set((s) => ({ pulls: { ...s.pulls, [name]: { model: name, status: 'avvio', completed: null, total: null, done: false } } }))
+    const res = await window.api.models.pull(name)
+    set((s) => {
+      const pulls = { ...s.pulls }
+      delete pulls[name]
+      return { pulls }
+    })
+    if (!res.ok) return res.error
+    set({ capabilities: {} })
+    await get().refresh()
+    return null
+  },
+
+  async removeModel(name) {
+    const res = await window.api.models.remove(name)
+    if (!res.ok) return res.error
+    set((s) => {
+      const modelSettings = { ...s.modelSettings }
+      delete modelSettings[name]
+      return { modelSettings }
+    })
+    await get().refresh()
+    return null
   },
 
   async loadSystem() {

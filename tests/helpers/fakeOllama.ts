@@ -17,6 +17,12 @@ export interface FakeModel {
   parameters?: string
   /** Chunk da inviare su /api/chat. Default: un breve pensiero + risposta. */
   chunks?: Array<{ thinking?: string; content?: string }>
+  /** Digest restituito da /api/tags. */
+  digest?: string
+  /** Simulazione CPU/GPU per il test: velocità di scrittura in token/s e se c'è una GPU utilizzabile. */
+  cpuTps?: number
+  gpuTps?: number
+  gpu?: boolean
   /** done_reason dell'ultimo chunk: 'length' simula una risposta tagliata al limite di token. Default 'stop'. */
   doneReason?: 'stop' | 'length'
   /** Ritardo tra un chunk e l'altro, ms. */
@@ -57,21 +63,54 @@ const json = (res: ServerResponse, status: number, body: unknown): void => {
 
 export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> {
   const requests: FakeOllama['requests'] = []
+  /** Modelli "caricati" e il num_gpu dell'ultima richiesta (per /api/ps). */
+  const loaded = new Map<string, number | undefined>()
   const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
   const server: Server = createServer(async (req, res) => {
-    const body = req.method === 'POST' ? await readBody(req) : null
+    const body = req.method === 'POST' || req.method === 'DELETE' ? await readBody(req) : null
     requests.push({ path: req.url ?? '', body })
 
     if (req.url === '/api/tags') {
       return json(res, 200, {
         models: models.map((m) => ({
           name: m.name,
+          digest: m.digest ?? `digest-${m.name}`,
           size: m.size ?? 2_000_000_000,
           modified_at: '2026-01-01T00:00:00Z',
           details: { family: 'fake', parameter_size: '3B', quantization_level: 'Q4_K_M' }
         }))
       })
+    }
+
+    if (req.url === '/api/ps') {
+      return json(res, 200, {
+        models: [...loaded.entries()].map(([name, numGpu]) => {
+          const m = models.find((x) => x.name === name)
+          const size = m?.size ?? 2_000_000_000
+          const layers = Number(m?.modelInfo?.['fake.block_count'] ?? 32)
+          const share = m?.gpu && numGpu !== undefined && numGpu > 0 ? Math.min(1, numGpu / layers) : m?.gpu && numGpu === undefined ? 1 : 0
+          return { name, size, size_vram: Math.round(size * share), context_length: 2048 }
+        })
+      })
+    }
+
+    if (req.url === '/api/pull') {
+      const name = (body as { model?: string }).model ?? ''
+      res.writeHead(200, { 'content-type': 'application/x-ndjson' })
+      res.write(JSON.stringify({ status: 'pulling manifest' }) + '\n')
+      res.write(JSON.stringify({ status: 'downloading', completed: 50, total: 100 }) + '\n')
+      res.write(JSON.stringify({ status: 'downloading', completed: 100, total: 100 }) + '\n')
+      if (!models.some((m) => m.name === name)) models.push({ name, capabilities: ['completion'] })
+      return res.end(JSON.stringify({ status: 'success' }) + '\n')
+    }
+
+    if (req.url === '/api/delete') {
+      const name = (body as { model?: string }).model
+      const i = models.findIndex((m) => m.name === name)
+      if (i < 0) return json(res, 404, { error: `model '${name}' not found` })
+      models.splice(i, 1)
+      return json(res, 200, {})
     }
 
     const modelName = (body as { model?: string } | null)?.model
@@ -88,6 +127,10 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
 
     if (req.url === '/api/chat') {
       if (!model) return json(res, 404, { error: `model '${modelName}' not found` })
+      const numGpu = (body as { options?: { num_gpu?: number } }).options?.num_gpu
+      loaded.set(model.name, numGpu)
+      const onGpu = !!model.gpu && numGpu !== 0
+      const tpsNow = onGpu ? (model.gpuTps ?? 20) : (model.cpuTps ?? 10)
       const think = (body as { think?: boolean }).think === true
       const format = (body as { format?: unknown }).format
       let chunks = model.chunks ?? [{ thinking: 'Ci penso. ' }, { content: 'Ciao' }, { content: ' mondo!' }]
@@ -121,7 +164,10 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
           done_reason: model.doneReason ?? 'stop',
           eval_count: 42,
           prompt_eval_count: Math.max(1, Math.ceil(JSON.stringify((body as { messages?: unknown }).messages ?? []).length / 4)),
-          total_duration: 1_500_000_000
+          total_duration: 1_500_000_000,
+          load_duration: 200_000_000,
+          prompt_eval_duration: 100_000_000,
+          eval_duration: Math.round((42 / tpsNow) * 1e9)
         }) + '\n'
       )
       return

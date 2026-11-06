@@ -12,12 +12,13 @@ import {
   type ResponseStyle,
   type Message,
   type MessageRole,
+  type ModelSetting,
   type Plan,
   type PlanStatus,
   type PlanStep
 } from '@shared/types'
 import type { Db } from './client'
-import { briefTemplates, conversations, messages, plans, settings } from './schema'
+import { briefTemplates, conversations, messages, modelSettings, plans, settings } from './schema'
 
 // ---------------------------------------------------------------- impostazioni
 
@@ -326,4 +327,34 @@ export function conversationFromTemplate(t: BriefTemplate, fallbackModel: string
     planMode: t.planMode,
     style: t.style
   }
+}
+
+// ---------------------------------------------------------------- configurazione per modello
+
+export async function listModelSettings(db: Db): Promise<ModelSetting[]> {
+  return (await db.select().from(modelSettings)).map((r) => ({ ...r, benchmark: r.benchmark ?? null }))
+}
+
+export async function getModelSetting(db: Db, model: string): Promise<ModelSetting | null> {
+  const [row] = await db.select().from(modelSettings).where(eq(modelSettings.model, model))
+  return row ? { ...row, benchmark: row.benchmark ?? null } : null
+}
+
+/** Crea o aggiorna la configurazione di un modello (solo i campi indicati). */
+export async function saveModelSetting(db: Db, model: string, patch: Partial<Omit<ModelSetting, 'model'>>): Promise<ModelSetting> {
+  const clean: Partial<Omit<ModelSetting, 'model'>> = { ...patch }
+  if ('numGpu' in clean) {
+    const n = clean.numGpu
+    clean.numGpu = typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(999, Math.round(n))) : null
+  }
+  if ('dismissed' in clean) clean.dismissed = clean.dismissed === true
+  await db
+    .insert(modelSettings)
+    .values({ model, dismissed: false, ...clean })
+    .onConflictDoUpdate({ target: modelSettings.model, set: clean })
+  return (await getModelSetting(db, model))!
+}
+
+export async function removeModelSetting(db: Db, model: string): Promise<void> {
+  await db.delete(modelSettings).where(eq(modelSettings.model, model))
 }

@@ -36,6 +36,13 @@
       "when": 1793925099344,
       "tag": "0004_style",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793963637862,
+      "tag": "0005_model_settings",
+      "breakpoints": true
     }
   ]
 }

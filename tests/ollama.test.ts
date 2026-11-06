@@ -52,6 +52,7 @@ describe('showModel', () => {
       thinking: true,
       contextLength: 40960,
       kvBytesPerToken: null,
+      layers: null,
       defaults: { temperature: 0.6, topP: 0.95, numCtx: 8192 }
     })
     const llama = await c.showModel('llama3.2:3b')
@@ -115,6 +116,9 @@ describe('chatStream', () => {
       promptEvalCount: undefined,
       evalCount: 42,
       durationMs: 1500,
+      loadMs: 200,
+      promptEvalMs: 100,
+      evalMs: 4200,
       doneReason: 'stop',
       aborted: false
     })

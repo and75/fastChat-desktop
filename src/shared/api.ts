@@ -1,5 +1,9 @@
 import type {
   AppSettings,
+  BenchmarkProgress,
+  ModelSetting,
+  ModelSettingPatch,
+  PullProgress,
   BriefTemplate,
   Conversation,
   ConversationDetail,
@@ -15,6 +19,14 @@ import type {
 } from './types'
 import type { SystemInfo } from './settings'
 
+/** Variabili d'ambiente di Ollama per la sezione delle impostazioni. */
+export interface OllamaEnvInfo {
+  platform: string
+  canApply: boolean
+  values: Record<string, string | null>
+  vars: Array<{ name: string; label: string; description: string; options: Array<{ value: string | null; label: string }> }>
+}
+
 /** Contratto di `window.api`, implementato dal preload. */
 export interface Api {
   models: {
@@ -22,6 +34,22 @@ export interface Api {
     capabilities(name: string): Promise<Result<ModelCapabilities>>
     /** Prova un URL di Ollama senza salvarlo: restituisce i modelli trovati. */
     check(url: string): Promise<Result<OllamaModel[]>>
+    /** Configurazione di esecuzione (CPU/GPU) e risultati del test, per modello. */
+    settings(): Promise<Result<ModelSetting[]>>
+    setSetting(model: string, patch: ModelSettingPatch): Promise<Result<ModelSetting>>
+    /** Scarica un modello; l'avanzamento arriva con onPullProgress. */
+    pull(name: string): Promise<Result<void>>
+    remove(name: string): Promise<Result<void>>
+    /** Test CPU/GPU: prova le configurazioni, salva la più veloce e la restituisce. */
+    benchmark(name: string): Promise<Result<ModelSetting>>
+    onPullProgress(cb: (p: PullProgress) => void): () => void
+    onBenchmarkProgress(cb: (p: BenchmarkProgress) => void): () => void
+  }
+  ollamaEnv: {
+    /** Variabili d'ambiente di Ollama: valori attuali (Windows) e se l'app può applicarle da sola. */
+    get(): Promise<Result<OllamaEnvInfo>>
+    /** Su Windows salva e riavvia Ollama; altrove restituisce i comandi da copiare. */
+    apply(values: Record<string, string | null>): Promise<Result<{ applied: boolean; restarted: boolean; commands: string }>>
   }
   system: {
     /** RAM e tipo di memoria della macchina, se Ollama gira qui: per il calcolo della memoria della conversazione. */

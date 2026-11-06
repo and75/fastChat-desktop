@@ -35,7 +35,7 @@ describe('migrazioni', () => {
     const rows = h.raw
       .prepare("select name from sqlite_master where type='table' and name not like 'sqlite_%' and name not like '__drizzle%' order by name")
       .all() as Array<{ name: string }>
-    expect(rows.map((r) => r.name)).toEqual(['brief_templates', 'conversations', 'messages', 'plans', 'settings'])
+    expect(rows.map((r) => r.name)).toEqual(['brief_templates', 'conversations', 'messages', 'model_settings', 'plans', 'settings'])
   })
 
   it('la seconda migrazione aggiunge prompt_eval_count ai messaggi', () => {

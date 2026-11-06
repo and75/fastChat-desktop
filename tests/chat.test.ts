@@ -75,7 +75,7 @@ describe('buildOptions / buildChatMessages', () => {
     // nessun num_predict: la lunghezza della risposta la governa lo stile nel system prompt
     expect(buildOptions(conv)).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096, seed: 7 })
     expect(buildOptions({ ...conv, seed: null, numCtx: null })).toEqual({ temperature: 0.3, top_p: 0.9, num_ctx: 4096 })
-    const caps = { capabilities: [], thinking: false, contextLength: 8192, kvBytesPerToken: null, defaults: { temperature: 0.6, topP: 0.95, numCtx: 2048 } }
+    const caps = { capabilities: [], thinking: false, contextLength: 8192, kvBytesPerToken: null, layers: null, defaults: { temperature: 0.6, topP: 0.95, numCtx: 2048 } }
     // in automatico: consigliati dal modello; la scelta dell'utente non supera il massimo del modello
     expect(buildOptions({ ...conv, seed: null, numCtx: null, topP: null }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 2048 })
     expect(buildOptions({ ...conv, seed: null, numCtx: 65536 }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 8192 })

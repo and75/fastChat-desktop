@@ -18,6 +18,7 @@ import {
   createPlan,
   planToFollow,
   getConversation,
+  getModelSetting,
   getPlan,
   listMessages,
   listPlans,
@@ -62,10 +63,12 @@ type Mode =
  * sempre espliciti, così Ollama usa esattamente ciò che l'app mostra e su cui dimensiona lo storico.
  * Il seed resta assente quando è "casuale".
  */
-export function buildOptions(conv: Conversation, caps: ModelCapabilities | null = null): ChatOptions {
+export function buildOptions(conv: Conversation, caps: ModelCapabilities | null = null, numGpu: number | null = null): ChatOptions {
   const s = resolveSettings(conv, caps)
   const options: ChatOptions = { temperature: s.temperature, top_p: s.topP, num_ctx: s.numCtx }
   if (s.seed != null) options.seed = s.seed
+  // Esecuzione del modello (CPU/GPU), configurata per modello: assente = decide Ollama.
+  if (numGpu != null) options.num_gpu = numGpu
   return options
 }
 
@@ -145,6 +148,11 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     }
   }
 
+  /** Layer in GPU configurati per il modello (null = automatico). */
+  async function numGpuOf(model: string): Promise<number | null> {
+    return (await getModelSetting(db, model))?.numGpu ?? null
+  }
+
   async function capsOf(conv: Conversation): Promise<ModelCapabilities | null> {
     try {
       return await ollama.showModel(conv.model)
@@ -179,7 +187,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
             content: `Domanda:\n${question.content.slice(0, 1500)}\n\nRisposta:\n${answer.content.slice(0, 1500)}`
           }
         ],
-        options: { ...buildOptions(conv, caps), temperature: 0.3, num_predict: 32 }
+        options: { ...buildOptions(conv, caps, await numGpuOf(conv.model)), temperature: 0.3, num_predict: 32 }
       }
       if (caps?.thinking) request.think = false
       title = cleanTitle((await ollama.chatStream(request, {})).content)
@@ -244,7 +252,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     const request: ChatRequest = {
       model: conv.model,
       messages: buildChatMessages(conv, history, systemFor(conv, mode), caps),
-      options: buildOptions(conv, caps)
+      options: buildOptions(conv, caps, await numGpuOf(conv.model))
     }
     if (mode.kind === 'plan') request.format = PLAN_SCHEMA as unknown as Record<string, unknown>
     if (caps?.thinking) request.think = resolveSettings(conv, caps).think

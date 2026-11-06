@@ -19,9 +19,10 @@ const caps: ModelCapabilities = {
   thinking: true,
   contextLength: 8192,
   kvBytesPerToken: null,
+  layers: null,
   defaults: { temperature: 0.6, topP: 0.95, numCtx: 2048 }
 }
-const bare: ModelCapabilities = { capabilities: [], thinking: false, contextLength: null, kvBytesPerToken: null, defaults: { temperature: null, topP: null, numCtx: null } }
+const bare: ModelCapabilities = { capabilities: [], thinking: false, contextLength: null, kvBytesPerToken: null, layers: null, defaults: { temperature: null, topP: null, numCtx: null } }
 const conv: ConversationSettings = { temperature: 0.7, think: true, planMode: false, topP: null, numCtx: null, seed: null, style: 'normal' }
 const mac = (gb: number, kvCacheType: SystemInfo['kvCacheType'] = 'f16'): SystemInfo => ({ ramBytes: gb * GB, unified: true, kvCacheType })
 const pc = (gb: number): SystemInfo => ({ ramBytes: gb * GB, unified: false, kvCacheType: 'f16' })

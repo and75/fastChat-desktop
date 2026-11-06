@@ -88,6 +88,8 @@ export interface BriefTemplate extends Brief {
 
 export interface OllamaModel {
   name: string
+  /** Impronta del modello: cambia quando viene aggiornato con `ollama pull`. */
+  digest: string | null
   size: number
   modifiedAt: string
   family: string | null
@@ -108,9 +110,61 @@ export interface ModelCapabilities {
   thinking: boolean
   /** Lunghezza massima del contesto con cui il modello è stato addestrato (token). */
   contextLength: number | null
+  /** Numero di layer del modello (block_count), per proporre una divisione tra GPU e CPU. */
+  layers: number | null
   /** Memoria occupata da ogni token di contesto (cache KV in f16), dall'architettura in /api/show; null se non calcolabile. */
   kvBytesPerToken: number | null
   defaults: ModelDefaults
+}
+
+/** Una configurazione provata dal test CPU/GPU. */
+export interface BenchmarkRun {
+  label: string
+  /** Layer sulla GPU (num_gpu): 0 = solo CPU. */
+  numGpu: number
+  /** Velocità di lettura del prompt e di scrittura della risposta, token al secondo. */
+  promptTps: number | null
+  evalTps: number | null
+  /** Tempo di caricamento del modello, ms. */
+  loadMs: number | null
+  /** Quota del modello finita davvero in GPU (da /api/ps), 0–1. */
+  vramShare: number | null
+  error?: string
+}
+
+/** Configurazione di esecuzione di un modello, salvata nel database. */
+export interface ModelSetting {
+  model: string
+  /** Digest del modello quando è stato configurato: se cambia, il test va ripetuto. */
+  digest: string | null
+  /** Layer sulla GPU inviati come num_gpu; null = automatico (decide Ollama). */
+  numGpu: number | null
+  benchmark: BenchmarkRun[] | null
+  benchmarkedAt: number | null
+  /** Ollama vede una GPU utilizzabile per questo modello (dal test); null = non si sa. */
+  gpuAvailable: boolean | null
+  /** L'utente non vuole l'avviso «fai il test» per questo modello. */
+  dismissed: boolean
+}
+
+export type ModelSettingPatch = Partial<Pick<ModelSetting, 'numGpu' | 'dismissed'>>
+
+/** Avanzamento del download di un modello (/api/pull). */
+export interface PullProgress {
+  model: string
+  status: string
+  completed: number | null
+  total: number | null
+  done: boolean
+  error?: string
+}
+
+/** Avanzamento del test CPU/GPU. */
+export interface BenchmarkProgress {
+  model: string
+  step: number
+  steps: number
+  label: string
 }
 
 /** Valori usati da Ollama quando il Modelfile non indica nulla. */
@@ -219,6 +273,16 @@ export const IPC = {
   conversationsUpdate: 'conversations:update',
   conversationsCalibrate: 'conversations:calibrate',
   conversationsSummarize: 'conversations:summarize',
+  modelSettingsList: 'model-settings:list',
+  modelSettingsSet: 'model-settings:set',
+  modelsPull: 'models:pull',
+  modelsDelete: 'models:delete',
+  modelsBenchmark: 'models:benchmark',
+  /** Eventi main → renderer. */
+  pullProgress: 'models:pull-progress',
+  benchmarkProgress: 'models:benchmark-progress',
+  ollamaEnvGet: 'ollama-env:get',
+  ollamaEnvApply: 'ollama-env:apply',
   conversationsRemove: 'conversations:remove',
   chatSend: 'chat:send',
   chatRegenerate: 'chat:regenerate',

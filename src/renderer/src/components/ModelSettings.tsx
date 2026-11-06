@@ -3,6 +3,7 @@ import { STYLE_INSTRUCTIONS, STYLE_LABELS } from '@shared/prompt'
 import { describeSuggestion, maxNumCtx, minNumCtx, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
 import { RESPONSE_STYLES, type Conversation, type ConversationPatch, type ResponseStyle } from '@shared/types'
 import { useChat } from '../store/useChat'
+import { BenchmarkButton, needsBenchmark, NumGpuSelect } from './ModelManager'
 import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
 import { registerPendingSave } from '../store/pendingSaves'
@@ -118,6 +119,54 @@ export function ThinkToggle({ conversation, compact = false }: { conversation: C
       color="bg-brand-600"
       onChange={(think) => void update(conversation.id, { think })}
     />
+  )
+}
+
+/**
+ * Esecuzione del modello (CPU/GPU): configurata per modello, vale per tutte le conversazioni che lo usano.
+ * Per un modello mai testato (o aggiornato dopo il test) propone il test, senza bloccare.
+ */
+export function ExecutionRow({ model }: { model: string }): React.JSX.Element | null {
+  const setting = useModels((s) => s.modelSettings[model])
+  const info = useModels((s) => s.models.find((m) => m.name === model))
+  const setModelSetting = useModels((s) => s.setModelSetting)
+  if (!model) return null
+  const need = needsBenchmark(info, setting)
+  const best = setting?.benchmark?.find((r) => r.numGpu === setting.numGpu)
+  return (
+    <div className="flex flex-col gap-1 text-sm" data-testid="execution-row">
+      <span className="flex items-baseline justify-between gap-2">
+        <span className="font-medium text-zinc-700 dark:text-zinc-300">Esecuzione del modello</span>
+        <code className="text-[11px] text-zinc-400" title="Nome del parametro in Ollama">
+          num_gpu
+        </code>
+      </span>
+      <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+        CPU o GPU, per questo modello in tutte le conversazioni.
+        {best?.evalTps != null && ` Dal test: ${best.evalTps.toLocaleString('it-IT', { maximumFractionDigits: 1 })} token/s.`}
+      </span>
+      <NumGpuSelect model={model} compact />
+      {need && (
+        <div className="mt-1 flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs dark:border-amber-800 dark:bg-amber-950/40" data-testid="benchmark-notice">
+          <span>
+            {need === 'new'
+              ? 'Modello nuovo: un test di 1–2 minuti dice se va più veloce in CPU o in GPU su questa macchina.'
+              : 'Modello aggiornato dopo il test: conviene ripeterlo.'}
+          </span>
+          <span className="flex items-center gap-3">
+            <BenchmarkButton model={model} />
+            {need === 'new' && (
+              <button type="button" className="text-zinc-500 hover:underline" onClick={() => void setModelSetting(model, { dismissed: true })}>
+                Non chiedere più
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+      {setting?.benchmarkedAt && !need && setting.gpuAvailable === false && (
+        <span className="text-xs text-zinc-500">Ollama non usa la GPU per questo modello: va tutto in CPU.</span>
+      )}
+    </div>
   )
 }
 
@@ -553,6 +602,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
         }
         onChange={(v) => save({ numCtx: v })}
       />
+      <ExecutionRow model={conversation.model} />
       <StyleControl conversation={conversation} />
       <SummaryPanel conversation={conversation} />
       <NumberField

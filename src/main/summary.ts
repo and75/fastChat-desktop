@@ -18,7 +18,7 @@ import {
 import { resolveSettings } from '@shared/settings'
 import type { Conversation, ModelCapabilities } from '@shared/types'
 import type { Db } from './db/client'
-import { getConversation, listMessages, updateConversation } from './db/repo'
+import { getConversation, getModelSetting, listMessages, updateConversation } from './db/repo'
 import type { ChatRequest, OllamaClient } from './ollama'
 
 export interface SummarizerDeps {
@@ -117,6 +117,8 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
       // Ogni richiesta deve stare nella memoria: prompt + riassunto precedente + blocco di trascrizione +
       // riassunto da scrivere. I messaggi coperti vanno in blocchi, riassunti uno dopo l'altro: niente si taglia.
       const cpt = charsPerToken(history)
+      // Stessa esecuzione (CPU/GPU) della chat: con un valore diverso Ollama ricaricherebbe il modello.
+      const numGpu = (await getModelSetting(db, conv.model))?.numGpu ?? null
       const outTokens = summaryMaxTokens(s.numCtx, reserveTokens)
       const prompt = buildSummaryPrompt(Math.max(30, Math.round(outTokens * 0.7)))
       const previousTokens = Math.max(outTokens, previous ? estimateTokens(previous, cpt) : 0)
@@ -130,7 +132,7 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
             { role: 'system', content: prompt },
             { role: 'user', content: buildSummaryRequest(summary, chunk) }
           ],
-          options: { temperature: 0.2, top_p: s.topP, num_ctx: s.numCtx, num_predict: outTokens }
+          options: { temperature: 0.2, top_p: s.topP, num_ctx: s.numCtx, num_predict: outTokens, ...(numGpu != null ? { num_gpu: numGpu } : {}) }
         }
         if (caps?.thinking) request.think = false
         const result = await ollama.chatStream(request, {})

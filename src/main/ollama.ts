@@ -25,6 +25,8 @@ export interface ChatOptions {
   seed?: number
   /** Numero massimo di token generati. */
   num_predict?: number
+  /** Layer del modello sulla GPU: 0 = solo CPU; assente = decide Ollama. */
+  num_gpu?: number
 }
 
 export interface ChatRequest {
@@ -48,6 +50,10 @@ export interface ChatResult {
   /** Token del prompt valutati da Ollama (system + storico + domanda). */
   promptEvalCount: number | null
   durationMs: number | null
+  /** Tempi di Ollama (ms): caricamento del modello, lettura del prompt, scrittura della risposta. */
+  loadMs: number | null
+  promptEvalMs: number | null
+  evalMs: number | null
   /** 'length' se Ollama ha fermato la risposta al limite di token (num_predict), 'stop' se è finita. */
   doneReason: DoneReason | null
   /** true se la generazione è stata interrotta: content/thinking contengono il parziale. */
@@ -63,13 +69,30 @@ interface ChatChunk {
   eval_count?: number
   prompt_eval_count?: number
   total_duration?: number
+  load_duration?: number
+  prompt_eval_duration?: number
+  eval_duration?: number
   error?: string
+}
+
+/** Modello caricato in memoria (/api/ps). */
+export interface LoadedModel {
+  name: string
+  /** Memoria totale occupata e quella in GPU, byte. */
+  size: number
+  sizeVram: number
+  contextLength: number | null
 }
 
 export interface OllamaClient {
   listModels(): Promise<OllamaModel[]>
   showModel(name: string): Promise<ModelCapabilities>
   chatStream(req: ChatRequest, handlers: ChatHandlers, signal?: AbortSignal): Promise<ChatResult>
+  /** Modelli caricati in memoria, con la quota in GPU. */
+  loadedModels(): Promise<LoadedModel[]>
+  /** Scarica un modello (/api/pull), riportando l'avanzamento. */
+  pullModel(name: string, onProgress: (p: { status: string; completed: number | null; total: number | null }) => void, signal?: AbortSignal): Promise<void>
+  deleteModel(name: string): Promise<void>
   clearCache(): void
 }
 
@@ -166,6 +189,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     const body = (await res.json()) as {
       models?: Array<{
         name: string
+        digest?: string
         size: number
         modified_at: string
         details?: { family?: string; parameter_size?: string; quantization_level?: string }
@@ -174,6 +198,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     return (body.models ?? [])
       .map((m) => ({
         name: m.name,
+        digest: m.digest ?? null,
         size: m.size,
         modifiedAt: m.modified_at,
         family: m.details?.family ?? null,
@@ -201,6 +226,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       thinking: capabilities.includes('thinking'),
       contextLength: modelInfoNumber(info, '.context_length'),
       kvBytesPerToken: kvBytesPerToken(info),
+      layers: modelInfoNumber(info, '.block_count'),
       defaults: parseModelDefaults(body.parameters)
     }
     capsCache.set(key, caps)
@@ -212,7 +238,19 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     handlers: ChatHandlers,
     signal?: AbortSignal
   ): Promise<ChatResult> {
-    const result: ChatResult = { content: '', thinking: '', evalCount: null, promptEvalCount: null, durationMs: null, doneReason: null, aborted: false }
+    const result: ChatResult = {
+      content: '',
+      thinking: '',
+      evalCount: null,
+      promptEvalCount: null,
+      durationMs: null,
+      loadMs: null,
+      promptEvalMs: null,
+      evalMs: null,
+      doneReason: null,
+      aborted: false
+    }
+    const ms = (ns: number | undefined): number | null => (ns != null ? Math.round(ns / 1e6) : null)
 
     const handleLine = (line: string): void => {
       if (!line.trim()) return
@@ -236,7 +274,10 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       if (chunk.done) {
         result.evalCount = chunk.eval_count ?? null
         result.promptEvalCount = chunk.prompt_eval_count ?? null
-        result.durationMs = chunk.total_duration != null ? Math.round(chunk.total_duration / 1e6) : null
+        result.durationMs = ms(chunk.total_duration)
+        result.loadMs = ms(chunk.load_duration)
+        result.promptEvalMs = ms(chunk.prompt_eval_duration)
+        result.evalMs = ms(chunk.eval_duration)
         result.doneReason = chunk.done_reason === 'length' ? 'length' : chunk.done_reason === 'stop' ? 'stop' : null
       }
     }
@@ -273,5 +314,51 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     return result
   }
 
-  return { listModels, showModel, chatStream, clearCache: () => capsCache.clear() }
+  async function loadedModels(): Promise<LoadedModel[]> {
+    const res = await request('/api/ps')
+    const body = (await res.json()) as { models?: Array<{ name: string; size?: number; size_vram?: number; context_length?: number }> }
+    return (body.models ?? []).map((m) => ({
+      name: m.name,
+      size: m.size ?? 0,
+      sizeVram: m.size_vram ?? 0,
+      contextLength: m.context_length ?? null
+    }))
+  }
+
+  async function pullModel(
+    name: string,
+    onProgress: (p: { status: string; completed: number | null; total: number | null }) => void,
+    signal?: AbortSignal
+  ): Promise<void> {
+    const res = await request('/api/pull', { method: 'POST', body: JSON.stringify({ model: name, stream: true }), signal })
+    if (!res.body) throw new OllamaError('parse', 'Risposta di Ollama senza corpo')
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    const handle = (line: string): void => {
+      if (!line.trim()) return
+      const chunk = JSON.parse(line) as { status?: string; completed?: number; total?: number; error?: string }
+      if (chunk.error) throw new OllamaError('http', chunk.error)
+      onProgress({ status: chunk.status ?? '', completed: chunk.completed ?? null, total: chunk.total ?? null })
+    }
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let nl: number
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        handle(buffer.slice(0, nl))
+        buffer = buffer.slice(nl + 1)
+      }
+    }
+    handle(buffer + decoder.decode())
+    capsCache.clear()
+  }
+
+  async function deleteModel(name: string): Promise<void> {
+    await request('/api/delete', { method: 'DELETE', body: JSON.stringify({ model: name }) })
+    capsCache.clear()
+  }
+
+  return { listModels, showModel, chatStream, loadedModels, pullModel, deleteModel, clearCache: () => capsCache.clear() }
 }

@@ -820,6 +820,62 @@ try {
     await page.getByTestId('model-settings').getByText(/con cache KV q8_0\./).waitFor()
   })
 
+  await step('esecuzione del modello: avviso per il modello nuovo, test CPU/GPU, scelta salvata per modello', async () => {
+    const row = page.getByTestId('model-settings').getByTestId('execution-row')
+    // llama3.2:3b non è mai stato testato: avviso non bloccante
+    await row.getByTestId('benchmark-notice').filter({ hasText: 'Modello nuovo' }).waitFor()
+    await row.getByTestId('benchmark-run').click()
+    // (con il server finto il test dura pochi millisecondi: l'avanzamento non si fa in tempo a vedere)
+    await row.getByTestId('benchmark-notice').waitFor({ state: 'detached' })
+    // nel server finto non c'è GPU: resta la CPU, e lo si dice
+    assert.equal(await row.getByTestId('num-gpu-select').inputValue(), 'cpu')
+    await row.getByText('Ollama non usa la GPU per questo modello').waitFor()
+    const saved = (await page.evaluate(() => window.api.models.settings())).data.find((m) => m.model === 'llama3.2:3b')
+    assert.equal(saved.numGpu, 0)
+    assert.equal(saved.gpuAvailable, false)
+    assert.deepEqual(saved.benchmark.map((r) => r.numGpu), [0, 999])
+    // le richieste successive del modello portano num_gpu
+    const box = page.getByRole('textbox', { name: 'Messaggio' })
+    await box.fill('Ciao')
+    await box.press('Enter')
+    await page.getByTestId('message-assistant').last().waitFor()
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
+    assert.equal(lastChat().options.num_gpu, 0)
+  })
+
+  await step('impostazioni → Modelli: risultati del test, esecuzione per modello, scarica ed elimina', async () => {
+    await page.getByRole('button', { name: 'Impostazioni' }).click()
+    const dialog = page.getByTestId('settings-dialog')
+    await dialog.getByRole('tab', { name: 'Modelli' }).click()
+    const manager = dialog.getByTestId('model-manager')
+    await manager.getByTestId('model-row').first().waitFor()
+    assert.equal(await manager.getByTestId('model-row').count(), 6)
+    const llama = manager.getByTestId('model-row').filter({ hasText: 'llama3.2:3b' })
+    assert.equal(await llama.getByTestId('benchmark-table').locator('tbody tr').count(), 2)
+    await page.screenshot({ path: join(root, 'test-results', 'e2e-models.png') })
+    // esecuzione scelta a mano per un altro modello
+    await manager.getByTestId('model-row').filter({ hasText: 'qwen3:4b' }).getByTestId('num-gpu-select').selectOption('gpu')
+    await waitUntil(async () => (await page.evaluate(() => window.api.models.settings())).data.some((m) => m.model === 'qwen3:4b' && m.numGpu === 999))
+    // scarica un modello: avanzamento, poi compare nell'elenco
+    await manager.getByLabel('Nome del modello da scaricare').fill('nuovo:1b')
+    await manager.getByRole('button', { name: 'Scarica' }).click()
+    await manager.getByTestId('model-row').filter({ hasText: 'nuovo:1b' }).waitFor()
+    // elimina (con conferma)
+    page.once('dialog', (d) => void d.accept())
+    await manager.getByTestId('model-row').filter({ hasText: 'nuovo:1b' }).getByRole('button', { name: 'Elimina' }).click()
+    await manager.getByTestId('model-row').filter({ hasText: 'nuovo:1b' }).waitFor({ state: 'detached' })
+    assert.equal(await manager.getByTestId('model-row').count(), 6)
+
+    // Ollama: fuori da Windows l'app mostra i comandi invece di applicarli
+    await dialog.getByRole('tab', { name: 'Ollama' }).click()
+    const env = dialog.getByTestId('ollama-env')
+    await env.getByLabel('GPU tramite Vulkan').selectOption('1')
+    await env.getByTestId('ollama-env-apply').filter({ hasText: 'Mostra i comandi' }).click()
+    await env.getByTestId('ollama-env-commands').filter({ hasText: 'Environment="OLLAMA_VULKAN=1"' }).waitFor()
+    await dialog.getByRole('button', { name: 'Chiudi' }).click()
+    await dialog.waitFor({ state: 'detached' })
+  })
+
   await step('campo di scrittura: altezza dinamica fino al 40% della finestra; barre invisibili', async () => {
     const box = page.getByLabel('Messaggio')
     const height = () => box.evaluate((el) => el.getBoundingClientRect().height)
