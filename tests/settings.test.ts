@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   describeSuggestion,
   floorPow2,
+  minNumCtx,
   suggestReserveTokens,
   resolveNumCtx,
   resolveSettings,
@@ -44,8 +45,9 @@ describe('memoria della conversazione suggerita dalla RAM', () => {
   it('mai sopra il massimo del modello, mai sotto 2k', () => {
     expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: big(262_144) })).toBe(262_144)
     expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: big(8192) })).toBe(8192)
-    // modello più grande della RAM
-    expect(suggestNumCtx({ system: mac(2), modelBytes: 3 * GB, caps: big(8192) })).toBe(2048)
+    // modello più grande della RAM: mai sotto il minimo del modello (predefinito di Ollama)
+    expect(suggestNumCtx({ system: mac(2), modelBytes: 3 * GB, caps: big(8192) })).toBe(4096)
+    expect(suggestNumCtx({ system: mac(2), modelBytes: 3 * GB, caps: { ...big(8192), defaults: { ...big(8192).defaults, numCtx: 8192 } } })).toBe(8192)
     // massimo ignoto: 32k
     expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: bare })).toBe(32768)
   })
@@ -86,6 +88,15 @@ describe('valori suggeriti per il modello', () => {
   it('num_ctx: calcolato dalla RAM vince sul Modelfile; senza RAM il Modelfile, entro il massimo', () => {
     expect(suggestSettings({ system: mac(16), modelBytes: 5 * GB, caps }).numCtx).toBe(8192) // massimo del modello
     expect(suggestSettings({ system: null, modelBytes: null, caps: { ...caps, defaults: { ...caps.defaults, numCtx: 100_000 } } }).numCtx).toBe(8192)
+  })
+})
+
+describe('memoria minima consigliata', () => {
+  it('predefinito di Ollama per il modello (Modelfile, altrimenti 4096), entro il massimo', () => {
+    expect(minNumCtx(caps)).toBe(2048)
+    expect(minNumCtx(bare)).toBe(4096)
+    expect(minNumCtx(null)).toBe(4096)
+    expect(minNumCtx({ ...bare, contextLength: 2048 })).toBe(2048)
   })
 })
 

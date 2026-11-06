@@ -140,11 +140,15 @@ export const SUMMARY = {
   trigger: 0.7,
   /** Si riassumono i messaggi più vecchi finché i recenti scendono sotto questa quota. */
   target: 0.4,
-  /** L'ultimo scambio (domanda e risposta) resta sempre per intero. */
-  keepLast: 2,
-  /** Token massimi del riassunto generato. */
-  maxTokens: 600
+  /** Token massimi del riassunto generato (con memoria grande); con memoria piccola si scala. */
+  maxTokens: 600,
+  minTokens: 64
 } as const
+
+/** Lunghezza del riassunto: un quarto dello spazio per lo storico, tra 64 e 600 token. */
+export function summaryMaxTokens(numCtx: number, reserveTokens: number): number {
+  return Math.min(SUMMARY.maxTokens, Math.max(SUMMARY.minTokens, Math.floor((numCtx - reserveTokens) / 4)))
+}
 
 /** System prompt completo: brief + riassunto della conversazione finora (se c'è). */
 export function withSummary(system: string, summary: string | null | undefined): string {
@@ -184,37 +188,69 @@ export function planSummary<T extends HistoryMessage>(input: SummaryPlanInput<T>
   const { recent } = input
   const cpt = charsPerToken(recent)
   const budget = input.numCtx - input.reserveTokens - (input.systemPrompt ? estimateTokens(input.systemPrompt, cpt) : 0)
-  if (budget <= 0 || recent.length <= SUMMARY.keepLast) return null
+  if (budget <= 0 || recent.length === 0) return null
   const costs = recent.map((m) => estimateTokens(m.content, cpt))
   let used = costs.reduce((a, b) => a + b, 0)
   if (!input.force && used <= budget * SUMMARY.trigger) return null
+
+  // Cosa resta sempre per intero: la domanda in attesa (ultimo messaggio, se è dell'utente). L'ultimo scambio
+  // resta per intero solo se ci sta nella soglia; altrimenti finisce anche lui nel riassunto.
+  const last = recent.length - 1
+  const pending = recent[last].role === 'user' ? 1 : 0
+  const prevRole = last > 0 ? recent[last - 1].role : null
+  const tailStart = pending ? (prevRole === 'assistant' ? last - 1 : last) : prevRole === 'user' ? last - 1 : last
+  const tailCost = costs.slice(tailStart).reduce((a, b) => a + b, 0)
+  const keepMin = tailCost <= budget * SUMMARY.trigger ? recent.length - tailStart : pending
+
   let n = 0
-  while (n < recent.length - SUMMARY.keepLast && used > budget * SUMMARY.target) used -= costs[n++]
+  while (n < recent.length - keepMin && used > budget * SUMMARY.target) used -= costs[n++]
   // Si chiude su una risposta, così i messaggi tenuti iniziano con una domanda.
-  while (n > 0 && n < recent.length - SUMMARY.keepLast && recent[n - 1].role === 'user') n++
+  while (n > 0 && n < recent.length - keepMin && recent[n - 1].role === 'user') n++
   if (n === 0) return null
   return { cover: recent.slice(0, n), keep: recent.slice(n) }
 }
 
-/** Trascrizione dei messaggi da riassumere, dalla più recente a ritroso finché sta in `maxChars`. */
-export function transcript(messages: ReadonlyArray<HistoryMessage>, maxChars: number): string {
-  const lines: string[] = []
-  let chars = 0
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const line = `${messages[i].role === 'user' ? 'Utente' : 'Assistente'}: ${messages[i].content.trim()}`
-    if (chars + line.length > maxChars && lines.length > 0) break
-    lines.push(chars + line.length > maxChars ? line.slice(0, maxChars - chars) + '…' : line)
-    chars += line.length
+/**
+ * Trascrizione dei messaggi da riassumere, divisa in blocchi di al massimo `maxChars` caratteri, in ordine.
+ * I messaggi più lunghi di un blocco vengono spezzati in parti ("Assistente (parte 2/3): …"): niente si perde.
+ */
+export function transcriptChunks(messages: ReadonlyArray<HistoryMessage>, maxChars: number): string[] {
+  const size = Math.max(200, Math.floor(maxChars))
+  const pieces: string[] = []
+  for (const m of messages) {
+    const who = m.role === 'user' ? 'Utente' : 'Assistente'
+    const text = m.content.trim()
+    if (text.length + who.length + 2 <= size) {
+      pieces.push(`${who}: ${text}`)
+      continue
+    }
+    const room = size - who.length - 20
+    const parts = Math.ceil(text.length / room)
+    for (let i = 0; i < parts; i++) pieces.push(`${who} (parte ${i + 1}/${parts}): ${text.slice(i * room, (i + 1) * room)}`)
   }
-  return lines.reverse().join('\n\n')
+  const chunks: string[] = []
+  let current = ''
+  for (const piece of pieces) {
+    if (current && current.length + 2 + piece.length > size) {
+      chunks.push(current)
+      current = ''
+    }
+    current = current ? `${current}\n\n${piece}` : piece
+  }
+  if (current) chunks.push(current)
+  return chunks
 }
 
-export const SUMMARY_PROMPT = `Sei l'archivista di una conversazione tra un utente e un assistente. Aggiorna il riassunto della conversazione con i nuovi messaggi.
+/** Prompt dell'archivista, con la lunghezza massima del riassunto in parole. */
+export function buildSummaryPrompt(maxWords: number): string {
+  return `Sei l'archivista di una conversazione tra un utente e un assistente. Aggiorna il riassunto della conversazione con i nuovi messaggi.
 Scrivi un riassunto compatto in prosa o elenco, nella lingua della conversazione, con:
 - fatti stabiliti e decisioni prese;
 - richieste dell'utente ancora aperte;
 - nomi, numeri, date, termini tecnici e frammenti di codice essenziali, citati esattamente.
-Niente introduzioni né commenti: rispondi solo con il riassunto aggiornato. Massimo 350 parole.`
+Se i nuovi messaggi sono una parte di un messaggio più lungo, integra senza ripetere.
+Niente introduzioni né commenti: rispondi solo con il riassunto aggiornato. Massimo ${maxWords} parole.`
+}
 
 /** Testo del messaggio utente per la richiesta di riassunto. */
 export function buildSummaryRequest(previous: string | null, newMessages: string): string {

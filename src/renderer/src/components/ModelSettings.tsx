@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { STYLE_INSTRUCTIONS, STYLE_LABELS } from '@shared/prompt'
-import { describeSuggestion, maxNumCtx, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
+import { describeSuggestion, maxNumCtx, minNumCtx, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
 import { RESPONSE_STYLES, type Conversation, type ConversationPatch, type ResponseStyle } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
@@ -381,6 +381,8 @@ function SettingSlider(props: {
   step?: number
   /** Etichette agli estremi del cursore; di default i valori formattati. */
   ends?: [string, string]
+  /** Avviso sul valore attuale (es. sotto il minimo consigliato): il cursore diventa rosso. */
+  warning?(v: number): string | null
   onChange(v: number): void
 }): React.JSX.Element {
   const [local, setLocal] = useState(props.value)
@@ -405,6 +407,7 @@ function SettingSlider(props: {
     props.onChange(v)
   }
   const isSuggested = props.suggested != null && props.suggested === local
+  const warning = props.warning?.(local) ?? null
 
   return (
     <div className="flex flex-col gap-1 text-sm">
@@ -444,12 +447,18 @@ function SettingSlider(props: {
         max={max}
         step={indexed ? 1 : props.step}
         value={pos}
-        className="accent-brand-600"
+        className={warning ? 'accent-red-600' : 'accent-brand-600'}
+        data-warning={warning ? 'true' : undefined}
         onChange={(e) => {
           const raw = Number(e.target.value)
           set(indexed ? steps[raw] : raw)
         }}
       />
+      {warning && (
+        <span role="alert" className="text-xs font-medium text-red-700 dark:text-red-400" data-testid={`${props.technical}-warning`}>
+          {warning}
+        </span>
+      )}
       <span className="flex justify-between text-xs text-zinc-400">
         <span>{props.ends?.[0] ?? props.format(indexed ? steps[0] : min)}</span>
         <span>{props.ends?.[1] ?? props.format(indexed ? steps[steps.length - 1] : max)}</span>
@@ -484,6 +493,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
   const suggested = suggestSettings(input)
   const machineCtx = suggestNumCtx(input)
   const ctxSteps = contextSteps(maxNumCtx(caps))
+  const minCtx = minNumCtx(caps)
   const allSuggested =
     effective.temperature === suggested.temperature && effective.topP === suggested.topP && effective.numCtx === suggested.numCtx
 
@@ -536,6 +546,11 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
         steps={ctxSteps}
         format={(v) => `${fmt(v)} token`}
         extra={approxWords}
+        warning={(v) =>
+          v < minCtx
+            ? `Sotto il minimo per questo modello (${fmt(minCtx)} token, predefinito di Ollama): le risposte possono interrompersi e il riassunto perde dettagli.`
+            : null
+        }
         onChange={(v) => save({ numCtx: v })}
       />
       <StyleControl conversation={conversation} />

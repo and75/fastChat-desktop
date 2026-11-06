@@ -45,6 +45,14 @@ export const MIN_NUM_CTX = 2048
 /** Massimo usato se il modello non dichiara la lunghezza del contesto. */
 export const FALLBACK_MAX_CTX = 32768
 
+/**
+ * Memoria minima consigliata: il num_ctx predefinito di Ollama per il modello (Modelfile, altrimenti 4096),
+ * entro il massimo del modello. Sotto questa soglia l'app avvisa; il suggerimento non ci scende mai.
+ */
+export function minNumCtx(caps: ModelCapabilities | null | undefined): number {
+  return Math.min(caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx, maxNumCtx(caps))
+}
+
 export interface SuggestNumCtxInput {
   system: SystemInfo | null
   /** Dimensione del file del modello (pesi), da /api/tags. */
@@ -61,7 +69,7 @@ export const maxNumCtx = (caps: ModelCapabilities | null | undefined): number =>
 /**
  * Memoria della conversazione suggerita per questa macchina e questo modello, in token.
  * Calcolo di massima dalla RAM: (RAM − pesi) ÷ costo per token, arrotondato alla potenza di 2
- * inferiore, tra MIN_NUM_CTX e il massimo del modello. null se mancano RAM o modello.
+ * inferiore, tra il minimo consigliato (minNumCtx) e il massimo del modello. null se mancano RAM o modello.
  */
 export function suggestNumCtx({ system, modelBytes, caps }: SuggestNumCtxInput): number | null {
   if (!system?.ramBytes || !modelBytes) return null
@@ -69,7 +77,7 @@ export function suggestNumCtx({ system, modelBytes, caps }: SuggestNumCtxInput):
   const forContext = system.ramBytes - modelBytes
   const perToken = (caps?.kvBytesPerToken ?? DEFAULT_KV_BYTES_PER_TOKEN) * KV_CACHE_SCALE[system.kvCacheType]
   const tokens = forContext > 0 ? floorPow2(forContext / perToken) : 0
-  return Math.max(MIN_NUM_CTX, Math.min(tokens, maxNumCtx(caps)))
+  return Math.max(MIN_NUM_CTX, minNumCtx(caps), Math.min(tokens, maxNumCtx(caps)))
 }
 
 /** Riga per l'interfaccia: da dove viene il suggerimento. */

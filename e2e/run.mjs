@@ -539,6 +539,10 @@ try {
     await memory.focus()
     await memory.press('Home')
     await waitUntil(async () => (await latestConversation()).numCtx === 1024)
+    // sotto il minimo del modello (4.096, num_ctx del Modelfile di thinker:8b): avviso e cursore rosso
+    await settings.getByTestId('num_ctx-warning').filter({ hasText: 'Sotto il minimo per questo modello (4.096 token' }).waitFor()
+    assert.equal(await memory.getAttribute('data-warning'), 'true')
+    assert.match(await memory.getAttribute('class'), /accent-red-600/)
     const before = (await page.evaluate(() => window.api.conversations.list())).data // (solo per contare)
     const total = (await page.evaluate(async (id) => (await window.api.conversations.get(id)).data.messages.length, before[0].id))
     const box = page.getByRole('textbox', { name: 'Messaggio' })
@@ -560,10 +564,10 @@ try {
     assert.equal(summaryReq.options.num_ctx, 1024)
     assert.match(summaryReq.messages[1].content, /^Messaggi:\n/)
 
-    // la scheda nel flusso, al confine. Prima dell'invio il riassunto ha coperto tutto tranne l'ultimo
-    // scambio; dopo la risposta il passaggio in sottofondo ha coperto anche la risposta precedente.
+    // la scheda nel flusso, al confine. Prima dell'invio il riassunto ha coperto tutto tranne la domanda;
+    // dopo la risposta, con 1.024 token nemmeno l'ultimo scambio ci sta: il passaggio in sottofondo copre tutto.
     const card = page.getByTestId('summary-card')
-    const covered = total
+    const covered = total + 2
     await card.getByText(`copre i ${covered} messaggi qui sopra`).waitFor()
     await card.getByTestId('summary-preview').filter({ hasText: /^risposta0 risposta1/ }).waitFor()
     assert.equal((await page.getByTestId('timeline-dot').evaluateAll((els) => els.filter((e) => e.dataset.summarized === 'true').length)), covered)
@@ -573,14 +577,24 @@ try {
     const order = await page.evaluate(() => [...document.querySelectorAll('[data-message-id]')].map((e) => e.dataset.messageId))
     assert.equal(order.indexOf('summary'), covered)
 
-    // la domanda successiva: il riassunto si aggiorna in modo incrementale (riassunto precedente + nuovi messaggi)
+    // uno scambio breve sta nella memoria: resta per intero, nessun nuovo riassunto
+    const countBefore = summaryRequests().length
     await box.fill('E quindi?')
     await box.press('Enter')
     await page.getByTestId('message-assistant').last().filter({ hasText: 'risposta0' }).waitFor()
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
-    await card.getByText(`copre i ${covered + 1} messaggi qui sopra`).waitFor()
+    await page.waitForTimeout(300)
+    assert.equal(summaryRequests().length, countBefore)
+    await card.getByText(`copre i ${covered} messaggi qui sopra`).waitFor()
+
+    // uno scambio lungo non ci sta: il riassunto si aggiorna in modo incrementale (riassunto precedente + nuovi messaggi)
+    await box.fill('Altri dati: ' + 'e'.repeat(1200))
+    await box.press('Enter')
+    await page.getByTestId('message-assistant').last().filter({ hasText: 'risposta0' }).waitFor()
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
+    await card.getByText(`copre i ${covered + 4} messaggi qui sopra`).waitFor()
     const incremental = summaryRequests().at(-1)
-    assert.match(incremental.messages[1].content, /^Riassunto finora:\nrisposta0 [\s\S]*\n\nNuovi messaggi:\n[\s\S]*Utente: Dati: d/)
+    assert.match(incremental.messages[1].content, /^Riassunto finora:\nrisposta0 [\s\S]*\n\nNuovi messaggi:\n[\s\S]*Utente: Altri dati: e/)
 
     // mostra e modifica nella scheda, poi elimina
     await card.getByTestId('summary-toggle').click()
@@ -604,6 +618,9 @@ try {
     await memory.focus()
     await memory.press('End')
     await waitUntil(async () => (await latestConversation()).numCtx === 32768)
+    // sopra il minimo: niente avviso, cursore normale
+    assert.equal(await settings.getByTestId('num_ctx-warning').count(), 0)
+    assert.equal(await memory.getAttribute('data-warning'), null)
   })
 
   await step('nessun errore JavaScript nel renderer (fase 3)', async () => {

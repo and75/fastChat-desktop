@@ -11,7 +11,8 @@ import {
   computeContextUsage,
   historyAfter,
   planSummary,
-  transcript,
+  summaryMaxTokens,
+  transcriptChunks,
   withSummary,
   estimateTokens,
   formatTokensK,
@@ -272,21 +273,49 @@ describe('riassunto automatico', () => {
     expect(plan.keep.map((m) => m.id)).toEqual(['m6', 'm7'])
   })
 
-  it('planSummary: l\'ultimo scambio resta sempre per intero; il system prompt pesa sul budget', () => {
+  it('planSummary: l\'ultimo scambio resta per intero solo se ci sta; la domanda in attesa sempre', () => {
+    // budget 200: l'ultimo scambio (208) non ci sta → si riassume tutto
     const tiny = planSummary({ recent: eight, systemPrompt: '', numCtx: 300, reserveTokens: 100 })!
-    expect(tiny.keep.map((m) => m.id)).toEqual(['m6', 'm7'])
-    expect(planSummary({ recent: eight.slice(0, 2), systemPrompt: '', numCtx: 100, reserveTokens: 50 })).toBeNull()
+    expect(tiny.cover).toHaveLength(8)
+    expect(tiny.keep).toEqual([])
+    // con una domanda in attesa: resta solo quella
+    const pending = [...eight, msg('q', 'user', 400)]
+    const withQ = planSummary({ recent: pending, systemPrompt: '', numCtx: 300, reserveTokens: 100 })!
+    expect(withQ.keep.map((m) => m.id)).toEqual(['q'])
     // system prompt enorme: budget negativo → niente
     expect(planSummary({ recent: eight, systemPrompt: 'x'.repeat(10_000), numCtx: 1000, reserveTokens: 100 })).toBeNull()
   })
 
-  it('transcript: dalla più recente a ritroso, entro il limite di caratteri', () => {
-    const t = transcript([msg('a', 'user', 100), msg('b', 'assistant', 100), msg('c', 'user', 100)], 260)
-    expect(t.split('\n\n')).toHaveLength(2)
-    expect(t.startsWith('Assistente: ')).toBe(true)
-    expect(t.endsWith('Utente: ' + 'x'.repeat(100))).toBe(true)
-    // almeno un messaggio, troncato
-    expect(transcript([msg('a', 'user', 100)], 20)).toBe('Utente: ' + 'x'.repeat(12) + '…')
+  it('caso reale: memoria 1024, due risposte da ~1.800 token → «Riassumi ora» copre tutti e 4 i messaggi', () => {
+    const conv = [
+      { id: 'u1', role: 'user' as const, content: "Parlami dell'amore!" },
+      { id: 'a1', role: 'assistant' as const, content: 'x'.repeat(6200), evalCount: 1809 },
+      { id: 'u2', role: 'user' as const, content: "Parlami dell'amore romantico" },
+      { id: 'a2', role: 'assistant' as const, content: 'y'.repeat(5900), evalCount: 1750 }
+    ]
+    const plan = planSummary({ recent: conv, systemPrompt: '# Stile della risposta\nRispondi in modo completo', numCtx: 1024, reserveTokens: 512, force: true })!
+    expect(plan.cover.map((m) => m.id)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    // e la domanda successiva: si riassume tutto tranne la domanda stessa
+    const next = planSummary({ recent: [...conv, { id: 'u3', role: 'user' as const, content: 'E poi?' }], systemPrompt: '', numCtx: 1024, reserveTokens: 512 })!
+    expect(next.keep.map((m) => m.id)).toEqual(['u3'])
+  })
+
+  it('transcriptChunks: blocchi in ordine; i messaggi lunghi spezzati in parti, niente si perde', () => {
+    const chunks = transcriptChunks([msg('a', 'user', 100), msg('b', 'assistant', 1000), msg('c', 'user', 100)], 400)
+    expect(chunks.every((c) => c.length <= 400)).toBe(true)
+    expect(chunks[0].startsWith('Utente: ')).toBe(true)
+    expect(chunks.join('\n')).toMatch(/Assistente \(parte 1\/3\): /)
+    expect(chunks.join('\n')).toMatch(/Assistente \(parte 3\/3\): /)
+    // tutto il testo della risposta lunga c'è, in ordine
+    const body = chunks.join('\n').match(/Assistente \(parte \d\/3\): (x+)/g)!.map((p) => p.replace(/^.*: /, '')).join('')
+    expect(body).toBe('x'.repeat(1000))
+    expect(chunks.at(-1)!.endsWith('Utente: ' + 'x'.repeat(100))).toBe(true)
+  })
+
+  it('summaryMaxTokens: un quarto dello spazio per lo storico, tra 64 e 600', () => {
+    expect(summaryMaxTokens(1024, 512)).toBe(128)
+    expect(summaryMaxTokens(32768, 8192)).toBe(600)
+    expect(summaryMaxTokens(256, 256)).toBe(64)
   })
 
   it('buildSummaryRequest e cleanSummary', () => {

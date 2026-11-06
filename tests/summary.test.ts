@@ -56,7 +56,8 @@ describe('summarizer', () => {
     const req = summaryRequests().at(-1)!.body as { messages: Array<{ role: string; content: string }>; think?: boolean; options: Record<string, unknown> }
     expect(req.messages[1].content).toMatch(/^Messaggi:\nUtente: 0 x+\n\nAssistente: 1 x+$/)
     expect(req.think).toBe(false)
-    expect(req.options).toMatchObject({ num_ctx: 2048, num_predict: 600, temperature: 0.2 })
+    // riassunto proporzionato alla memoria: (2048 − 1024) ÷ 4 = 256 token
+    expect(req.options).toMatchObject({ num_ctx: 2048, num_predict: 256, temperature: 0.2 })
   })
 
   it('sopra la soglia riassume in modo incrementale (riassunto precedente + nuovi messaggi)', async () => {
@@ -142,5 +143,41 @@ describe('chat con riassunto', () => {
     expect((await getConversation(h.db, conv.id))!.summary).toBeNull()
     const body = chatRequests().at(-1)!.body as { messages: Array<{ role: string; content: string }> }
     expect(body.messages[0].content).toBe('# Ruolo\nTutor')
+  })
+})
+
+describe('riassunto a blocchi con memoria piccola (caso reale)', () => {
+  it('1024 token, risposte da ~6.000 caratteri: copre tutto, nessuna richiesta sfora num_ctx', async () => {
+    const fake2 = await startFakeOllama([{ name: 'tiny', capabilities: ['completion'], contextLength: 32768, parameters: 'num_ctx 4096', chunks: [{ content: 'Sintesi.' }] }])
+    try {
+      const ollama = createOllamaClient(() => fake2.url)
+      const s = createSummarizer({ db: h.db, ollama })
+      const conv = await createConversation(h.db, { model: 'tiny', numCtx: 1024, style: 'extended' })
+      await addMessage(h.db, { conversationId: conv.id, role: 'user', content: "Parlami dell'amore!" })
+      await addMessage(h.db, { conversationId: conv.id, role: 'assistant', content: 'A'.repeat(6200), evalCount: 1809 })
+      await addMessage(h.db, { conversationId: conv.id, role: 'user', content: "Parlami dell'amore romantico" })
+      await addMessage(h.db, { conversationId: conv.id, role: 'assistant', content: 'B'.repeat(5900), evalCount: 1750 })
+      const r = await s.summarize(conv.id, true)
+      expect(r.outcome).toBe('updated')
+      const msgs = await listMessages(h.db, conv.id)
+      expect(r.conversation?.summaryUpTo).toBe(msgs[3].id) // tutti e 4
+
+      const reqs = fake2.requests.filter((q) => q.path === '/api/chat').map((q) => q.body as { messages: Array<{ content: string }>; options: { num_ctx: number; num_predict: number } })
+      expect(reqs.length).toBeGreaterThan(3) // più blocchi, uno dopo l'altro
+      const sent = reqs.map((q) => q.messages[1].content).join('\n')
+      // tutto il testo delle due risposte è stato letto, niente tagliato
+      expect((sent.match(/A/g) ?? []).length).toBeGreaterThanOrEqual(6200)
+      expect((sent.match(/B/g) ?? []).length).toBeGreaterThanOrEqual(5900)
+      // ogni richiesta (prompt + testo + riassunto da scrivere) sta nei 1024 token (3,4 caratteri per token)
+      for (const q of reqs) {
+        const chars = q.messages.reduce((n, m) => n + m.content.length, 0)
+        expect(Math.ceil(chars / 3.4) + q.options.num_predict).toBeLessThanOrEqual(1024)
+        expect(q.options.num_predict).toBe(128)
+      }
+      // dal secondo blocco in poi il riassunto precedente viene aggiornato
+      expect(reqs[1].messages[1].content.startsWith('Riassunto finora:\nSintesi.')).toBe(true)
+    } finally {
+      await fake2.close()
+    }
   })
 })

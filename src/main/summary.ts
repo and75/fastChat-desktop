@@ -8,9 +8,10 @@ import {
   cleanSummary,
   historyAfter,
   planSummary,
-  SUMMARY,
-  SUMMARY_PROMPT,
-  transcript,
+  buildSummaryPrompt,
+  estimateTokens,
+  summaryMaxTokens,
+  transcriptChunks,
   withSummary
 } from '@shared/prompt'
 import { resolveSettings } from '@shared/settings'
@@ -69,21 +70,29 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
     inProgress.add(conversationId)
     onStart?.()
     try {
-      // La trascrizione deve stare nella memoria insieme a prompt, riassunto precedente e risposta.
+      // Ogni richiesta deve stare nella memoria: prompt + riassunto precedente + blocco di trascrizione +
+      // riassunto da scrivere. I messaggi coperti vanno in blocchi, riassunti uno dopo l'altro: niente si taglia.
       const cpt = charsPerToken(history)
-      const overhead = SUMMARY_PROMPT.length + (previous?.length ?? 0) + 200
-      const maxChars = Math.max(2000, (s.numCtx - SUMMARY.maxTokens) * cpt - overhead)
-      const request: ChatRequest = {
-        model: conv.model,
-        messages: [
-          { role: 'system', content: SUMMARY_PROMPT },
-          { role: 'user', content: buildSummaryRequest(previous, transcript(plan.cover, maxChars)) }
-        ],
-        options: { temperature: 0.2, top_p: s.topP, num_ctx: s.numCtx, num_predict: SUMMARY.maxTokens }
+      const outTokens = summaryMaxTokens(s.numCtx, s.reserveTokens)
+      const prompt = buildSummaryPrompt(Math.max(30, Math.round(outTokens * 0.7)))
+      const previousTokens = Math.max(outTokens, previous ? estimateTokens(previous, cpt) : 0)
+      const room = s.numCtx - outTokens - previousTokens - estimateTokens(prompt, cpt) - 48
+      if (room < 64) return { outcome: 'failed', conversation: conv }
+      let summary = previous
+      for (const chunk of transcriptChunks(plan.cover, room * cpt)) {
+        const request: ChatRequest = {
+          model: conv.model,
+          messages: [
+            { role: 'system', content: prompt },
+            { role: 'user', content: buildSummaryRequest(summary, chunk) }
+          ],
+          options: { temperature: 0.2, top_p: s.topP, num_ctx: s.numCtx, num_predict: outTokens }
+        }
+        if (caps?.thinking) request.think = false
+        const next = cleanSummary((await ollama.chatStream(request, {})).content)
+        if (!next) return { outcome: 'failed', conversation: conv }
+        summary = next
       }
-      if (caps?.thinking) request.think = false
-      const result = await ollama.chatStream(request, {})
-      const summary = cleanSummary(result.content)
       if (!summary) return { outcome: 'failed', conversation: conv }
 
       // Nel frattempo la conversazione può essere cambiata (altri messaggi): il riassunto resta valido,
