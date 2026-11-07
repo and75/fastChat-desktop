@@ -5,7 +5,7 @@ import { useConversations } from '../store/useConversations'
 import { useTemplates } from '../store/useTemplates'
 import { registerPendingSave } from '../store/pendingSaves'
 import { BrainIcon, IdCardIcon } from './icons'
-import { ModelSettings } from './ModelSettings'
+import { ModelSettings, PlanModeToggle } from './ModelSettings'
 
 const FIELDS: Array<{ key: keyof Brief; label: string; placeholder: string; rows: number }> = [
   { key: 'role', label: 'Ruolo', placeholder: 'Es. Sei un revisore di codice TypeScript esperto.', rows: 2 },
@@ -238,6 +238,12 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
               />
             </label>
           ))}
+        </div>
+        <div className="mt-4 flex flex-col gap-1 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+          <PlanModeToggle conversation={conversation} />
+          <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+            Prima il piano, poi l'esecuzione: il modello propone i passi, tu li approvi o li modifichi.
+          </span>
         </div>
         <SaveAsTemplate conversation={conversation} beforeSave={flush} />
         <details className="mt-4 text-sm">

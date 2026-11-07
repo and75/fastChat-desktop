@@ -690,8 +690,8 @@ try {
     await openTab('Brief')
     await page.getByTestId('brief-panel').getByLabel('Vincoli').fill('Usa esempi con la pizza.')
     await page.getByTestId('brief-panel').getByTestId('brief-status').filter({ hasText: 'Salvato' }).waitFor()
-    await openTab('Modello')
-    await setSwitch(page.getByTestId('model-settings'), 'Plan mode', true)
+    await openTab('Brief')
+    await setSwitch(page.getByTestId('brief-panel'), 'Plan mode', true)
     await page.getByRole('button', { name: 'Pianifica' }).waitFor()
 
     const before = planRequests().length
@@ -773,8 +773,8 @@ try {
   })
 
   await step('plan mode spento: si torna a "Invia"', async () => {
-    await openTab('Modello')
-    await setSwitch(page.getByTestId('model-settings'), 'Plan mode', false)
+    await openTab('Brief')
+    await setSwitch(page.getByTestId('brief-panel'), 'Plan mode', false)
     await page.getByRole('button', { name: 'Invia' }).waitFor()
   })
 

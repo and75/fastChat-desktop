@@ -141,18 +141,16 @@ export function ExecutionRow({ model }: { model: string }): React.JSX.Element | 
   const gpu = tps(setting?.benchmark?.find((r) => r.numGpu != null && r.numGpu >= 999))
   return (
     <div className="flex flex-col gap-1 pb-3 text-sm" data-testid="execution-row">
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex shrink-0 items-baseline gap-1.5 whitespace-nowrap">
-          <span className="text-[13px] font-semibold">Dove gira</span>
-          <span className="rounded border border-zinc-200 px-1 text-[10.5px] text-zinc-500 dark:border-zinc-700" title="Vale per questo modello in tutte le conversazioni">
-            per modello
-          </span>
+      <span className="flex items-baseline gap-1.5 whitespace-nowrap">
+        <span className="text-[13px] font-semibold">Dove gira</span>
+        <span className="rounded border border-zinc-200 px-1 text-[10.5px] text-zinc-500 dark:border-zinc-700" title="Vale per questo modello in tutte le conversazioni">
+          per modello
         </span>
-        <span className="flex min-w-0 items-center justify-end gap-1.5 whitespace-nowrap text-xs text-zinc-500 tabular-nums">
-          <NumGpuSelect model={model} compact />
-          {best && <span>{best} tok/s</span>}
-        </span>
-      </div>
+      </span>
+      <span className="flex items-center gap-2 whitespace-nowrap text-xs text-zinc-500 tabular-nums">
+        <NumGpuSelect model={model} compact />
+        {best && <span>{best} tok/s</span>}
+      </span>
       <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
         {model}, CPU o GPU in tutte le conversazioni.
         {cpu || gpu ? ` Dal test: ${[cpu && `${cpu} token/s in CPU`, gpu && `${gpu} in GPU`].filter(Boolean).join(', ')}.` : ''}{' '}
@@ -231,7 +229,7 @@ export function StyleControl({ conversation, compact = false }: { conversation: 
         </code>
       </span>
       <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
-        Quanto il modello scrive, dal più sintetico al più esteso. È un'istruzione nel system prompt, non un limite di token: riduce la verbosità senza fermare la risposta a metà, e chiede di non sacrificare la precisione.
+        Quanto il modello scrive. È un'istruzione, non un limite di token: la risposta non si tronca e la precisione non cambia.
       </span>
       <div role="radiogroup" aria-label="Stile della risposta" className="mt-1 grid grid-cols-4 overflow-hidden rounded-lg border border-zinc-300 text-xs dark:border-zinc-700">
         {RESPONSE_STYLES.map((st) => (
@@ -257,8 +255,10 @@ export function StyleControl({ conversation, compact = false }: { conversation: 
         {STYLE_HINTS[conversation.style]}
       </span>
       {instruction && (
-        <details className="text-xs text-zinc-500">
-          <summary className="cursor-pointer">Istruzione inviata al modello</summary>
+        <details className="group/instr text-xs text-zinc-500">
+          <summary className="cursor-pointer list-none text-brand-700 dark:text-brand-300 [&::-webkit-details-marker]:hidden">
+            <span aria-hidden className="inline-block transition-transform group-open/instr:rotate-90">▸</span> Istruzione inviata al modello
+          </summary>
           <p className="mt-1 whitespace-pre-wrap rounded-lg bg-zinc-100 p-2 dark:bg-zinc-900">{instruction}</p>
         </details>
       )}
@@ -683,7 +683,8 @@ function Group({ id, title, badge, summary, children }: { id: string; title: str
 /**
  * Pannello Modello. In cima, fisso, «Dove gira»; poi tre gruppi richiudibili nell'ordine in cui si interviene:
  * come sceglie le parole, come risponde, cosa ricorda; in fondo, sempre visibile, lo stato del contesto con
- * il dettaglio del calcolo e le chiamate a Ollama.
+ * il dettaglio del calcolo e le chiamate a Ollama. Il plan mode sta nella scheda Brief: riguarda come si lavora
+ * con il modello, non i suoi parametri.
  */
 export function ModelSettings({ conversation }: { conversation: Conversation }): React.JSX.Element {
   const save = useDebouncedPatch(conversation.id)
@@ -706,7 +707,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
   const thinkSupported = caps?.thinking === true
   const covered = conversation.summary && conversation.summaryUpTo ? messages.findIndex((m) => m.id === conversation.summaryUpTo) + 1 : 0
   const wordsSummary = `temperatura ${effective.temperature.toFixed(2)} · varietà ${effective.topP.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · seed ${conversation.seed ?? 'casuale'}`
-  const answerSummary = `${STYLE_LABELS[conversation.style]} · ragionamento ${!caps ? '…' : !thinkSupported ? 'non disponibile' : conversation.think ? 'attivo' : 'spento'} · plan mode ${conversation.planMode ? 'attivo' : 'spento'}`
+  const answerSummary = `ragionamento ${!caps ? '…' : !thinkSupported ? 'non disponibile' : conversation.think ? 'attivo' : 'spento'} · stile ${STYLE_LABELS[conversation.style]}`
   const memorySummary =
     `${fmt(effective.numCtx)} token · riassunto ${conversation.summary ? `attivo (${covered > 0 ? `${covered} messaggi` : 'in vigore'})` : conversation.autoSummary ? 'automatico' : 'spento'}` +
     ` · memoria lunga ${conversation.longMemory ? 'attiva' : 'spenta'}`
@@ -765,7 +766,6 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
       </Group>
 
       <Group id="answer" title="Come risponde" summary={answerSummary}>
-        <StyleControl conversation={conversation} />
         <div className="flex flex-col gap-1">
           <ThinkToggle conversation={conversation} />
           <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
@@ -778,10 +778,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
                   : `${conversation.model} non supporta il ragionamento.`}
           </span>
         </div>
-        <div className="flex flex-col gap-1">
-          <PlanModeToggle conversation={conversation} />
-          <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">Prima il piano, poi l'esecuzione: il modello propone i passi, tu li approvi o li modifichi.</span>
-        </div>
+        <StyleControl conversation={conversation} />
       </Group>
 
       <Group id="memory" title="Cosa ricorda" summary={memorySummary}>

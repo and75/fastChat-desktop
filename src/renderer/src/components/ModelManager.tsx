@@ -35,7 +35,7 @@ export function NumGpuSelect({ model, compact = false }: { model: string; compac
     <span className="flex items-center gap-2">
       <select
         aria-label={`Esecuzione di ${model}`}
-        className={'rounded border border-zinc-300 bg-white px-1.5 py-0.5 dark:border-zinc-700 dark:bg-zinc-900 ' + (compact ? 'text-xs' : 'text-sm')}
+        className={'rounded border border-zinc-300 bg-white px-1.5 py-0.5 dark:border-zinc-700 dark:bg-zinc-900 ' + (compact ? 'w-36 text-xs' : 'text-sm')}
         value={mode}
         onChange={(e) => {
           const m = e.target.value
