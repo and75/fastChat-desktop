@@ -2,6 +2,7 @@ import type {
   AppSettings,
   BenchmarkProgress,
   MemoryStatus,
+  ContextCall,
   ModelSetting,
   ModelSettingPatch,
   PullProgress,
@@ -51,6 +52,11 @@ export interface Api {
     status(conversationId: string): Promise<Result<MemoryStatus>>
     /** Rifà l'indice da zero (es. dopo aver cambiato il modello di embedding). */
     rebuild(conversationId: string): Promise<Result<MemoryStatus>>
+  }
+  context: {
+    /** Ultime chiamate a Ollama della conversazione, dalla più recente. */
+    calls(conversationId: string): Promise<Result<ContextCall[]>>
+    onCall(cb: (call: ContextCall) => void): () => void
   }
   ollamaEnv: {
     /** Variabili d'ambiente di Ollama: valori attuali (Windows) e se l'app può applicarle da sola. */

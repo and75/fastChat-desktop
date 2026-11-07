@@ -128,7 +128,7 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
       if (!m) return json(res, 404, { error: `model '${name}' not found` })
       const input = (body as { input?: string[] | string }).input
       const texts = Array.isArray(input) ? input : [input ?? '']
-      return json(res, 200, { model: name, embeddings: texts.map(fakeEmbedding) })
+      return json(res, 200, { model: name, embeddings: texts.map(fakeEmbedding), prompt_eval_count: texts.reduce((n, t) => n + Math.ceil(t.length / 4), 0), total_duration: 2e6, load_duration: 1e6 })
     }
 
     if (req.url === '/api/delete') {

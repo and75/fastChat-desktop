@@ -28,6 +28,7 @@ import {
   getTemplate,
   getSettings,
   listConversations,
+  listContextCalls,
   listModelSettings,
   removeModelSetting,
   saveModelSetting,
@@ -43,6 +44,7 @@ import {
 import { suggestedFileName, toJson, toMarkdown, type ExportFormat } from './export'
 import { createOllamaClient, OllamaError, type OllamaClient } from './ollama'
 import { createMemory } from './memory'
+import { createContextLog } from './contextLog'
 import { createSummarizer } from './summary'
 import { isLocalOllama, systemInfo } from './system'
 import { runBenchmark } from './benchmark'
@@ -96,13 +98,18 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   const watched = new WeakSet<WebContents>()
   const system = async (): Promise<SystemInfo> => systemInfo(getOllamaUrl(), (await getSettings(db)).kvCacheType)
   const calibrate: CalibrateDeps = { ollama, system }
-  const summarizer = createSummarizer({ db, ollama })
-  const memory = createMemory({ db, ollama })
+  // Monitor del contesto: ogni chiamata registrata arriva a tutte le finestre.
+  const contextLog = createContextLog(db, (call) => {
+    for (const w of BrowserWindow.getAllWindows()) if (!w.webContents.isDestroyed()) w.webContents.send(IPC.contextCallAdded, call)
+  })
+  const summarizer = createSummarizer({ db, ollama, contextLog })
+  const memory = createMemory({ db, ollama, contextLog })
   const chat = createChatService({
     db,
     ollama,
     summarizer,
     memory,
+    contextLog,
     emit: (target, event) => {
       const wc = target as WebContents
       if (!wc.isDestroyed()) wc.send(IPC.chatStream, event)
@@ -310,6 +317,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     if (!conv) throw new Error('Conversazione non trovata')
     return conv
   }
+  handle(IPC.contextCalls, (_e, id: string) => listContextCalls(db, requireId(id)))
   handle(IPC.memoryStatus, async (_e, id: string) => memory.status(await convOrThrow(id)))
   handle(IPC.memoryRebuild, async (_e, id: string) => {
     const conv = await convOrThrow(id)

@@ -2,15 +2,17 @@
 // prima di ogni risposta, recupera gli estratti più pertinenti alla domanda. Attiva solo dopo il primo
 // riassunto: prima tutti i messaggi sono già nel prompt per intero.
 import { buildChunks, buildMemorySection, fromBuffer, MEMORY, memoryQuery, pickChunks, toBuffer } from '@shared/memory'
-import { charsPerToken, historyAfter } from '@shared/prompt'
+import { charsPerToken, estimateTokens, historyAfter } from '@shared/prompt'
 import type { Conversation, MemoryRef, MemoryStatus, Message } from '@shared/types'
 import type { Db } from './db/client'
 import { addChunks, getModelSetting, getSettings, listChunks, listMessages, removeChunks } from './db/repo'
-import { OllamaError, type OllamaClient } from './ollama'
+import { callInput, type ContextLog } from './contextLog'
+import { OllamaError, type EmbedStats, type OllamaClient } from './ollama'
 
 export interface MemoryDeps {
   db: Db
   ollama: OllamaClient
+  contextLog?: ContextLog
 }
 
 /** Pezzi per richiesta di embedding. */
@@ -31,7 +33,34 @@ function coveredMessages(conv: Conversation, history: Message[]): Message[] | nu
   return history.slice(0, idx + 1)
 }
 
-export function createMemory({ db, ollama }: MemoryDeps) {
+export function createMemory({ db, ollama, contextLog }: MemoryDeps) {
+  /** Embedding registrato nel monitor del contesto (una voce: i testi inviati). */
+  async function embed(
+    conversationId: string,
+    kind: 'embed-index' | 'embed-query',
+    model: string,
+    texts: string[],
+    options: { num_gpu?: number } | undefined,
+    cpt: number
+  ): Promise<number[][]> {
+    let stats: EmbedStats | null = null
+    const start = {
+      conversationId,
+      kind,
+      model,
+      numCtx: null,
+      parts: [{ key: 'texts' as const, label: kind === 'embed-index' ? 'Pezzi da indicizzare' : 'Domanda e contesto', tokens: texts.reduce((n, t) => n + estimateTokens(t, cpt), 0), count: texts.length }]
+    }
+    try {
+      const vectors = await ollama.embed(model, texts, options, (s) => (stats = s))
+      await contextLog?.record(callInput(start, stats))
+      return vectors
+    } catch (err) {
+      await contextLog?.record(callInput(start, null, err))
+      throw err
+    }
+  }
+
   const indexing = new Map<string, Promise<number>>()
 
   const embeddingModel = async (): Promise<string> => (await getSettings(db)).embeddingModel
@@ -68,7 +97,7 @@ export function createMemory({ db, ollama }: MemoryDeps) {
       let added = 0
       for (let i = 0; i < drafts.length; i += EMBED_BATCH) {
         const batch = drafts.slice(i, i + EMBED_BATCH)
-        const vectors = await ollama.embed(model, batch.map((d) => d.text), options)
+        const vectors = await embed(conv.id, 'embed-index', model, batch.map((d) => d.text), options, charsPerToken(history))
         await addChunks(
           db,
           batch.map((d, j) => ({ conversationId: conv.id, messageId: d.messageId, role: d.role, part: d.part, text: d.text, model, embedding: toBuffer(vectors[j]) }))
@@ -112,7 +141,7 @@ export function createMemory({ db, ollama }: MemoryDeps) {
       .filter((c) => coveredIds.has(c.messageId))
       .map((c) => ({ id: c.id, messageId: c.messageId, role: c.role, text: c.text, embedding: fromBuffer(c.embedding) }))
     if (chunks.length === 0) return empty
-    const [query] = await ollama.embed(model, [memoryQuery(question.content, previous?.content)], await embedOptions(conv.model))
+    const [query] = await embed(conv.id, 'embed-query', model, [memoryQuery(question.content, previous?.content)], await embedOptions(conv.model), charsPerToken(history))
     const picked = pickChunks(query, chunks, maxTokens * charsPerToken(history))
     const position = new Map(history.map((m, i) => [m.id, i + 1]))
     const items = picked.map((p) => ({ ...p, position: position.get(p.messageId) ?? 0 }))

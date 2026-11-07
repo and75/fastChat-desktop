@@ -60,7 +60,17 @@ export interface ChatResult {
   aborted: boolean
 }
 
+/** Conteggi di /api/embed: token letti e tempi. */
+export interface EmbedStats {
+  promptEvalCount: number | null
+  durationMs: number | null
+  loadMs: number | null
+}
+
 type FetchLike = typeof fetch
+
+/** Nanosecondi di Ollama → millisecondi. */
+const ms = (ns: number | undefined): number | null => (ns != null ? Math.round(ns / 1e6) : null)
 
 interface ChatChunk {
   message?: { role?: string; content?: string; thinking?: string }
@@ -94,7 +104,7 @@ export interface OllamaClient {
   pullModel(name: string, onProgress: (p: { status: string; completed: number | null; total: number | null }) => void, signal?: AbortSignal): Promise<void>
   deleteModel(name: string): Promise<void>
   /** Embedding di più testi in una richiesta (/api/embed). */
-  embed(model: string, input: string[], options?: { num_gpu?: number }): Promise<number[][]>
+  embed(model: string, input: string[], options?: { num_gpu?: number }, onStats?: (stats: EmbedStats) => void): Promise<number[][]>
   clearCache(): void
 }
 
@@ -252,7 +262,6 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       doneReason: null,
       aborted: false
     }
-    const ms = (ns: number | undefined): number | null => (ns != null ? Math.round(ns / 1e6) : null)
 
     const handleLine = (line: string): void => {
       if (!line.trim()) return
@@ -362,12 +371,13 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     capsCache.clear()
   }
 
-  async function embed(model: string, input: string[], options?: { num_gpu?: number }): Promise<number[][]> {
+  async function embed(model: string, input: string[], options?: { num_gpu?: number }, onStats?: (stats: EmbedStats) => void): Promise<number[][]> {
     const res = await request('/api/embed', { method: 'POST', body: JSON.stringify({ model, input, ...(options ? { options } : {}) }) })
-    const body = (await res.json()) as { embeddings?: number[][] }
+    const body = (await res.json()) as { embeddings?: number[][]; prompt_eval_count?: number; total_duration?: number; load_duration?: number }
     if (!Array.isArray(body.embeddings) || body.embeddings.length !== input.length) {
       throw new OllamaError('parse', 'Risposta di /api/embed non valida')
     }
+    onStats?.({ promptEvalCount: body.prompt_eval_count ?? null, durationMs: ms(body.total_duration), loadMs: ms(body.load_duration) })
     return body.embeddings
   }
 

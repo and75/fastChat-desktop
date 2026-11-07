@@ -195,3 +195,15 @@ export function SettingsIcon(props: IconProps): React.JSX.Element {
     </Svg>
   )
 }
+
+/** lucide/chart-column */
+export function ChartIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+      <path d="M18 17V9" />
+      <path d="M13 17V5" />
+      <path d="M8 17v-3" />
+    </Svg>
+  )
+}

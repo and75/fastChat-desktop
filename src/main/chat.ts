@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto'
 import {
   buildExecutePrompt,
   buildPlanPrompt,
+  buildStyleSection,
   buildSystemPrompt,
+  charsPerToken,
   DEFAULT_HISTORY_LIMITS,
   estimateTokens,
   historyAfter,
@@ -28,6 +30,9 @@ import {
   updateConversation,
   updatePlan
 } from './db/repo'
+import { chatParts } from '@shared/context'
+import type { ContextPart } from '@shared/types'
+import { callInput, type CallStart, type ContextLog } from './contextLog'
 import type { ChatMessage, ChatOptions, ChatRequest, OllamaClient } from './ollama'
 import { memoryBudget, type Memory, type Recall } from './memory'
 import type { Summarizer } from './summary'
@@ -45,6 +50,8 @@ export interface ChatServiceDeps {
   summarizer?: Summarizer
   /** Memoria della conversazione (RAG sui messaggi riassunti). */
   memory?: Memory
+  /** Monitor del contesto: registra ogni chiamata a Ollama. */
+  contextLog?: ContextLog
 }
 
 interface ActiveStream {
@@ -88,14 +95,36 @@ export function buildChatMessages(
   /** Estratti della memoria della conversazione (sezione già pronta), dopo il riassunto. */
   memory = ''
 ): ChatMessage[] {
+  return composeChat(conv, history, system, caps, memory).messages
+}
+
+/** Come buildChatMessages, più le voci per il monitor del contesto e i messaggi rimasti fuori. */
+export function composeChat(
+  conv: Conversation,
+  history: Message[],
+  base: string,
+  caps: ModelCapabilities | null = null,
+  memory = '',
+  memoryCount = 0
+): { messages: ChatMessage[]; parts: ContextPart[]; dropped: number } {
   const s = resolveSettings(conv, caps)
   const { recent, aligned } = historyAfter(history, conv.summaryUpTo)
-  if (aligned) system = withSummary(system, conv.summary)
+  let system = aligned ? withSummary(base, conv.summary) : base
+  const summary = system.slice(base.length)
   if (memory) system = system ? `${system}\n\n${memory}` : memory
   const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.reserveTokens })
   const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
   for (const m of picked) out.push({ role: m.role, content: m.content })
-  return out
+  const parts = chatParts({
+    base,
+    style: buildStyleSection(conv.style),
+    summary,
+    memory,
+    memoryCount,
+    messages: picked,
+    cpt: charsPerToken(history)
+  })
+  return { messages: out, parts, dropped: recent.length - picked.length }
 }
 
 const TITLE_PROMPT = `Genera un titolo breve (da 2 a 6 parole) per la conversazione che segue.
@@ -133,7 +162,7 @@ function systemFor(conv: Conversation, mode: Mode): string {
   }
 }
 
-export function createChatService({ db, ollama, emit, onConversationUpdated, summarizer, memory }: ChatServiceDeps) {
+export function createChatService({ db, ollama, emit, onConversationUpdated, summarizer, memory, contextLog }: ChatServiceDeps) {
   const streams = new Map<string, ActiveStream>()
 
   const isBusy = (conversationId: string): boolean =>
@@ -197,7 +226,22 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         options: { ...buildOptions(conv, caps, await numGpuOf(conv.model)), temperature: 0.3, num_predict: 32 }
       }
       if (caps?.thinking) request.think = false
-      title = cleanTitle((await ollama.chatStream(request, {})).content)
+      const start: CallStart = {
+        conversationId,
+        kind: 'title',
+        model: conv.model,
+        numCtx: request.options?.num_ctx ?? null,
+        parts: [
+          { key: 'instructions', label: 'Istruzioni', tokens: estimateTokens(TITLE_PROMPT, charsPerToken(history)) },
+          { key: 'transcript', label: 'Domanda e risposta', tokens: estimateTokens(request.messages[1].content, charsPerToken(history)) }
+        ]
+      }
+      const result = await ollama.chatStream(request, {}).catch(async (err: unknown) => {
+        await contextLog?.record(callInput(start, null, err))
+        throw err
+      })
+      await contextLog?.record(callInput(start, result))
+      title = cleanTitle(result.content)
     } catch {
       /* si usa il titolo di riserva */
     }
@@ -256,16 +300,31 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
   }
 
   /** Richiesta a Ollama per lo stato attuale della conversazione. */
-  async function buildRequest(conv: Conversation, mode: Mode, caps: ModelCapabilities | null, memorySection = ''): Promise<ChatRequest> {
+  async function buildRequest(
+    conv: Conversation,
+    mode: Mode,
+    caps: ModelCapabilities | null,
+    memorySection = '',
+    memoryCount = 0
+  ): Promise<{ request: ChatRequest; start: CallStart }> {
     const history = await listMessages(db, conv.id)
+    const composed = composeChat(conv, history, systemFor(conv, mode), caps, memorySection, memoryCount)
     const request: ChatRequest = {
       model: conv.model,
-      messages: buildChatMessages(conv, history, systemFor(conv, mode), caps, memorySection),
+      messages: composed.messages,
       options: buildOptions(conv, caps, await numGpuOf(conv.model))
     }
     if (mode.kind === 'plan') request.format = PLAN_SCHEMA as unknown as Record<string, unknown>
     if (caps?.thinking) request.think = resolveSettings(conv, caps).think
-    return request
+    const start: CallStart = {
+      conversationId: conv.id,
+      kind: mode.kind,
+      model: conv.model,
+      numCtx: request.options?.num_ctx ?? null,
+      parts: composed.parts,
+      droppedMessages: composed.dropped
+    }
+    return { request, start }
   }
 
   async function startStream(target: StreamTarget, original: Conversation, mode: Mode): Promise<string> {
@@ -298,20 +357,26 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         let recall: Recall = { section: '', refs: [] }
         if (memory && conv.longMemory && conv.summary) {
           emit(target, { ...base, type: 'remembering' })
-          const draft = await buildRequest(conv, mode, caps)
+          const { request: draft } = await buildRequest(conv, mode, caps)
           const s = resolveSettings(conv, caps)
           const used = draft.messages.reduce((n, m) => n + estimateTokens(m.content), 0)
           recall = await memory.recall(conv, memoryBudget(s.numCtx, s.reserveTokens, used)).catch(() => recall)
         }
-        const request = await buildRequest(conv, mode, caps, recall.section)
-        const result = await ollama.chatStream(
-          request,
-          {
-            onThinking: (delta) => emit(target, { ...base, type: 'thinking', delta }),
-            onContent: (delta) => emit(target, { ...base, type: 'content', delta })
-          },
-          controller.signal
-        )
+        const { request, start } = await buildRequest(conv, mode, caps, recall.section, recall.refs.length)
+        const result = await ollama
+          .chatStream(
+            request,
+            {
+              onThinking: (delta) => emit(target, { ...base, type: 'thinking', delta }),
+              onContent: (delta) => emit(target, { ...base, type: 'content', delta })
+            },
+            controller.signal
+          )
+          .catch(async (err: unknown) => {
+            await contextLog?.record(callInput(start, null, err))
+            throw err
+          })
+        await contextLog?.record(callInput(start, result))
         const done = await finish(conv, mode, result, recall.refs)
         answered = !!done.message
         emit(target, { ...base, type: 'done', ...done })

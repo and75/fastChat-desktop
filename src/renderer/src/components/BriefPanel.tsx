@@ -4,7 +4,8 @@ import type { Brief, Conversation } from '@shared/types'
 import { useConversations } from '../store/useConversations'
 import { useTemplates } from '../store/useTemplates'
 import { registerPendingSave } from '../store/pendingSaves'
-import { BrainIcon, IdCardIcon } from './icons'
+import { ContextMonitor } from './ContextMonitor'
+import { BrainIcon, ChartIcon, IdCardIcon } from './icons'
 import { ModelSettings } from './ModelSettings'
 
 const FIELDS: Array<{ key: keyof Brief; label: string; placeholder: string; rows: number }> = [
@@ -72,14 +73,16 @@ function SaveAsTemplate({ conversation, beforeSave }: { conversation: Conversati
   )
 }
 
-type PanelTab = 'model' | 'brief'
+type PanelTab = 'model' | 'brief' | 'context'
+const PANEL_TABS: PanelTab[] = ['model', 'brief', 'context']
 const TAB_KEY = 'fastchat.panelTab'
 
 /** Scheda del pannello, ricordata tra una conversazione e l'altra e dopo il riavvio. */
 function usePanelTab(): [PanelTab, (t: PanelTab) => void] {
   const [tab, setTab] = useState<PanelTab>(() => {
     try {
-      return localStorage.getItem(TAB_KEY) === 'model' ? 'model' : 'brief'
+      const saved = localStorage.getItem(TAB_KEY) as PanelTab | null
+      return saved && PANEL_TABS.includes(saved) ? saved : 'brief'
     } catch {
       return 'brief'
     }
@@ -148,7 +151,8 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
 
   const tabs: Array<{ id: PanelTab; label: string; icon: React.ReactNode; filled?: boolean }> = [
     { id: 'model', label: 'Modello', icon: <BrainIcon /> },
-    { id: 'brief', label: 'Brief', icon: <IdCardIcon />, filled: preview !== '' }
+    { id: 'brief', label: 'Brief', icon: <IdCardIcon />, filled: preview !== '' },
+    { id: 'context', label: 'Contesto', icon: <ChartIcon /> }
   ]
 
   return (
@@ -164,7 +168,8 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
         onKeyDown={(e) => {
           if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
           e.preventDefault()
-          const next = tab === 'model' ? 'brief' : 'model'
+          const i = PANEL_TABS.indexOf(tab)
+          const next = PANEL_TABS[(i + (e.key === 'ArrowRight' ? 1 : PANEL_TABS.length - 1)) % PANEL_TABS.length]
           setTab(next)
           document.getElementById(`panel-tab-${next}`)?.focus()
         }}
@@ -197,7 +202,17 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
         })}
       </div>
 
-      {/* Entrambe le schede restano montate: salvataggi in sospeso e stato locale non si perdono. */}
+      <div
+        role="tabpanel"
+        id="panel-context"
+        aria-labelledby="panel-tab-context"
+        hidden={tab !== 'context'}
+        className="relative min-h-0 flex-1 overflow-y-auto p-4"
+      >
+        <ContextMonitor conversation={conversation} />
+      </div>
+
+      {/* Tutte le schede restano montate: salvataggi in sospeso e stato locale non si perdono. */}
       <div
         role="tabpanel"
         id="panel-model"

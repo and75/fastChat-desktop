@@ -132,6 +132,22 @@ await settings.getByText('Memoria della conversazione').first().scrollIntoViewIf
 await page.waitForTimeout(300)
 await page.screenshot({ path: out('4-pannello-modello.png') })
 
+// scheda Contesto: ultima risposta, poi il riassunto
+await page.getByRole('tab', { name: 'Contesto' }).click()
+const monitor = page.getByTestId('context-monitor')
+await monitor.waitFor()
+const pick = async (re) => {
+  const options = await monitor.getByTestId('context-call-select').locator('option').allTextContents()
+  const label = options.find((o) => re.test(o))
+  if (label) await monitor.getByTestId('context-call-select').selectOption({ label })
+  await page.waitForTimeout(300)
+}
+await pick(/^Risposta/)
+await page.screenshot({ path: out('7-contesto-risposta.png') })
+await pick(/^Riassunto/)
+await page.screenshot({ path: out('8-contesto-riassunto.png') })
+await page.getByRole('tab', { name: 'Modello' }).click()
+
 // impostazioni → Modelli: test CPU/GPU su gemma (GPU integrata: vince la CPU)
 await page.getByRole('button', { name: 'Impostazioni' }).click()
 const dialog = page.getByTestId('settings-dialog')

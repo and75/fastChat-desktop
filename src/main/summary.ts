@@ -19,11 +19,13 @@ import { resolveSettings } from '@shared/settings'
 import type { Conversation, ModelCapabilities } from '@shared/types'
 import type { Db } from './db/client'
 import { getConversation, getModelSetting, listMessages, updateConversation } from './db/repo'
-import type { ChatRequest, OllamaClient } from './ollama'
+import { callInput, type CallStart, type ContextLog } from './contextLog'
+import type { ChatRequest, ChatResult, OllamaClient } from './ollama'
 
 export interface SummarizerDeps {
   db: Db
   ollama: OllamaClient
+  contextLog?: ContextLog
 }
 
 /** Testo fino all'ultima riga completa (per un riassunto tagliato a metà frase). */
@@ -34,7 +36,19 @@ export function completeLines(text: string): string {
 
 export type SummaryOutcome = 'updated' | 'not-needed' | 'disabled' | 'failed'
 
-export function createSummarizer({ db, ollama }: SummarizerDeps) {
+export function createSummarizer({ db, ollama, contextLog }: SummarizerDeps) {
+  /** Chiamata a Ollama registrata nel monitor del contesto. */
+  async function call(request: ChatRequest, start: CallStart): Promise<ChatResult> {
+    try {
+      const result = await ollama.chatStream(request, {})
+      await contextLog?.record(callInput(start, result))
+      return result
+    } catch (err) {
+      await contextLog?.record(callInput(start, null, err))
+      throw err
+    }
+  }
+
   /** Riassunti in corso, per conversazione: chi deve rispondere può aspettarli. */
   const running = new Map<string, Promise<unknown>>()
 
@@ -125,7 +139,8 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
       const room = s.numCtx - outTokens - previousTokens - estimateTokens(prompt, cpt) - 48
       if (room < 64) return { outcome: 'failed', conversation: conv }
       let summary = previous
-      for (const chunk of transcriptChunks(plan.cover, room * cpt)) {
+      const chunks = transcriptChunks(plan.cover, room * cpt)
+      for (const [i, chunk] of chunks.entries()) {
         const request: ChatRequest = {
           model: conv.model,
           messages: [
@@ -135,7 +150,19 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
           options: { temperature: 0.2, top_p: s.topP, num_ctx: s.numCtx, num_predict: outTokens, ...(numGpu != null ? { num_gpu: numGpu } : {}) }
         }
         if (caps?.thinking) request.think = false
-        const result = await ollama.chatStream(request, {})
+        const start: CallStart = {
+          conversationId,
+          kind: 'summary',
+          note: chunks.length > 1 ? `blocco ${i + 1} di ${chunks.length}` : null,
+          model: conv.model,
+          numCtx: s.numCtx,
+          parts: [
+            { key: 'instructions', label: 'Istruzioni', tokens: estimateTokens(prompt, cpt) },
+            ...(summary ? [{ key: 'summary' as const, label: 'Riassunto precedente', tokens: estimateTokens(summary, cpt) }] : []),
+            { key: 'transcript', label: 'Messaggi da riassumere', tokens: estimateTokens(chunk, cpt), ...(i === 0 ? { count: plan.cover.length } : {}) }
+          ]
+        }
+        const result = await call(request, start)
         let next = cleanSummary(result.content)
         if (next && result.doneReason === 'length') {
           // Riassunto tagliato al limite: lo si fa condensare, e se serve si chiude sull'ultima riga completa.
@@ -146,7 +173,14 @@ export function createSummarizer({ db, ollama }: SummarizerDeps) {
               { role: 'user', content: `Condensa questo riassunto senza perdere fatti, nomi e richieste aperte:\n${completeLines(next)}` }
             ]
           }
-          const shorter = await ollama.chatStream(condense, {})
+          const shorter = await call(condense, {
+            ...start,
+            kind: 'condense',
+            parts: [
+              { key: 'instructions', label: 'Istruzioni', tokens: estimateTokens(prompt, cpt) },
+              { key: 'summary', label: 'Riassunto da condensare', tokens: estimateTokens(condense.messages[1].content, cpt) }
+            ]
+          })
           const text = cleanSummary(shorter.content)
           next = text ? (shorter.doneReason === 'length' ? completeLines(text) : text) : completeLines(next)
         }

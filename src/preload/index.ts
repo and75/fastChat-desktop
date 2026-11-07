@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { Api } from '@shared/api'
-import { IPC, type BenchmarkProgress, type Conversation, type PullProgress, type Result, type StreamEvent } from '@shared/types'
+import { IPC, type BenchmarkProgress, type ContextCall, type Conversation, type PullProgress, type Result, type StreamEvent } from '@shared/types'
 
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<Result<T>> =>
   ipcRenderer.invoke(channel, ...args) as Promise<Result<T>>
@@ -31,6 +31,10 @@ const api: Api = {
   memory: {
     status: (id) => invoke(IPC.memoryStatus, id),
     rebuild: (id) => invoke(IPC.memoryRebuild, id)
+  },
+  context: {
+    calls: (id) => invoke(IPC.contextCalls, id),
+    onCall: (cb) => subscribe<ContextCall>(IPC.contextCallAdded, cb)
   },
   ollamaEnv: {
     get: () => invoke(IPC.ollamaEnvGet),

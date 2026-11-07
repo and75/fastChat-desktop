@@ -74,6 +74,45 @@ export interface MemoryRef {
 }
 
 /** Stato dell'indice della memoria di una conversazione. */
+/** Tipo di chiamata a Ollama registrata dal monitor del contesto. */
+export type ContextCallKind = 'chat' | 'plan' | 'execute' | 'summary' | 'condense' | 'title' | 'embed-index' | 'embed-query'
+
+/** Voce di ciò che è stato inviato, con i token stimati dall'app. */
+export interface ContextPart {
+  key: 'instructions' | 'style' | 'summary' | 'memory' | 'history' | 'question' | 'transcript' | 'texts'
+  label: string
+  tokens: number
+  /** Quanti elementi (messaggi, estratti, pezzi), se ha senso. */
+  count?: number
+}
+
+/** Una chiamata a Ollama: cosa è partito (stima per voce) e cosa ha contato Ollama. */
+export interface ContextCall {
+  id: string
+  conversationId: string
+  kind: ContextCallKind
+  /** Dettaglio della chiamata (es. "blocco 2 di 3"). */
+  note: string | null
+  model: string
+  /** null per gli embedding (Ollama usa il contesto predefinito del modello). */
+  numCtx: number | null
+  parts: ContextPart[]
+  /** Messaggi non coperti dal riassunto rimasti fuori perché non entravano. */
+  droppedMessages: number
+  promptEvalCount: number | null
+  evalCount: number | null
+  loadMs: number | null
+  promptEvalMs: number | null
+  evalMs: number | null
+  durationMs: number | null
+  doneReason: DoneReason | null
+  aborted: boolean
+  error: string | null
+  createdAt: number
+}
+
+export type ContextCallInput = Omit<ContextCall, 'id' | 'createdAt'>
+
 export interface MemoryStatus {
   /** Pezzi indicizzati con il modello di embedding attuale. */
   chunks: number
@@ -309,6 +348,9 @@ export const IPC = {
   conversationsSummarize: 'conversations:summarize',
   memoryStatus: 'memory:status',
   memoryRebuild: 'memory:rebuild',
+  contextCalls: 'context:calls',
+  /** Evento main → renderer: nuova chiamata registrata. */
+  contextCallAdded: 'context:call-added',
   modelSettingsList: 'model-settings:list',
   modelSettingsSet: 'model-settings:set',
   modelsPull: 'models:pull',

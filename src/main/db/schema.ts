@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { blob, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
-import type { BenchmarkRun, DoneReason, MemoryRef, PlanStatus, PlanStep, ResponseStyle } from '@shared/types'
+import type { BenchmarkRun, ContextCallKind, ContextPart, DoneReason, MemoryRef, PlanStatus, PlanStep, ResponseStyle } from '@shared/types'
 
 const now = sql`(unixepoch('subsec') * 1000)`
 
@@ -132,4 +132,32 @@ export const messageChunks = sqliteTable(
     createdAt: integer('created_at').notNull().default(now)
   },
   (t) => [index('message_chunks_conversation_idx').on(t.conversationId, t.model)]
+)
+
+/** Monitor del contesto: le ultime chiamate a Ollama di ogni conversazione, con stime e conteggi reali. */
+export const contextCalls = sqliteTable(
+  'context_calls',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<ContextCallKind>().notNull(),
+    note: text('note'),
+    model: text('model').notNull(),
+    numCtx: integer('num_ctx'),
+    parts: text('parts', { mode: 'json' }).$type<ContextPart[]>().notNull(),
+    droppedMessages: integer('dropped_messages').notNull().default(0),
+    promptEvalCount: integer('prompt_eval_count'),
+    evalCount: integer('eval_count'),
+    loadMs: integer('load_ms'),
+    promptEvalMs: integer('prompt_eval_ms'),
+    evalMs: integer('eval_ms'),
+    durationMs: integer('duration_ms'),
+    doneReason: text('done_reason').$type<DoneReason>(),
+    aborted: integer('aborted', { mode: 'boolean' }).notNull().default(false),
+    error: text('error'),
+    createdAt: integer('created_at').notNull().default(now)
+  },
+  (t) => [index('context_calls_conversation_idx').on(t.conversationId, t.createdAt)]
 )

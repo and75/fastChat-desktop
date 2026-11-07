@@ -985,7 +985,18 @@ try {
     await page.getByTestId('brief-filled').waitFor()
     await page.getByRole('tab', { name: 'Brief (compilato)' }).waitFor()
 
-    // frecce: dalla scheda Brief si passa a Modello
+    // frecce: dalla scheda Brief a destra c'è Contesto, con le chiamate a Ollama della conversazione
+    await page.getByRole('tab', { name: 'Brief' }).focus()
+    await page.keyboard.press('ArrowRight')
+    await page.waitForFunction(() => document.getElementById('panel-tab-context')?.getAttribute('aria-selected') === 'true')
+    const monitor = page.locator('#panel-context')
+    await monitor.getByTestId('context-sent').or(monitor.getByTestId('context-empty')).first().waitFor()
+    if (await monitor.getByTestId('context-sent').isVisible()) {
+      assert.match(await monitor.getByTestId('context-sent').innerText(), /Totale inviato/)
+      assert.match(await monitor.getByTestId('context-consumed').innerText(), /Prompt letto|fallita|conteggi/)
+    }
+    // e dalla scheda Brief, a sinistra, si passa a Modello
+    await page.getByRole('tab', { name: 'Brief' }).click()
     await page.getByRole('tab', { name: 'Brief' }).focus()
     await page.keyboard.press('ArrowLeft')
     await page.waitForFunction(() => document.getElementById('panel-tab-model')?.getAttribute('aria-selected') === 'true')

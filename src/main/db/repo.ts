@@ -4,6 +4,8 @@ import {
   DEFAULT_SETTINGS,
   type AppSettings,
   type BriefTemplate,
+  type ContextCall,
+  type ContextCallInput,
   type Conversation,
   type ConversationListQuery,
   type ConversationPatch,
@@ -19,7 +21,7 @@ import {
   type PlanStep
 } from '@shared/types'
 import type { Db } from './client'
-import { briefTemplates, conversations, messageChunks, messages, modelSettings, plans, settings } from './schema'
+import { briefTemplates, contextCalls, conversations, messageChunks, messages, modelSettings, plans, settings } from './schema'
 
 // ---------------------------------------------------------------- impostazioni
 
@@ -394,4 +396,34 @@ export async function removeChunks(db: Db, conversationId: string, keepModel?: s
     ? and(eq(messageChunks.conversationId, conversationId), sql`${messageChunks.model} <> ${keepModel}`)
     : eq(messageChunks.conversationId, conversationId)
   await db.delete(messageChunks).where(where)
+}
+
+// ---------------------------------------------------------------- monitor del contesto
+
+/** Chiamate tenute per conversazione: le più vecchie vengono cancellate. */
+export const CONTEXT_CALLS_KEPT = 50
+
+export async function addContextCall(db: Db, input: ContextCallInput): Promise<ContextCall> {
+  const row = { ...input, id: randomUUID(), createdAt: Date.now() }
+  await db.insert(contextCalls).values(row)
+  const old = await db
+    .select({ id: contextCalls.id })
+    .from(contextCalls)
+    .where(eq(contextCalls.conversationId, input.conversationId))
+    .orderBy(desc(contextCalls.createdAt), desc(sql`rowid`))
+    .limit(1_000_000)
+    .offset(CONTEXT_CALLS_KEPT)
+  if (old.length) await db.delete(contextCalls).where(inArray(contextCalls.id, old.map((r) => r.id)))
+  return row
+}
+
+/** Ultime chiamate della conversazione, dalla più recente. */
+export async function listContextCalls(db: Db, conversationId: string): Promise<ContextCall[]> {
+  const rows = await db
+    .select()
+    .from(contextCalls)
+    .where(eq(contextCalls.conversationId, conversationId))
+    .orderBy(desc(contextCalls.createdAt), desc(sql`rowid`))
+    .limit(CONTEXT_CALLS_KEPT)
+  return rows.map((r) => ({ ...r, parts: r.parts ?? [] }))
 }
