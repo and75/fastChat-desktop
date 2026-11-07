@@ -44,7 +44,7 @@ export function NumGpuSelect({ model, compact = false }: { model: string; compac
         }}
         data-testid="num-gpu-select"
       >
-        <option value="auto">Automatico (decide Ollama)</option>
+        <option value="auto">{compact ? 'Automatico' : 'Automatico (decide Ollama)'}</option>
         <option value="cpu">Solo CPU</option>
         <option value="gpu">Tutto su GPU</option>
         <option value="layers">Layer su GPU…</option>

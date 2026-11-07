@@ -23,6 +23,7 @@ const int = (n: number): string => Math.round(n).toLocaleString('it-IT', { useGr
 const pct = (n: number, total: number | null): string =>
   total ? ((n / total) * 100).toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : ''
 const hhmmss = (ms: number): string => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+const hhmm = (ms: number): string => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
 const speed = (tokens: number | null, ms: number | null): string =>
   tokens && ms ? ` · ${(tokens / (ms / 1000)).toLocaleString('it-IT', { maximumFractionDigits: 1 })} tok/s` : ''
 
@@ -53,21 +54,31 @@ export function ContextMonitor({ conversation }: { conversation: Conversation })
   }, [conversation.id])
 
   const lastAnswer = calls.find((c) => (c.kind === 'chat' || c.kind === 'execute' || c.kind === 'plan') && !c.error)
+  const last = calls[0]
   return (
-    <div className="flex flex-col gap-4">
+    <section className="flex flex-col gap-1.5 border-t border-zinc-200 pt-3 text-xs dark:border-zinc-800" aria-label="Stato del contesto" data-testid="context-monitor">
       <ContextState conversation={conversation} lastAnswer={lastAnswer ?? null} />
-      <section className="flex flex-col gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800" aria-label="Chiamate a Ollama">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">Chiamate a Ollama</h3>
-        {calls.length === 0 ? (
-          <p className="text-sm text-zinc-500" data-testid="context-empty">
-            Nessuna chiamata ancora. Qui compare, per ogni richiesta a Ollama (risposta, riassunto, titolo, memoria), quanto contesto
-            viene inviato e quanto ne occupa davvero.
-          </p>
-        ) : (
-          <CallDetail calls={calls} selected={selected} setSelected={setSelected} />
-        )}
-      </section>
-    </div>
+      <details className="group/calls" data-testid="context-calls">
+        <summary className="cursor-pointer list-none text-brand-700 dark:text-brand-300 [&::-webkit-details-marker]:hidden">
+          <span aria-hidden className="inline-block transition-transform group-open/calls:rotate-90">▸</span> Chiamate a Ollama
+          {calls.length > 0 && (
+            <span className="text-zinc-500">
+              {' '}· {calls.length}, ultima {hhmm(last.createdAt)}
+            </span>
+          )}
+        </summary>
+        <div className="pt-2">
+          {calls.length === 0 ? (
+            <p className="text-zinc-500" data-testid="context-empty">
+              Nessuna chiamata ancora. Qui compare, per ogni richiesta a Ollama (risposta, riassunto, titolo, memoria), quanto contesto
+              viene inviato e quanto ne occupa davvero.
+            </p>
+          ) : (
+            <CallDetail calls={calls} selected={selected} setSelected={setSelected} />
+          )}
+        </div>
+      </details>
+    </section>
   )
 }
 
@@ -92,10 +103,8 @@ function CallDetail({
   const extra = call.promptEvalCount != null ? Math.max(0, call.promptEvalCount - a.sent) : 0
 
   return (
-    <div className="flex flex-col gap-3 text-sm" data-testid="context-monitor">
-      <p className="text-xs text-zinc-500">
-        Cosa è stato inviato a Ollama e quanto ha occupato davvero. Le voci sono stime dell'app; i valori «consumato» li conta Ollama.
-      </p>
+    <div className="flex flex-col gap-3 text-xs" data-testid="context-call">
+      <p className="text-zinc-500">Cosa è stato inviato a Ollama e quanto ha occupato davvero. Le voci sono stime dell'app; i valori «consumato» li conta Ollama.</p>
 
       <div className="flex items-center gap-1.5">
         <button
@@ -384,10 +393,10 @@ function ContextState({ conversation, lastAnswer }: { conversation: Conversation
   const signed = (n: number): string => (n > 0 ? `+${int(n)}` : n < 0 ? `−${int(-n)}` : '0')
 
   return (
-    <section className="flex flex-col gap-1.5 text-xs" aria-label="Stato del contesto" data-testid="context-state">
+    <div className="flex flex-col gap-1.5" data-testid="context-state">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">Stato del contesto</h3>
-        <span className="text-sm font-semibold tabular-nums" data-testid="context-state-total">
+        <h3 className="text-[13px] font-semibold">Stato del contesto</h3>
+        <span className="text-[13px] font-semibold tabular-nums" data-testid="context-state-total">
           {usage.estimated ? '≈ ' : ''}
           {int(usage.used)} / {int(ctx)} · {pctOf(usage.used)}
         </span>
@@ -415,48 +424,53 @@ function ContextState({ conversation, lastAnswer }: { conversation: Conversation
           </span>
         )}
       </div>
-      <p className="text-zinc-500" data-testid="context-state-source">
-        {sourceText(usage)}{' '}
-        {conversation.autoSummary
-          ? `Il riassunto scatta oltre ${int(ctx * SUMMARY.trigger)} (${Math.round(SUMMARY.trigger * 100)}%); `
-          : ''}
-        {int(Math.floor(ctx * RESERVE_SHARE))} ({Math.round(RESERVE_SHARE * 100)}%) restano liberi per la risposta.
-      </p>
-      <p className="text-zinc-400">
-        Alla prossima domanda si aggiungono la domanda{memoryRoom > 0 ? ` e gli estratti della memoria (fino a ${int(memoryRoom)})` : ''}.
-      </p>
-      {rec && (
-        <details className="mt-0.5" data-testid="context-reconcile">
-          <summary className="cursor-pointer text-brand-700 dark:text-brand-300">
-            Confronto con l'ultima risposta ({int(rec.thenTotal)} → {int(rec.nowTotal)})
-          </summary>
-          <table className="mt-1 w-full">
-            <thead className="text-zinc-500">
-              <tr>
-                <th className="text-left font-normal">Voce</th>
-                <th className="text-right font-normal">Risposta {lastAnswer ? new Date(lastAnswer.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}</th>
-                <th className="text-right font-normal">Ora</th>
-                <th className="w-12 text-right font-normal">Δ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rec.rows.map((r) => {
-                const note = rowNote(r, rec.rows)
-                return (
-                  <FragmentRow key={r.key} row={r} note={note} cell={cell} signed={signed} />
-                )
-              })}
-              <tr className="border-t border-zinc-200 font-semibold dark:border-zinc-800">
-                <td className="pt-1">Totale</td>
-                <td className="pt-1 text-right tabular-nums">{int(rec.thenTotal)}</td>
-                <td className="pt-1 text-right tabular-nums">{int(rec.nowTotal)}</td>
-                <td className="pt-1 text-right tabular-nums">{signed(rec.nowTotal - rec.thenTotal)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </details>
-      )}
-    </section>
+      <details className="group/calc" data-testid="context-reconcile">
+        <summary className="cursor-pointer list-none text-brand-700 dark:text-brand-300 [&::-webkit-details-marker]:hidden">
+          <span aria-hidden className="inline-block transition-transform group-open/calc:rotate-90">▸</span> Dettaglio del calcolo
+          {rec && (
+            <span className="text-zinc-500 tabular-nums">
+              {' '}· {int(rec.thenTotal)} → {int(rec.nowTotal)}
+            </span>
+          )}
+        </summary>
+        <div className="flex flex-col gap-1.5 pt-1.5">
+          <p className="text-zinc-500" data-testid="context-state-source">
+            {sourceText(usage)}{' '}
+            {conversation.autoSummary
+              ? `Il riassunto scatta oltre ${int(ctx * SUMMARY.trigger)} (${Math.round(SUMMARY.trigger * 100)}%); `
+              : ''}
+            {int(Math.floor(ctx * RESERVE_SHARE))} ({Math.round(RESERVE_SHARE * 100)}%) restano liberi per la risposta.
+          </p>
+          <p className="text-zinc-400">
+            Alla prossima domanda si aggiungono la domanda{memoryRoom > 0 ? ` e gli estratti della memoria (fino a ${int(memoryRoom)})` : ''}.
+          </p>
+          {rec && (
+            <table className="mt-0.5 w-full">
+              <thead className="text-zinc-500">
+                <tr>
+                  <th className="text-left font-normal">Voce</th>
+                  <th className="text-right font-normal">Risposta {lastAnswer ? hhmm(lastAnswer.createdAt) : ''}</th>
+                  <th className="text-right font-normal">Ora</th>
+                  <th className="w-12 text-right font-normal">Δ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rec.rows.map((r) => {
+                  const note = rowNote(r, rec.rows)
+                  return <FragmentRow key={r.key} row={r} note={note} cell={cell} signed={signed} />
+                })}
+                <tr className="border-t border-zinc-200 font-semibold dark:border-zinc-800">
+                  <td className="pt-1">Totale</td>
+                  <td className="pt-1 text-right tabular-nums">{int(rec.thenTotal)}</td>
+                  <td className="pt-1 text-right tabular-nums">{int(rec.nowTotal)}</td>
+                  <td className="pt-1 text-right tabular-nums">{signed(rec.nowTotal - rec.thenTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </div>
+      </details>
+    </div>
   )
 }
 

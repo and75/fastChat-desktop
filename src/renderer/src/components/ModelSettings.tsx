@@ -3,6 +3,7 @@ import { STYLE_INSTRUCTIONS, STYLE_LABELS } from '@shared/prompt'
 import { describeSuggestion, maxNumCtx, minNumCtx, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
 import { RESPONSE_STYLES, type Conversation, type ConversationPatch, type MemoryStatus, type ResponseStyle } from '@shared/types'
 import { useChat } from '../store/useChat'
+import { ContextMonitor } from './ContextMonitor'
 import { BenchmarkButton, needsBenchmark, NumGpuSelect } from './ModelManager'
 import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
@@ -123,8 +124,9 @@ export function ThinkToggle({ conversation, compact = false }: { conversation: C
 }
 
 /**
- * Esecuzione del modello (CPU/GPU): configurata per modello, vale per tutte le conversazioni che lo usano.
- * Per un modello mai testato (o aggiornato dopo il test) propone il test, senza bloccare.
+ * «Dove gira»: esecuzione del modello (CPU/GPU) in una riga, sempre visibile in cima al pannello. È configurata
+ * per modello e vale per tutte le conversazioni che lo usano. Per un modello mai testato (o aggiornato dopo il
+ * test) propone il test, senza bloccare.
  */
 export function ExecutionRow({ model }: { model: string }): React.JSX.Element | null {
   const setting = useModels((s) => s.modelSettings[model])
@@ -132,20 +134,32 @@ export function ExecutionRow({ model }: { model: string }): React.JSX.Element | 
   const setModelSetting = useModels((s) => s.setModelSetting)
   if (!model) return null
   const need = needsBenchmark(info, setting)
-  const best = setting?.benchmark?.find((r) => r.numGpu === setting.numGpu)
+  const tps = (r: { evalTps: number | null } | undefined): string | null =>
+    r?.evalTps != null ? r.evalTps.toLocaleString('it-IT', { maximumFractionDigits: 1 }) : null
+  const best = tps(setting?.benchmark?.find((r) => r.numGpu === setting.numGpu))
+  const cpu = tps(setting?.benchmark?.find((r) => r.numGpu === 0))
+  const gpu = tps(setting?.benchmark?.find((r) => r.numGpu != null && r.numGpu >= 999))
   return (
-    <div className="flex flex-col gap-1 text-sm" data-testid="execution-row">
-      <span className="flex items-baseline justify-between gap-2">
-        <span className="font-medium text-zinc-700 dark:text-zinc-300">Esecuzione del modello</span>
+    <div className="flex flex-col gap-1 pb-3 text-sm" data-testid="execution-row">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex shrink-0 items-baseline gap-1.5 whitespace-nowrap">
+          <span className="text-[13px] font-semibold">Dove gira</span>
+          <span className="rounded border border-zinc-200 px-1 text-[10.5px] text-zinc-500 dark:border-zinc-700" title="Vale per questo modello in tutte le conversazioni">
+            per modello
+          </span>
+        </span>
+        <span className="flex min-w-0 items-center justify-end gap-1.5 whitespace-nowrap text-xs text-zinc-500 tabular-nums">
+          <NumGpuSelect model={model} compact />
+          {best && <span>{best} tok/s</span>}
+        </span>
+      </div>
+      <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+        {model}, CPU o GPU in tutte le conversazioni.
+        {cpu || gpu ? ` Dal test: ${[cpu && `${cpu} token/s in CPU`, gpu && `${gpu} in GPU`].filter(Boolean).join(', ')}.` : ''}{' '}
         <code className="text-[11px] text-zinc-400" title="Nome del parametro in Ollama">
           num_gpu
         </code>
       </span>
-      <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
-        CPU o GPU, per questo modello in tutte le conversazioni.
-        {best?.evalTps != null && ` Dal test: ${best.evalTps.toLocaleString('it-IT', { maximumFractionDigits: 1 })} token/s.`}
-      </span>
-      <NumGpuSelect model={model} compact />
       {need && (
         <div className="mt-1 flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs dark:border-amber-800 dark:bg-amber-950/40" data-testid="benchmark-notice">
           <span>
@@ -617,13 +631,67 @@ const SOURCE_MODEL = 'consigliato dal modello'
 const SOURCE_OLLAMA = 'predefinito di Ollama'
 const SOURCE_MACHINE = 'calcolato per questa macchina'
 
-/** Impostazioni del modello per la conversazione: temperatura, ragionamento e parametri avanzati. */
+const GROUP_KEY = 'fastchat.modelGroups'
+
+/** Gruppi aperti, ricordati tra una conversazione e l'altra e dopo il riavvio (chiusi di default). */
+function readOpenGroups(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(GROUP_KEY) ?? '{}') as Record<string, boolean>
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Gruppo richiudibile del pannello. Chiuso mostra i valori correnti in una riga; aperto, i controlli con
+ * le loro spiegazioni. Lo stato aperto/chiuso si ricorda.
+ */
+function Group({ id, title, badge, summary, children }: { id: string; title: string; badge?: string; summary: string; children: React.ReactNode }): React.JSX.Element {
+  const [open, setOpen] = useState(() => readOpenGroups()[id] === true)
+  return (
+    <details
+      className="group border-t border-zinc-200 dark:border-zinc-800"
+      data-group={id}
+      open={open}
+      onToggle={(e) => {
+        const o = e.currentTarget.open
+        setOpen(o)
+        try {
+          localStorage.setItem(GROUP_KEY, JSON.stringify({ ...readOpenGroups(), [id]: o }))
+        } catch {
+          /* storage non disponibile: la scelta vale solo per questa sessione */
+        }
+      }}
+    >
+      <summary className="grid cursor-pointer list-none grid-cols-[14px_1fr] items-baseline gap-x-2 py-2.5 [&::-webkit-details-marker]:hidden">
+        <span aria-hidden className="inline-block text-[11px] text-zinc-400 transition-transform group-open:rotate-90">▶</span>
+        <span className="flex items-baseline gap-1.5 text-[13px] font-semibold">
+          {title}
+          {badge && <span className="rounded border border-zinc-200 px-1 text-[10.5px] font-normal text-zinc-500 dark:border-zinc-700">{badge}</span>}
+        </span>
+        {!open && (
+          <span className="col-start-2 text-[11.5px] text-zinc-500 tabular-nums" data-testid={`group-${id}-summary`}>
+            {summary}
+          </span>
+        )}
+      </summary>
+      <div className="flex flex-col gap-4 pb-4 pl-[22px]">{children}</div>
+    </details>
+  )
+}
+
+/**
+ * Pannello Modello. In cima, fisso, «Dove gira»; poi tre gruppi richiudibili nell'ordine in cui si interviene:
+ * come sceglie le parole, come risponde, cosa ricorda; in fondo, sempre visibile, lo stato del contesto con
+ * il dettaglio del calcolo e le chiamate a Ollama.
+ */
 export function ModelSettings({ conversation }: { conversation: Conversation }): React.JSX.Element {
   const save = useDebouncedPatch(conversation.id)
   const calibrate = useConversations((s) => s.calibrate)
   const caps = useModels((s) => s.capabilities[conversation.model])
   const system = useModels((s) => s.system)
   const modelBytes = useModels((s) => s.models.find((m) => m.name === conversation.model)?.size ?? null)
+  const messages = useChat((s) => s.messages)
 
   // Stessi calcoli del main: ciò che si mostra come "suggerito" è ciò che la calibrazione scriverebbe.
   const effective = resolveSettings(conversation, caps)
@@ -635,85 +703,114 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
   const allSuggested =
     effective.temperature === suggested.temperature && effective.topP === suggested.topP && effective.numCtx === suggested.numCtx
 
+  const thinkSupported = caps?.thinking === true
+  const covered = conversation.summary && conversation.summaryUpTo ? messages.findIndex((m) => m.id === conversation.summaryUpTo) + 1 : 0
+  const wordsSummary = `temperatura ${effective.temperature.toFixed(2)} · varietà ${effective.topP.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · seed ${conversation.seed ?? 'casuale'}`
+  const answerSummary = `${STYLE_LABELS[conversation.style]} · ragionamento ${!caps ? '…' : !thinkSupported ? 'non disponibile' : conversation.think ? 'attivo' : 'spento'} · plan mode ${conversation.planMode ? 'attivo' : 'spento'}`
+  const memorySummary =
+    `${fmt(effective.numCtx)} token · riassunto ${conversation.summary ? `attivo (${covered > 0 ? `${covered} messaggi` : 'in vigore'})` : conversation.autoSummary ? 'automatico' : 'spento'}` +
+    ` · memoria lunga ${conversation.longMemory ? 'attiva' : 'spenta'}`
+
   return (
-    <section className="flex flex-col gap-4" aria-label="Impostazioni del modello" data-testid="model-settings">
-      <SettingSlider
-        label="Temperatura"
-        technical="temperature"
-        description="Quanto le risposte possono essere fantasiose. Bassa per fatti e codice, alta per idee e testi creativi."
-        value={effective.temperature}
-        suggested={suggested.temperature}
-        suggestedSource={caps?.defaults.temperature != null ? SOURCE_MODEL : SOURCE_OLLAMA}
-        min={0}
-        max={2}
-        step={0.05}
-        format={(v) => v.toFixed(2)}
-        ends={['precisa', 'creativa']}
-        onChange={(v) => save({ temperature: v })}
-      />
-
-      <div className="flex flex-col gap-3">
-        <ThinkToggle conversation={conversation} />
-        <PlanModeToggle conversation={conversation} />
-      </div>
-
-      <SettingSlider
-        label="Varietà delle parole"
-        technical="top_p"
-        description="Quante parole alternative il modello considera a ogni passo. Più a sinistra: risposte più prevedibili e ripetitive; più a destra: più varie."
-        value={effective.topP}
-        suggested={suggested.topP}
-        suggestedSource={caps?.defaults.topP != null ? SOURCE_MODEL : SOURCE_OLLAMA}
-        min={0.05}
-        max={1}
-        step={0.05}
-        format={(v) => v.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        onChange={(v) => save({ topP: v })}
-      />
-      <SettingSlider
-        label="Memoria della conversazione"
-        technical="num_ctx"
-        description={
-          'Quanto testo il modello tiene a mente, in token (circa ¾ di parola ciascuno). Più a destra: ricorda messaggi più vecchi, ma usa più memoria ed è più lento. ' +
-          describeSuggestion(input) +
-          (caps?.contextLength ? '' : ' Il massimo di questo modello non è noto.')
-        }
-        value={effective.numCtx}
-        suggested={suggested.numCtx}
-        suggestedSource={machineCtx != null ? SOURCE_MACHINE : caps?.defaults.numCtx != null ? SOURCE_MODEL : SOURCE_OLLAMA}
-        steps={ctxSteps}
-        format={(v) => `${fmt(v)} token`}
-        extra={approxWords}
-        warning={(v) =>
-          v < minCtx
-            ? `Sotto il minimo per questo modello (${fmt(minCtx)} token, predefinito di Ollama): le risposte possono interrompersi e il riassunto perde dettagli.`
-            : null
-        }
-        onChange={(v) => save({ numCtx: v })}
-      />
+    <section className="flex flex-col" aria-label="Impostazioni del modello" data-testid="model-settings">
       <ExecutionRow model={conversation.model} />
-      <StyleControl conversation={conversation} />
-      <SummaryPanel conversation={conversation} />
-      <MemoryPanel conversation={conversation} />
-      <NumberField
-        label="Risposte ripetibili"
-        technical="seed"
-        description="Con un numero qualsiasi, la stessa domanda dà sempre la stessa risposta: utile per confrontare. Vuoto: ogni risposta è diversa."
-        step={1}
-        value={conversation.seed}
-        placeholder="vuoto = sempre diverse"
-        onChange={(v) => save({ seed: v })}
-      />
-      {!allSuggested && (
-        <button
-          type="button"
-          onClick={() => void calibrate(conversation.id)}
-          className="self-start rounded-lg border border-zinc-300 px-2.5 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          title="Riporta temperatura, varietà e memoria ai valori suggeriti per questo modello e questa macchina"
-        >
-          ↺ Tutti i valori suggeriti
-        </button>
-      )}
+
+      <Group id="words" title="Come sceglie le parole" summary={wordsSummary}>
+        <SettingSlider
+          label="Temperatura"
+          technical="temperature"
+          description="Quanto le risposte possono essere fantasiose. Bassa per fatti e codice, alta per idee e testi creativi."
+          value={effective.temperature}
+          suggested={suggested.temperature}
+          suggestedSource={caps?.defaults.temperature != null ? SOURCE_MODEL : SOURCE_OLLAMA}
+          min={0}
+          max={2}
+          step={0.05}
+          format={(v) => v.toFixed(2)}
+          ends={['precisa', 'creativa']}
+          onChange={(v) => save({ temperature: v })}
+        />
+        <SettingSlider
+          label="Varietà delle parole"
+          technical="top_p"
+          description="Quante parole alternative il modello considera a ogni passo. Più a sinistra: risposte più prevedibili e ripetitive; più a destra: più varie."
+          value={effective.topP}
+          suggested={suggested.topP}
+          suggestedSource={caps?.defaults.topP != null ? SOURCE_MODEL : SOURCE_OLLAMA}
+          min={0.05}
+          max={1}
+          step={0.05}
+          format={(v) => v.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          onChange={(v) => save({ topP: v })}
+        />
+        <NumberField
+          label="Risposte ripetibili"
+          technical="seed"
+          description="Con un numero qualsiasi, la stessa domanda dà sempre la stessa risposta: utile per confrontare. Vuoto: ogni risposta è diversa."
+          step={1}
+          value={conversation.seed}
+          placeholder="vuoto = sempre diverse"
+          onChange={(v) => save({ seed: v })}
+        />
+        {!allSuggested && (
+          <button
+            type="button"
+            onClick={() => void calibrate(conversation.id)}
+            className="self-start rounded-lg border border-zinc-300 px-2.5 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            title="Riporta temperatura, varietà e memoria ai valori suggeriti per questo modello e questa macchina"
+          >
+            ↺ Tutti i valori suggeriti
+          </button>
+        )}
+      </Group>
+
+      <Group id="answer" title="Come risponde" summary={answerSummary}>
+        <StyleControl conversation={conversation} />
+        <div className="flex flex-col gap-1">
+          <ThinkToggle conversation={conversation} />
+          <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+            {!conversation.model
+              ? 'Nessun modello selezionato.'
+              : !caps
+                ? 'Verifica delle capacità del modello…'
+                : thinkSupported
+                  ? 'Il modello ragiona prima di rispondere: più lento, spesso più accurato.'
+                  : `${conversation.model} non supporta il ragionamento.`}
+          </span>
+        </div>
+        <div className="flex flex-col gap-1">
+          <PlanModeToggle conversation={conversation} />
+          <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">Prima il piano, poi l'esecuzione: il modello propone i passi, tu li approvi o li modifichi.</span>
+        </div>
+      </Group>
+
+      <Group id="memory" title="Cosa ricorda" summary={memorySummary}>
+        <SettingSlider
+          label="Memoria della conversazione"
+          technical="num_ctx"
+          description={
+            'Quanto testo il modello tiene a mente, in token (circa ¾ di parola ciascuno). Più a destra: ricorda messaggi più vecchi, ma usa più memoria ed è più lento. ' +
+            describeSuggestion(input) +
+            (caps?.contextLength ? '' : ' Il massimo di questo modello non è noto.')
+          }
+          value={effective.numCtx}
+          suggested={suggested.numCtx}
+          suggestedSource={machineCtx != null ? SOURCE_MACHINE : caps?.defaults.numCtx != null ? SOURCE_MODEL : SOURCE_OLLAMA}
+          steps={ctxSteps}
+          format={(v) => `${fmt(v)} token`}
+          extra={approxWords}
+          warning={(v) =>
+            v < minCtx
+              ? `Sotto il minimo per questo modello (${fmt(minCtx)} token, predefinito di Ollama): le risposte possono interrompersi e il riassunto perde dettagli.`
+              : null
+          }
+          onChange={(v) => save({ numCtx: v })}
+        />
+        <SummaryPanel conversation={conversation} />
+        <MemoryPanel conversation={conversation} />
+      </Group>
+
+      <ContextMonitor conversation={conversation} />
     </section>
   )
 }

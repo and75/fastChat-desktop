@@ -100,6 +100,9 @@ let failed = false
 try {
   const page = await app.firstWindow()
   /** Apre una scheda del pannello di destra (Modello / Brief) e attende che sia attiva. */
+  /** I gruppi del pannello Modello partono chiusi: per i test li si apre (la scelta resta in localStorage). */
+  const openGroups = () =>
+    page.evaluate(() => document.querySelectorAll('[data-testid="model-settings"] details[data-group]').forEach((d) => (d.open = true)))
   const openTab = async (name) => {
     const tab = page.getByRole('tab', { name })
     await tab.click()
@@ -376,6 +379,7 @@ try {
     await page.getByTestId('new-conversation').click()
     await openTab('Modello')
     await page.selectOption('#model-select', 'llama3.2:3b')
+    await openGroups()
     const toggle = page.getByTestId('model-settings').getByRole('switch', { name: 'Ragionamento' })
     await page.getByTestId('thinking-capability').filter({ hasText: 'senza ragionamento' }).waitFor()
     assert.equal(await toggle.isDisabled(), true)
@@ -390,9 +394,9 @@ try {
     await setSwitch(settings, 'Ragionamento', true)
     await settings.getByLabel('Temperatura').fill('1.2')
     await page.getByTestId('temperature-value').filter({ hasText: '1.20' }).waitFor()
-    // le impostazioni avanzate sono sempre visibili (nessun apri/chiudi)
-    assert.equal(await settings.locator('details, summary').count(), 0)
-    assert.equal(await settings.getByText('Impostazioni avanzate').count(), 0)
+    // tre gruppi richiudibili: come sceglie le parole, come risponde, cosa ricorda; «Dove gira» in cima, fisso
+    assert.deepEqual(await settings.locator('details[data-group]').evaluateAll((els) => els.map((d) => d.dataset.group)), ['words', 'answer', 'memory'])
+    assert.equal(await settings.getByTestId('execution-row').isVisible(), true)
 
     // al cambio modello i cursori partono dai valori suggeriti: top_p dal Modelfile, memoria calcolata
     // dalla RAM (16 GB, modello da 2 GB → 32.768, che è anche il massimo del modello)
@@ -985,25 +989,33 @@ try {
     await page.getByTestId('brief-filled').waitFor()
     await page.getByRole('tab', { name: 'Brief (compilato)' }).waitFor()
 
-    // frecce: dalla scheda Brief a destra c'è Contesto, con le chiamate a Ollama della conversazione
-    await page.getByRole('tab', { name: 'Brief' }).focus()
-    await page.keyboard.press('ArrowRight')
-    await page.waitForFunction(() => document.getElementById('panel-tab-context')?.getAttribute('aria-selected') === 'true')
-    const monitor = page.locator('#panel-context')
-    await monitor.getByTestId('context-sent').or(monitor.getByTestId('context-empty')).first().waitFor()
-    // stato del contesto: stessa percentuale del contatore in basso
-    const pctOf = (t) => t.match(/(\d+|>100)%/)?.[1]
-    assert.equal(pctOf(await monitor.getByTestId('context-state-total').innerText()), pctOf(await page.getByTestId('context-usage').innerText()))
-    if (await monitor.getByTestId('context-sent').isVisible()) {
-      assert.match(await monitor.getByTestId('context-sent').innerText(), /Totale inviato/)
-      assert.match(await monitor.getByTestId('context-consumed').innerText(), /Prompt letto|fallita|conteggi/)
-    }
-    // e dalla scheda Brief, a sinistra, si passa a Modello
-    await page.getByRole('tab', { name: 'Brief' }).click()
+    // frecce: dalla scheda Brief si passa a Modello (due schede: a destra si torna a Brief)
     await page.getByRole('tab', { name: 'Brief' }).focus()
     await page.keyboard.press('ArrowLeft')
     await page.waitForFunction(() => document.getElementById('panel-tab-model')?.getAttribute('aria-selected') === 'true')
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'panel-tab-model')
+    assert.equal(await page.getByRole('tab').count(), 2)
+
+    // in fondo al pannello Modello: stato del contesto con la stessa percentuale del contatore in basso,
+    // e sotto, chiusi, il dettaglio del calcolo e le chiamate a Ollama
+    const monitor = page.locator('#panel-model').getByTestId('context-monitor')
+    const pctOf = (t) => t.match(/(\d+|>100)%/)?.[1]
+    assert.equal(pctOf(await monitor.getByTestId('context-state-total').innerText()), pctOf(await page.getByTestId('context-usage').innerText()))
+    assert.equal(await monitor.getByTestId('context-reconcile').evaluate((d) => d.open), false)
+    assert.equal(await monitor.getByTestId('context-calls').evaluate((d) => d.open), false)
+    await monitor.getByTestId('context-reconcile').locator('summary').click()
+    await monitor.getByTestId('context-state-source').waitFor()
+    await monitor.getByTestId('context-calls').locator('summary').click()
+    await monitor.getByTestId('context-sent').or(monitor.getByTestId('context-empty')).first().waitFor()
+    if (await monitor.getByTestId('context-sent').isVisible()) {
+      assert.match(await monitor.getByTestId('context-sent').innerText(), /Totale inviato/)
+      assert.match(await monitor.getByTestId('context-consumed').innerText(), /Prompt letto|fallita|conteggi/)
+    }
+
+    // i gruppi chiusi mostrano i valori; chiudendone uno, resta chiuso dopo il riavvio
+    const words = page.locator('#panel-model details[data-group="words"]')
+    await words.locator('summary').click()
+    await page.getByTestId('group-words-summary').filter({ hasText: /temperatura \d\.\d\d · varietà \d,\d\d · seed/ }).waitFor()
 
     // dopo il riavvio della pagina si riapre l'ultima scheda scelta (Modello)
     await page.reload()
@@ -1011,6 +1023,9 @@ try {
     await items.first().getByRole('button').first().click()
     await page.waitForFunction(() => document.getElementById('panel-tab-model')?.getAttribute('aria-selected') === 'true')
     assert.equal(await page.locator('#panel-model').isVisible(), true)
+    assert.equal(await page.locator('#panel-model details[data-group="words"]').evaluate((d) => d.open), false)
+    assert.equal(await page.locator('#panel-model details[data-group="answer"]').evaluate((d) => d.open), true)
+    await openGroups()
   })
 
   await step('barra laterale: logo e nome in cima, pulsante con freccia dei preset, sezione Conversazioni', async () => {

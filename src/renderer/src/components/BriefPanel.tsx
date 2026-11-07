@@ -4,8 +4,7 @@ import type { Brief, Conversation } from '@shared/types'
 import { useConversations } from '../store/useConversations'
 import { useTemplates } from '../store/useTemplates'
 import { registerPendingSave } from '../store/pendingSaves'
-import { ContextMonitor } from './ContextMonitor'
-import { BrainIcon, ChartIcon, IdCardIcon } from './icons'
+import { BrainIcon, IdCardIcon } from './icons'
 import { ModelSettings } from './ModelSettings'
 
 const FIELDS: Array<{ key: keyof Brief; label: string; placeholder: string; rows: number }> = [
@@ -73,8 +72,8 @@ function SaveAsTemplate({ conversation, beforeSave }: { conversation: Conversati
   )
 }
 
-type PanelTab = 'model' | 'brief' | 'context'
-const PANEL_TABS: PanelTab[] = ['model', 'brief', 'context']
+type PanelTab = 'model' | 'brief'
+const PANEL_TABS: PanelTab[] = ['model', 'brief']
 const TAB_KEY = 'fastchat.panelTab'
 
 /** Scheda del pannello, ricordata tra una conversazione e l'altra e dopo il riavvio. */
@@ -151,8 +150,7 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
 
   const tabs: Array<{ id: PanelTab; label: string; icon: React.ReactNode; filled?: boolean }> = [
     { id: 'model', label: 'Modello', icon: <BrainIcon /> },
-    { id: 'brief', label: 'Brief', icon: <IdCardIcon />, filled: preview !== '' },
-    { id: 'context', label: 'Contesto', icon: <ChartIcon /> }
+    { id: 'brief', label: 'Brief', icon: <IdCardIcon />, filled: preview !== '' }
   ]
 
   return (
@@ -202,17 +200,7 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
         })}
       </div>
 
-      <div
-        role="tabpanel"
-        id="panel-context"
-        aria-labelledby="panel-tab-context"
-        hidden={tab !== 'context'}
-        className="relative min-h-0 flex-1 overflow-y-auto p-4"
-      >
-        <ContextMonitor conversation={conversation} />
-      </div>
-
-      {/* Tutte le schede restano montate: salvataggi in sospeso e stato locale non si perdono. */}
+      {/* Entrambe le schede restano montate: salvataggi in sospeso e stato locale non si perdono. */}
       <div
         role="tabpanel"
         id="panel-model"
