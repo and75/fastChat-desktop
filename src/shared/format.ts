@@ -81,3 +81,14 @@ export function timelinePositions(ratios: number[], height: number, minGap: numb
   for (let i = n - 2; i >= 0; i--) pos[i] = Math.min(pos[i], pos[i + 1] - minGap)
   return pos
 }
+
+/** Prima riga significativa di un riassunto: salta i titoli ("# …", "Fatti stabiliti:") e toglie elenchi e grassetti. */
+export function summaryPreview(summary: string): string {
+  const lines = summary
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => ({ heading: /^#/.test(l) || /:\**$/.test(l), text: l.replace(/^(#+\s*|[-*•]\s+|\d+[.)]\s+)/, '').replace(/\*\*/g, '').trim() }))
+    .filter((l) => l.text)
+  return (lines.find((l) => !l.heading) ?? lines[0])?.text ?? ''
+}

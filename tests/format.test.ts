@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { excerpt, formatElapsed, formatFullDate, formatMessageDate, timelinePositions } from '../src/shared/format'
+import { excerpt, formatElapsed, summaryPreview, formatFullDate, formatMessageDate, timelinePositions } from '../src/shared/format'
 
 describe('formatElapsed', () => {
   it('decimi sotto i 10 secondi, poi secondi interi, poi minuti', () => {
@@ -80,5 +80,17 @@ describe('timelinePositions', () => {
   it('casi limite', () => {
     expect(timelinePositions([], 100, 10)).toEqual([])
     expect(timelinePositions([0.3], 100, 10)).toEqual([30])
+  })
+})
+
+describe('summaryPreview', () => {
+  it('salta i titoli e toglie elenchi e grassetti', () => {
+    expect(summaryPreview('Fatti stabiliti:\n- Budget **800 €** a persona\n- Treno')).toBe('Budget 800 € a persona')
+    expect(summaryPreview('## Decisioni\n\n1. Quattro notti a Lisbona')).toBe('Quattro notti a Lisbona')
+    expect(summaryPreview('**Fatti:**\nSi parte a maggio')).toBe('Si parte a maggio')
+  })
+  it('solo titoli: il primo', () => {
+    expect(summaryPreview('Fatti stabiliti:')).toBe('Fatti stabiliti:')
+    expect(summaryPreview('')).toBe('')
   })
 })

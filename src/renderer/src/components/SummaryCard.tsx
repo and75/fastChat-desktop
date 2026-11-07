@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { summaryPreview } from '@shared/format'
 import type { Conversation } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
@@ -22,7 +23,7 @@ export function SummaryCard({ conversation, covered }: { conversation: Conversat
   useEffect(() => setDraft(conversation.summary ?? ''), [conversation.id, conversation.summary])
   if (!conversation.summary) return null
 
-  const firstLine = conversation.summary.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
+  const firstLine = summaryPreview(conversation.summary)
   const refresh = async (): Promise<void> => {
     setWorking(true)
     setFeedback(null)
