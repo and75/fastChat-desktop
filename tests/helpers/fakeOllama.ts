@@ -34,6 +34,8 @@ export interface FakeModel {
    * Default: un piano di tre passi.
    */
   plan?: unknown
+  /** Risposta calcolata dalla richiesta (al posto di `chunks`), divisa in pezzi da 3 parole. */
+  respond?: (messages: Array<{ role: string; content: string }>) => string
 }
 
 export const DEFAULT_FAKE_PLAN = {
@@ -158,6 +160,11 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
       const think = (body as { think?: boolean }).think === true
       const format = (body as { format?: unknown }).format
       let chunks = model.chunks ?? [{ thinking: 'Ci penso. ' }, { content: 'Ciao' }, { content: ' mondo!' }]
+      if (model.respond) {
+        const words = model.respond((body as { messages: Array<{ role: string; content: string }> }).messages).split(/(?<= )/)
+        chunks = []
+        for (let i = 0; i < words.length; i += 3) chunks.push({ content: words.slice(i, i + 3).join('') })
+      }
       if (format) {
         const plan = model.plan ?? DEFAULT_FAKE_PLAN
         const text = typeof plan === 'string' ? plan : JSON.stringify(plan)
