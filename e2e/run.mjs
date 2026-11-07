@@ -394,8 +394,8 @@ try {
     await setSwitch(settings, 'Ragionamento', true)
     await settings.getByLabel('Temperatura').fill('1.2')
     await page.getByTestId('temperature-value').filter({ hasText: '1.20' }).waitFor()
-    // tre gruppi richiudibili: come sceglie le parole, come risponde, cosa ricorda; «Dove gira» in cima, fisso
-    assert.deepEqual(await settings.locator('details[data-group]').evaluateAll((els) => els.map((d) => d.dataset.group)), ['words', 'answer', 'memory'])
+    // quattro gruppi richiudibili: dove gira, come sceglie le parole, come risponde, cosa ricorda
+    assert.deepEqual(await settings.locator('details[data-group]').evaluateAll((els) => els.map((d) => d.dataset.group)), ['run', 'words', 'answer', 'memory'])
     assert.equal(await settings.getByTestId('execution-row').isVisible(), true)
 
     // al cambio modello i cursori partono dai valori suggeriti: top_p dal Modelfile, memoria calcolata

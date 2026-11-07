@@ -4,7 +4,7 @@ import { describeSuggestion, maxNumCtx, minNumCtx, resolveSettings, suggestNumCt
 import { RESPONSE_STYLES, type Conversation, type ConversationPatch, type MemoryStatus, type ResponseStyle } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { ContextMonitor } from './ContextMonitor'
-import { BenchmarkButton, needsBenchmark, NumGpuSelect } from './ModelManager'
+import { BenchmarkButton, describeNumGpu, needsBenchmark, NumGpuSelect } from './ModelManager'
 import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
 import { registerPendingSave } from '../store/pendingSaves'
@@ -124,9 +124,9 @@ export function ThinkToggle({ conversation, compact = false }: { conversation: C
 }
 
 /**
- * «Dove gira»: esecuzione del modello (CPU/GPU) in una riga, sempre visibile in cima al pannello. È configurata
- * per modello e vale per tutte le conversazioni che lo usano. Per un modello mai testato (o aggiornato dopo il
- * test) propone il test, senza bloccare.
+ * Esecuzione del modello (CPU/GPU), contenuto del gruppo «Dove gira». È configurata per modello e vale per
+ * tutte le conversazioni che lo usano. Per un modello mai testato (o aggiornato dopo il test) propone il test,
+ * senza bloccare.
  */
 export function ExecutionRow({ model }: { model: string }): React.JSX.Element | null {
   const setting = useModels((s) => s.modelSettings[model])
@@ -140,13 +140,7 @@ export function ExecutionRow({ model }: { model: string }): React.JSX.Element | 
   const cpu = tps(setting?.benchmark?.find((r) => r.numGpu === 0))
   const gpu = tps(setting?.benchmark?.find((r) => r.numGpu != null && r.numGpu >= 999))
   return (
-    <div className="flex flex-col gap-1 pb-3 text-sm" data-testid="execution-row">
-      <span className="flex items-baseline gap-1.5 whitespace-nowrap">
-        <span className="text-[13px] font-semibold">Dove gira</span>
-        <span className="rounded border border-zinc-200 px-1 text-[10.5px] text-zinc-500 dark:border-zinc-700" title="Vale per questo modello in tutte le conversazioni">
-          per modello
-        </span>
-      </span>
+    <div className="flex flex-col gap-1 text-sm" data-testid="execution-row">
       <span className="flex items-center gap-2 whitespace-nowrap text-xs text-zinc-500 tabular-nums">
         <NumGpuSelect model={model} compact />
         {best && <span>{best} tok/s</span>}
@@ -650,7 +644,7 @@ function Group({ id, title, badge, summary, children }: { id: string; title: str
   const [open, setOpen] = useState(() => readOpenGroups()[id] === true)
   return (
     <details
-      className="group border-t border-zinc-200 dark:border-zinc-800"
+      className="group border-t border-zinc-200 first:border-t-0 dark:border-zinc-800"
       data-group={id}
       open={open}
       onToggle={(e) => {
@@ -681,8 +675,8 @@ function Group({ id, title, badge, summary, children }: { id: string; title: str
 }
 
 /**
- * Pannello Modello. In cima, fisso, «Dove gira»; poi tre gruppi richiudibili nell'ordine in cui si interviene:
- * come sceglie le parole, come risponde, cosa ricorda; in fondo, sempre visibile, lo stato del contesto con
+ * Pannello Modello. Quattro gruppi richiudibili, chiusi di default: dove gira, come sceglie le parole, come
+ * risponde, cosa ricorda; in fondo, sempre visibile, lo stato del contesto con
  * il dettaglio del calcolo e le chiamate a Ollama. Il plan mode sta nella scheda Brief: riguarda come si lavora
  * con il modello, non i suoi parametri.
  */
@@ -704,6 +698,16 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
   const allSuggested =
     effective.temperature === suggested.temperature && effective.topP === suggested.topP && effective.numCtx === suggested.numCtx
 
+  const runSetting = useModels((s) => s.modelSettings[conversation.model])
+  const runInfo = useModels((s) => s.models.find((m) => m.name === conversation.model))
+  const bestRun = runSetting?.benchmark?.find((r) => r.numGpu === runSetting.numGpu)
+  const runSummary =
+    describeNumGpu(runSetting?.numGpu ?? null) +
+    (bestRun?.evalTps != null
+      ? ` · ${bestRun.evalTps.toLocaleString('it-IT', { maximumFractionDigits: 1 })} token/s dal test`
+      : needsBenchmark(runInfo, runSetting)
+        ? ' · test CPU/GPU da fare'
+        : '')
   const thinkSupported = caps?.thinking === true
   const covered = conversation.summary && conversation.summaryUpTo ? messages.findIndex((m) => m.id === conversation.summaryUpTo) + 1 : 0
   const wordsSummary = `temperatura ${effective.temperature.toFixed(2)} · varietà ${effective.topP.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · seed ${conversation.seed ?? 'casuale'}`
@@ -714,7 +718,9 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
 
   return (
     <section className="flex flex-col" aria-label="Impostazioni del modello" data-testid="model-settings">
-      <ExecutionRow model={conversation.model} />
+      <Group id="run" title="Dove gira" badge="per modello" summary={runSummary}>
+        <ExecutionRow model={conversation.model} />
+      </Group>
 
       <Group id="words" title="Come sceglie le parole" summary={wordsSummary}>
         <SettingSlider
