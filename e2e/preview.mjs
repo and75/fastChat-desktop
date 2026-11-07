@@ -142,10 +142,16 @@ const pick = async (re) => {
   if (label) await monitor.getByTestId('context-call-select').selectOption({ label })
   await page.waitForTimeout(300)
 }
+await page.getByTestId('context-reconcile').locator('summary').click()
+await page.waitForTimeout(300)
+await page.screenshot({ path: out('7-stato-del-contesto.png') })
+await page.getByTestId('context-reconcile').locator('summary').click()
 await pick(/^Risposta/)
-await page.screenshot({ path: out('7-contesto-risposta.png') })
+await page.getByTestId('context-monitor').scrollIntoViewIfNeeded()
+await page.waitForTimeout(200)
+await page.screenshot({ path: out('8-contesto-risposta.png') })
 await pick(/^Riassunto/)
-await page.screenshot({ path: out('8-contesto-riassunto.png') })
+await page.screenshot({ path: out('9-contesto-riassunto.png') })
 await page.getByRole('tab', { name: 'Modello' }).click()
 
 // impostazioni → Modelli: test CPU/GPU su gemma (GPU integrata: vince la CPU)

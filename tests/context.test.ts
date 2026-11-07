@@ -7,18 +7,24 @@ import { addContextCall, addMessage, CONTEXT_CALLS_KEPT, createConversation, lis
 import { createMemory } from '../src/main/memory'
 import { createOllamaClient } from '../src/main/ollama'
 import { createSummarizer } from '../src/main/summary'
-import { analyzeCall, chatParts } from '../src/shared/context'
+import { analyzeCall, chatParts, reconcile } from '../src/shared/context'
+import { computeContextUsage, estimateTokens, splitTokens } from '../src/shared/prompt'
 import type { ContextCall } from '../src/shared/types'
 import { startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
 
 describe('monitor del contesto: funzioni pure', () => {
-  it('chatParts: istruzioni senza lo stile, storico e domanda separati, voci vuote omesse', () => {
+  it('chatParts: il system prompt diviso tra le sue sezioni (somma esatta), storico e domanda separati, voci vuote omesse', () => {
+    const instructions = '# Ruolo\nGuida turistica'
     const style = '# Stile della risposta\nConciso.'
+    const summary = '# Riassunto della conversazione finora\nViaggio.'
+    const system = `${instructions}\n\n${style}\n\n${summary}`
     const parts = chatParts({
-      base: `# Ruolo\nGuida turistica\n\n${style}`,
+      system,
+      instructions,
       style,
-      summary: '',
+      summary,
       memory: '',
+      summaryCount: 4,
       memoryCount: 0,
       messages: [
         { role: 'user', content: 'a'.repeat(40) },
@@ -27,9 +33,77 @@ describe('monitor del contesto: funzioni pure', () => {
       ],
       cpt: 4
     })
-    expect(parts.map((p) => p.key)).toEqual(['instructions', 'style', 'history', 'question'])
+    expect(parts.map((p) => p.key)).toEqual(['instructions', 'style', 'summary', 'history', 'question'])
+    expect(parts.slice(0, 3).reduce((n, p) => n + p.tokens, 0)).toBe(estimateTokens(system, 4))
+    expect(parts.find((p) => p.key === 'summary')?.count).toBe(4)
     expect(parts.find((p) => p.key === 'history')).toMatchObject({ tokens: 14 + 24, count: 2 })
     expect(parts.find((p) => p.key === 'question')?.tokens).toBe(9)
+  })
+
+  it('splitTokens: proporzionale ai caratteri, somma esatta', () => {
+    expect(splitTokens(10, ['aaa', '', 'aaaaaaa'])).toEqual([3, 0, 7])
+    expect(splitTokens(7, ['a', 'a', 'a']).reduce((x, y) => x + y)).toBe(7)
+    expect(splitTokens(5, ['', ''])).toEqual([0, 0])
+  })
+
+  it('stato del contesto: le voci più lo scarto danno il totale del contatore, con stima e con conteggi di Ollama', () => {
+    const u = (id: string, content: string, createdAt = 1) => ({ id, role: 'user' as const, content, createdAt })
+    const r = (id: string, content: string, promptEvalCount: number | null, evalCount: number | null, createdAt = 2) => ({ id, role: 'assistant' as const, content, promptEvalCount, evalCount, createdAt })
+    const brief = { role: 'Guida', context: '', goals: '', constraints: '' }
+    // stima: nessun conteggio
+    const est = computeContextUsage({ brief, style: 'concise', messages: [u('1', 'x'.repeat(100))], numCtx: 1024 })
+    expect(est.source).toBe('no-count')
+    expect(est.adjustment).toBe(0)
+    expect(est.parts.reduce((n, p) => n + p.tokens, 0)).toBe(est.used)
+    expect(est.parts.map((p) => p.key)).toEqual(['instructions', 'style', 'history'])
+    // conteggi di Ollama: lo scarto chiude il conto
+    const real = computeContextUsage({ brief, style: 'concise', messages: [u('1', 'x'.repeat(100)), r('2', 'y'.repeat(100), 90, 30)], numCtx: 1024 })
+    expect(real.source).toBe('ollama')
+    expect(real.used).toBe(120)
+    expect(real.parts.reduce((n, p) => n + p.tokens, 0) + real.adjustment).toBe(120)
+    // riassunto più recente dell'ultima risposta: torna la stima, e si dice perché
+    const after = computeContextUsage({
+      brief,
+      messages: [u('1', 'x'.repeat(100)), r('2', 'y'.repeat(100), 90, 30), u('3', 'z'.repeat(50), 3), r('4', 'w'.repeat(50), 120, 20, 4)],
+      numCtx: 1024,
+      summary: 'Riassunto.',
+      summaryUpTo: '2',
+      summaryUpdatedAt: 5
+    })
+    expect(after).toMatchObject({ source: 'summary-changed', adjustment: 0 })
+    expect(after.parts.find((p) => p.key === 'summary')?.count).toBe(2)
+    expect(after.parts.find((p) => p.key === 'history')?.count).toBe(2)
+  })
+
+  it('reconcile: la somma delle differenze è la differenza dei totali', () => {
+    const call = {
+      numCtx: 1024,
+      promptEvalCount: 712,
+      evalCount: 42,
+      parts: [
+        { key: 'style' as const, label: 'Stile della risposta', tokens: 90 },
+        { key: 'summary' as const, label: 'Riassunto', tokens: 115, count: 6 },
+        { key: 'memory' as const, label: 'Estratti della memoria', tokens: 183, count: 1 },
+        { key: 'history' as const, label: 'Storico', tokens: 280, count: 6 },
+        { key: 'question' as const, label: 'Domanda', tokens: 15 }
+      ]
+    }
+    const now = {
+      used: 279,
+      adjustment: 0,
+      parts: [
+        { key: 'style' as const, label: 'Stile della risposta', tokens: 90 },
+        { key: 'summary' as const, label: 'Riassunto', tokens: 129, count: 12 },
+        { key: 'history' as const, label: 'Storico', tokens: 60, count: 2 }
+      ]
+    }
+    const r = reconcile(call, now)
+    expect(r.thenTotal).toBe(754)
+    expect(r.nowTotal).toBe(279)
+    expect(r.rows.reduce((n, x) => n + x.delta, 0)).toBe(279 - 754)
+    expect(r.rows.map((x) => x.key)).toEqual(['style', 'summary', 'memory', 'history', 'question', 'answer', 'ollama'])
+    expect(r.rows.find((x) => x.key === 'memory')).toMatchObject({ then: 183, now: null, delta: -183 })
+    expect(r.rows.find((x) => x.key === 'ollama')).toMatchObject({ then: 29, now: null, delta: -29 })
   })
 
   it('analyzeCall: scarto, occupato, troncamento e prompt letto molto meno', () => {

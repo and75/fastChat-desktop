@@ -1,6 +1,6 @@
 // Monitor del contesto: funzioni pure per descrivere cosa parte verso Ollama (stima per voce) e confrontarlo
 // con quello che Ollama conta davvero (prompt_eval_count, eval_count).
-import { estimateTokens } from './prompt'
+import { estimateTokens, splitTokens } from './prompt'
 import type { ContextCall, ContextCallKind, ContextPart } from './types'
 
 export const CALL_LABELS: Record<ContextCallKind, string> = {
@@ -14,42 +14,40 @@ export const CALL_LABELS: Record<ContextCallKind, string> = {
   'embed-query': 'Ricerca nella memoria'
 }
 
-/** Voce con i token stimati; le voci vuote non compaiono. */
-export function part(key: ContextPart['key'], label: string, text: string, cpt: number, count?: number): ContextPart[] {
-  if (!text.trim()) return []
-  return [{ key, label, tokens: estimateTokens(text, cpt), ...(count != null ? { count } : {}) }]
-}
-
 export interface ChatPartsInput {
-  /** System prompt della modalità (brief + stile, o prompt del piano), senza riassunto né estratti. */
-  base: string
-  /** Sezione dello stile contenuta in `base` ('' se assente). */
+  /** System prompt inviato per intero. */
+  system: string
+  /** Le sue sezioni ('' se assenti): istruzioni (brief o prompt del piano), stile, riassunto, estratti. */
+  instructions: string
   style: string
-  /** Sezione del riassunto aggiunta al system prompt ('' se non c'è). */
   summary: string
-  /** Sezione degli estratti della memoria ('' se non ci sono). */
   memory: string
+  /** Messaggi coperti dal riassunto ed estratti scelti. */
+  summaryCount: number
   memoryCount: number
   /** Messaggi inviati dopo il system prompt, in ordine. */
   messages: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>
   cpt: number
 }
 
-/** Voci di una richiesta di chat: istruzioni, stile, riassunto, estratti, storico, domanda. */
+/**
+ * Voci di una richiesta di chat: il system prompt diviso tra istruzioni, stile, riassunto ed estratti
+ * (la somma è la stima del system prompt intero), poi storico e domanda.
+ */
 export function chatParts(input: ChatPartsInput): ContextPart[] {
   const { cpt } = input
-  const instructions = input.style && input.base.includes(input.style) ? input.base.replace(input.style, '') : input.base
+  const [ti, ts, tsum, tm] = splitTokens(input.system ? estimateTokens(input.system, cpt) : 0, [input.instructions, input.style, input.summary, input.memory])
   const last = input.messages.at(-1)
   const question = last?.role === 'user' ? last : null
   const history = question ? input.messages.slice(0, -1) : input.messages
   const historyTokens = history.reduce((n, m) => n + estimateTokens(m.content, cpt), 0)
   return [
-    ...part('instructions', 'Istruzioni', instructions, cpt),
-    ...(input.style && input.base.includes(input.style) ? part('style', 'Stile della risposta', input.style, cpt) : []),
-    ...part('summary', 'Riassunto', input.summary, cpt),
-    ...part('memory', 'Estratti della memoria', input.memory, cpt, input.memoryCount),
+    ...(input.instructions.trim() ? [{ key: 'instructions' as const, label: 'Istruzioni', tokens: ti }] : []),
+    ...(input.style ? [{ key: 'style' as const, label: 'Stile della risposta', tokens: ts }] : []),
+    ...(input.summary ? [{ key: 'summary' as const, label: 'Riassunto', tokens: tsum, count: input.summaryCount }] : []),
+    ...(input.memory ? [{ key: 'memory' as const, label: 'Estratti della memoria', tokens: tm, count: input.memoryCount }] : []),
     ...(history.length ? [{ key: 'history' as const, label: 'Storico', tokens: historyTokens, count: history.length }] : []),
-    ...(question ? part('question', 'Domanda', question.content, cpt) : [])
+    ...(question ? [{ key: 'question' as const, label: 'Domanda', tokens: estimateTokens(question.content, cpt) }] : [])
   ]
 }
 
@@ -80,4 +78,41 @@ export function analyzeCall(call: Pick<ContextCall, 'parts' | 'numCtx' | 'prompt
   const much = read != null && sent > 0 && read < sent * READ_LESS
   const truncated = over || (much && call.numCtx != null && read! >= call.numCtx * 0.9)
   return { sent, occupied, delta, deltaShare, truncated, readLess: much && !truncated }
+}
+
+export interface ReconcileRow {
+  key: ContextPart['key'] | 'answer' | 'ollama'
+  label: string
+  /** Valore nella chiamata e ora (null = voce assente). */
+  then: number | null
+  now: number | null
+  thenCount?: number
+  nowCount?: number
+  delta: number
+}
+
+const ORDER: Array<ContextPart['key']> = ['instructions', 'style', 'summary', 'memory', 'history', 'question']
+
+/**
+ * Riconcilia l'ultima risposta con lo stato attuale: per ogni voce il valore di allora e di adesso. Allora:
+ * voci inviate + risposta generata + scarto di Ollama (= occupato); ora: voci + scarto (= contatore).
+ * La somma delle differenze è esattamente la differenza dei totali.
+ */
+export function reconcile(
+  call: Pick<ContextCall, 'parts' | 'numCtx' | 'promptEvalCount' | 'evalCount'>,
+  now: { used: number; parts: ContextPart[]; adjustment: number }
+): { rows: ReconcileRow[]; thenTotal: number; nowTotal: number } {
+  const a = analyzeCall(call)
+  const rows: ReconcileRow[] = []
+  for (const key of ORDER) {
+    const t = call.parts.find((p) => p.key === key)
+    const n = now.parts.find((p) => p.key === key)
+    if (!t && !n) continue
+    rows.push({ key, label: (t ?? n)!.label, then: t?.tokens ?? null, now: n?.tokens ?? null, thenCount: t?.count, nowCount: n?.count, delta: (n?.tokens ?? 0) - (t?.tokens ?? 0) })
+  }
+  const answer = call.evalCount ?? 0
+  if (answer) rows.push({ key: 'answer', label: 'Risposta generata', then: answer, now: null, delta: -answer })
+  const thenAdj = a.delta ?? 0
+  if (thenAdj || now.adjustment) rows.push({ key: 'ollama', label: 'Scarto di Ollama', then: thenAdj || null, now: now.adjustment || null, delta: now.adjustment - thenAdj })
+  return { rows, thenTotal: a.sent + answer + thenAdj, nowTotal: now.used }
 }

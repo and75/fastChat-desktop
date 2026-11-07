@@ -991,6 +991,9 @@ try {
     await page.waitForFunction(() => document.getElementById('panel-tab-context')?.getAttribute('aria-selected') === 'true')
     const monitor = page.locator('#panel-context')
     await monitor.getByTestId('context-sent').or(monitor.getByTestId('context-empty')).first().waitFor()
+    // stato del contesto: stessa percentuale del contatore in basso
+    const pctOf = (t) => t.match(/(\d+|>100)%/)?.[1]
+    assert.equal(pctOf(await monitor.getByTestId('context-state-total').innerText()), pctOf(await page.getByTestId('context-usage').innerText()))
     if (await monitor.getByTestId('context-sent').isVisible()) {
       assert.match(await monitor.getByTestId('context-sent').innerText(), /Totale inviato/)
       assert.match(await monitor.getByTestId('context-consumed').innerText(), /Prompt letto|fallita|conteggi/)

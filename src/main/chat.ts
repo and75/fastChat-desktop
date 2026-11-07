@@ -115,11 +115,15 @@ export function composeChat(
   const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.reserveTokens })
   const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
   for (const m of picked) out.push({ role: m.role, content: m.content })
+  const style = buildStyleSection(conv.style)
+  const hasStyle = !!style && base.includes(style)
   const parts = chatParts({
-    base,
-    style: buildStyleSection(conv.style),
+    system,
+    instructions: hasStyle ? base.replace(style, '') : base,
+    style: hasStyle ? style : '',
     summary,
     memory,
+    summaryCount: summary ? history.length - recent.length : 0,
     memoryCount,
     messages: picked,
     cpt: charsPerToken(history)

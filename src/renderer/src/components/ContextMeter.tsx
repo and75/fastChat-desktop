@@ -1,29 +1,37 @@
-import { computeContextUsage, DEFAULT_CHARS_PER_TOKEN, formatTokensK, SUMMARY } from '@shared/prompt'
+import { computeContextUsage, DEFAULT_CHARS_PER_TOKEN, formatTokensK, SUMMARY, type ContextUsage } from '@shared/prompt'
 import { resolveSettings } from '@shared/settings'
 import { useChat } from '../store/useChat'
 import { useModels } from '../store/useModels'
 
-/** Uso della memoria della conversazione: «Contesto 3,2k / 8,2k · 40%» con barretta. */
-export function ContextMeter(): React.JSX.Element | null {
+/**
+ * Uso attuale della memoria della conversazione aperta: lo stesso calcolo per il contatore in basso e per
+ * lo «Stato del contesto» nella scheda Contesto.
+ */
+export function useContextUsage(): ContextUsage | null {
   const conversation = useChat((s) => s.conversation)
   const messages = useChat((s) => s.messages)
   const live = useChat((s) => (s.conversation ? s.streams[s.conversation.id] : undefined))
   const caps = useModels((s) => (conversation ? s.capabilities[conversation.model] : undefined))
   if (!conversation) return null
-
   // Durante lo streaming conta anche la risposta che sta arrivando.
   const all = live?.kind === 'chat' && live.content ? [...messages, { role: 'assistant' as const, content: live.content }] : messages
-  // Stessa memoria che il main invia a Ollama come num_ctx; la riserva è lo spazio lasciato alla risposta.
-  const effective = resolveSettings(conversation, caps)
-  const usage = computeContextUsage({
+  // Stessa memoria che il main invia a Ollama come num_ctx.
+  return computeContextUsage({
     brief: conversation,
     style: conversation.style,
     messages: all,
-    numCtx: effective.numCtx,
+    numCtx: resolveSettings(conversation, caps).numCtx,
     summary: conversation.summary,
     summaryUpTo: conversation.summaryUpTo,
     summaryUpdatedAt: conversation.summaryUpdatedAt
   })
+}
+
+/** Uso della memoria della conversazione: «Contesto 3,2k / 8,2k · 40%» con barretta. */
+export function ContextMeter(): React.JSX.Element | null {
+  const conversation = useChat((s) => s.conversation)
+  const usage = useContextUsage()
+  if (!conversation || !usage) return null
   const pct = Math.round(usage.ratio * 100)
   // Oltre la soglia, alla prossima domanda i messaggi più vecchi vengono riassunti prima della risposta.
   const over = usage.ratio > SUMMARY.trigger

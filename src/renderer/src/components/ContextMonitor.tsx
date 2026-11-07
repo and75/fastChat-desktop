@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { analyzeCall, CALL_LABELS } from '@shared/context'
+import { analyzeCall, CALL_LABELS, reconcile, type ReconcileRow } from '@shared/context'
 import { formatElapsed } from '@shared/format'
-import { SUMMARY } from '@shared/prompt'
+import { DEFAULT_CHARS_PER_TOKEN, SUMMARY, type ContextUsage } from '@shared/prompt'
+import { MEMORY } from '@shared/memory'
 import { RESERVE_SHARE } from '@shared/settings'
+import { useContextUsage } from './ContextMeter'
 import type { ContextCall, ContextPart, Conversation } from '@shared/types'
 
 /** Colore di ogni voce (barra e tabella). */
@@ -17,7 +19,7 @@ const COLORS: Record<ContextPart['key'], string> = {
   texts: 'bg-sky-500'
 }
 
-const int = (n: number): string => Math.round(n).toLocaleString('it-IT')
+const int = (n: number): string => Math.round(n).toLocaleString('it-IT', { useGrouping: 'always' } as Intl.NumberFormatOptions)
 const pct = (n: number, total: number | null): string =>
   total ? ((n / total) * 100).toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : ''
 const hhmmss = (ms: number): string => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -50,14 +52,35 @@ export function ContextMonitor({ conversation }: { conversation: Conversation })
     }
   }, [conversation.id])
 
-  if (calls.length === 0) {
-    return (
-      <p className="text-sm text-zinc-500" data-testid="context-empty">
-        Nessuna chiamata ancora. Qui compare, per ogni richiesta a Ollama (risposta, riassunto, titolo, memoria), quanto contesto
-        viene inviato e quanto ne occupa davvero.
-      </p>
-    )
-  }
+  const lastAnswer = calls.find((c) => (c.kind === 'chat' || c.kind === 'execute' || c.kind === 'plan') && !c.error)
+  return (
+    <div className="flex flex-col gap-4">
+      <ContextState conversation={conversation} lastAnswer={lastAnswer ?? null} />
+      <section className="flex flex-col gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800" aria-label="Chiamate a Ollama">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">Chiamate a Ollama</h3>
+        {calls.length === 0 ? (
+          <p className="text-sm text-zinc-500" data-testid="context-empty">
+            Nessuna chiamata ancora. Qui compare, per ogni richiesta a Ollama (risposta, riassunto, titolo, memoria), quanto contesto
+            viene inviato e quanto ne occupa davvero.
+          </p>
+        ) : (
+          <CallDetail calls={calls} selected={selected} setSelected={setSelected} />
+        )}
+      </section>
+    </div>
+  )
+}
+
+/** Dettaglio di una chiamata: inviato per voce, consumato secondo Ollama, tempi. */
+function CallDetail({
+  calls,
+  selected,
+  setSelected
+}: {
+  calls: ContextCall[]
+  selected: string | null
+  setSelected: (id: string | null) => void
+}): React.JSX.Element {
 
   const index = Math.max(0, selected ? calls.findIndex((c) => c.id === selected) : 0)
   const call = calls[index]
@@ -301,5 +324,168 @@ export function ContextMonitor({ conversation }: { conversation: Conversation })
       )}
       {call.doneReason === 'length' && <p className="text-xs text-amber-700 dark:text-amber-400">Risposta fermata al limite di token.</p>}
     </div>
+  )
+}
+
+/** Come è stato calcolato il numero del contatore. */
+function sourceText(usage: ContextUsage): string {
+  const cpt = `${usage.charsPerToken.toLocaleString('it-IT')} caratteri per token${usage.charsPerToken === DEFAULT_CHARS_PER_TOKEN ? ' (valore predefinito)' : ', misurati sulla conversazione'}`
+  switch (usage.source) {
+    case 'ollama':
+      return `Conteggio di Ollama dell'ultima risposta (prompt + risposta)${usage.estimated ? ', più la stima dei messaggi successivi' : ''}. Le voci sono stime: la differenza è lo scarto di Ollama.`
+    case 'summary-changed':
+      return `Stima con ${cpt}. I conteggi di Ollama dell'ultima risposta non valgono più: il riassunto è cambiato dopo.`
+    case 'cache':
+      return `Stima con ${cpt}. Il conteggio di Ollama dell'ultima risposta era troppo basso (cache dei prompt): non attendibile.`
+    default:
+      return `Stima con ${cpt}: Ollama non ha ancora dato conteggi per questi messaggi.`
+  }
+}
+
+/** Nota sotto una riga della riconciliazione. */
+function rowNote(row: ReconcileRow, rows: ReconcileRow[]): string | null {
+  const summary = rows.find((r) => r.key === 'summary')
+  const entered = (summary?.nowCount ?? 0) - (summary?.thenCount ?? 0)
+  switch (row.key) {
+    case 'summary':
+      if (row.then == null) return `creato dopo la risposta: copre ${row.nowCount} messaggi`
+      if (row.now == null) return 'non più in vigore'
+      return entered > 0 ? `aggiornato dopo la risposta: copre ${row.nowCount} messaggi invece di ${row.thenCount}` : null
+    case 'memory':
+      return row.now == null ? 'si scelgono di nuovo a ogni domanda: non contano finché non si invia' : null
+    case 'history': {
+      const notes = []
+      if (entered > 0) notes.push(`${entered} messaggi entrati nel riassunto`)
+      if (rows.some((r) => r.key === 'question' || r.key === 'answer')) notes.push('domanda e risposta ora fanno parte dello storico')
+      return notes.length ? notes.join('; ') : null
+    }
+    case 'ollama':
+      return 'prompt letto da Ollama meno la stima delle voci'
+    default:
+      return null
+  }
+}
+
+/**
+ * «Stato del contesto»: lo stesso numero del contatore in basso, con le voci, come è stato calcolato e il
+ * confronto con l'ultima risposta (perché i due numeri non coincidono).
+ */
+function ContextState({ conversation, lastAnswer }: { conversation: Conversation; lastAnswer: ContextCall | null }): React.JSX.Element | null {
+  const usage = useContextUsage()
+  if (!usage) return null
+  const ctx = usage.total
+  const pctOf = (n: number): string => `${Math.round((n / ctx) * 100)}%`
+  const memoryRoom =
+    conversation.longMemory && conversation.summary
+      ? Math.max(0, Math.min(Math.floor(ctx * MEMORY.budgetShare), ctx - Math.floor(ctx * RESERVE_SHARE) - usage.used))
+      : 0
+  const rec = lastAnswer ? reconcile(lastAnswer, usage) : null
+  const cell = (n: number | null, count?: number): string => (n == null ? '—' : `${int(n)}${count != null ? ` (${count})` : ''}`)
+  const signed = (n: number): string => (n > 0 ? `+${int(n)}` : n < 0 ? `−${int(-n)}` : '0')
+
+  return (
+    <section className="flex flex-col gap-1.5 text-xs" aria-label="Stato del contesto" data-testid="context-state">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">Stato del contesto</h3>
+        <span className="text-sm font-semibold tabular-nums" data-testid="context-state-total">
+          {usage.estimated ? '≈ ' : ''}
+          {int(usage.used)} / {int(ctx)} · {pctOf(usage.used)}
+        </span>
+      </div>
+      <div className="relative flex h-2.5 overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800" aria-hidden>
+        {usage.parts.map((p) => (
+          <span key={p.key} className={COLORS[p.key]} style={{ width: `${(Math.max(0, p.tokens) / ctx) * 100}%` }} />
+        ))}
+        {usage.adjustment > 0 && <span className="bg-amber-300/60" style={{ width: `${(usage.adjustment / ctx) * 100}%` }} />}
+        <i className="absolute inset-y-0 w-px bg-zinc-900 dark:bg-zinc-100" style={{ left: `${SUMMARY.trigger * 100}%` }} />
+        <i className="absolute inset-y-0 w-px bg-zinc-400" style={{ left: `${(1 - RESERVE_SHARE) * 100}%` }} />
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5" data-testid="context-state-parts">
+        {usage.parts.map((p) => (
+          <span key={p.key}>
+            <i className={`mr-1 inline-block h-2 w-2 rounded-sm ${COLORS[p.key]}`} />
+            {p.key === 'instructions' ? 'Istruzioni' : p.key === 'style' ? 'Stile' : p.label}
+            {p.key === 'history' && p.count != null ? ` (${p.count})` : ''} {int(p.tokens)}
+          </span>
+        ))}
+        {usage.adjustment !== 0 && (
+          <span>
+            <i className="mr-1 inline-block h-2 w-2 rounded-sm bg-amber-300" />
+            Scarto di Ollama {signed(usage.adjustment)}
+          </span>
+        )}
+      </div>
+      <p className="text-zinc-500" data-testid="context-state-source">
+        {sourceText(usage)}{' '}
+        {conversation.autoSummary
+          ? `Il riassunto scatta oltre ${int(ctx * SUMMARY.trigger)} (${Math.round(SUMMARY.trigger * 100)}%); `
+          : ''}
+        {int(Math.floor(ctx * RESERVE_SHARE))} ({Math.round(RESERVE_SHARE * 100)}%) restano liberi per la risposta.
+      </p>
+      <p className="text-zinc-400">
+        Alla prossima domanda si aggiungono la domanda{memoryRoom > 0 ? ` e gli estratti della memoria (fino a ${int(memoryRoom)})` : ''}.
+      </p>
+      {rec && (
+        <details className="mt-0.5" data-testid="context-reconcile">
+          <summary className="cursor-pointer text-brand-700 dark:text-brand-300">
+            Confronto con l'ultima risposta ({int(rec.thenTotal)} → {int(rec.nowTotal)})
+          </summary>
+          <table className="mt-1 w-full">
+            <thead className="text-zinc-500">
+              <tr>
+                <th className="text-left font-normal">Voce</th>
+                <th className="text-right font-normal">Risposta {lastAnswer ? new Date(lastAnswer.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}</th>
+                <th className="text-right font-normal">Ora</th>
+                <th className="w-12 text-right font-normal">Δ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rec.rows.map((r) => {
+                const note = rowNote(r, rec.rows)
+                return (
+                  <FragmentRow key={r.key} row={r} note={note} cell={cell} signed={signed} />
+                )
+              })}
+              <tr className="border-t border-zinc-200 font-semibold dark:border-zinc-800">
+                <td className="pt-1">Totale</td>
+                <td className="pt-1 text-right tabular-nums">{int(rec.thenTotal)}</td>
+                <td className="pt-1 text-right tabular-nums">{int(rec.nowTotal)}</td>
+                <td className="pt-1 text-right tabular-nums">{signed(rec.nowTotal - rec.thenTotal)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </details>
+      )}
+    </section>
+  )
+}
+
+function FragmentRow({
+  row,
+  note,
+  cell,
+  signed
+}: {
+  row: ReconcileRow
+  note: string | null
+  cell: (n: number | null, count?: number) => string
+  signed: (n: number) => string
+}): React.JSX.Element {
+  return (
+    <>
+      <tr>
+        <td className="pt-0.5">{row.label}</td>
+        <td className="text-right tabular-nums">{row.key === 'ollama' && row.then != null ? signed(row.then) : cell(row.then, row.key === 'history' ? row.thenCount : undefined)}</td>
+        <td className="text-right tabular-nums">{row.key === 'ollama' && row.now != null ? signed(row.now) : cell(row.now, row.key === 'history' ? row.nowCount : undefined)}</td>
+        <td className="text-right tabular-nums">{signed(row.delta)}</td>
+      </tr>
+      {note && (
+        <tr>
+          <td colSpan={4} className="pb-0.5 pl-2 text-[10.5px] text-zinc-500">
+            {note}
+          </td>
+        </tr>
+      )}
+    </>
   )
 }

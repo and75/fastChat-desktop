@@ -1,6 +1,6 @@
 // Funzioni pure per comporre i prompt. Condivise: il main le usa per le chiamate a Ollama,
 // il renderer per l'anteprima del system prompt nel BriefPanel.
-import { OLLAMA_DEFAULTS, type Brief, type PlanStep, type ResponseStyle } from './types'
+import { OLLAMA_DEFAULTS, type Brief, type ContextPart, type PlanStep, type ResponseStyle } from './types'
 
 const SECTIONS: Array<[keyof Brief, string]> = [
   ['role', 'Ruolo'],
@@ -82,6 +82,19 @@ export const DEFAULT_CHARS_PER_TOKEN = 4
 const CHARS_PER_TOKEN_RANGE = [2, 6] as const
 /** Token generati minimi perché la misura valga qualcosa. */
 const MIN_CALIBRATION_TOKENS = 50
+
+/**
+ * Divide i token di un testo composto tra le sue sezioni, in proporzione ai caratteri: la somma resta
+ * esattamente il totale (l'arrotondamento va alla sezione più lunga).
+ */
+export function splitTokens(total: number, sections: ReadonlyArray<string>): number[] {
+  const lens = sections.map((t) => t.length)
+  const sum = lens.reduce((a, b) => a + b, 0)
+  if (sum === 0) return sections.map(() => 0)
+  const out = lens.map((l) => Math.floor((total * l) / sum))
+  out[lens.indexOf(Math.max(...lens))] += total - out.reduce((a, b) => a + b, 0)
+  return out
+}
 
 /** Stima: caratteri ÷ caratteri per token, più un piccolo costo fisso per messaggio. */
 export const estimateTokens = (text: string, charsPerToken: number = DEFAULT_CHARS_PER_TOKEN): number =>
@@ -392,6 +405,15 @@ export interface ContextUsage {
   estimated: boolean
   /** Caratteri per token usati per le stime: misurati sulla conversazione, o il predefinito. */
   charsPerToken: number
+  /** Voci stimate: istruzioni, stile, riassunto (count = messaggi coperti), storico (count = messaggi). */
+  parts: ContextPart[]
+  /** Differenza tra il totale e la somma delle voci: lo scarto dei conteggi di Ollama (0 se è una stima). */
+  adjustment: number
+  /**
+   * Da dove viene il numero: conteggi di Ollama dell'ultima risposta, oppure stima perché non ce ne sono,
+   * perché il riassunto è cambiato dopo, o perché sono troppo bassi (cache).
+   */
+  source: 'ollama' | 'no-count' | 'summary-changed' | 'cache'
 }
 
 export interface ContextUsageInput {
@@ -418,7 +440,20 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage {
   const system = withSummary(buildSystemPrompt(input.brief, input.style), aligned ? input.summary : null)
   const cpt = charsPerToken(input.messages)
   const est = (text: string): number => estimateTokens(text, cpt)
-  const estimateAll = (system ? est(system) : 0) + messages.reduce((n, m) => n + est(m.content), 0)
+  const systemTokens = system ? est(system) : 0
+  const historyTokens = messages.reduce((n, m) => n + est(m.content), 0)
+  const estimateAll = systemTokens + historyTokens
+  // Voci: il system prompt diviso tra istruzioni, stile e riassunto; poi lo storico non riassunto.
+  const instructions = buildSystemPrompt(input.brief, null)
+  const style = buildStyleSection(input.style)
+  const summaryText = aligned ? withSummary('', input.summary) : ''
+  const [ti, ts, tsum] = splitTokens(systemTokens, [instructions, style, summaryText])
+  const parts: ContextPart[] = [
+    ...(instructions ? [{ key: 'instructions' as const, label: 'Istruzioni', tokens: ti }] : []),
+    ...(style ? [{ key: 'style' as const, label: 'Stile della risposta', tokens: ts }] : []),
+    ...(summaryText ? [{ key: 'summary' as const, label: 'Riassunto', tokens: tsum, count: input.messages.length - messages.length }] : []),
+    ...(messages.length ? [{ key: 'history' as const, label: 'Storico', tokens: historyTokens, count: messages.length }] : [])
+  ]
 
   let lastIdx = -1
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -432,6 +467,7 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage {
   let estimated = true
   // Se il riassunto è cambiato dopo l'ultima risposta, il conteggio di Ollama non descrive più il prompt attuale.
   const countValid = lastIdx >= 0 && (input.summaryUpdatedAt == null || (messages[lastIdx].createdAt ?? 0) >= input.summaryUpdatedAt)
+  let source: ContextUsage['source'] = lastIdx < 0 ? (input.summary && aligned ? 'summary-changed' : 'no-count') : countValid ? 'cache' : 'summary-changed'
   if (countValid) {
     const last = messages[lastIdx]
     const real = (last.promptEvalCount ?? 0) + (last.evalCount ?? est(last.content))
@@ -442,10 +478,11 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage {
     if (real >= estimateUpToLast * 0.5) {
       used = real + after
       estimated = after > 0
+      source = 'ollama'
     }
   }
 
-  return { used, total, ratio: total > 0 ? used / total : 0, estimated, charsPerToken: cpt }
+  return { used, total, ratio: total > 0 ? used / total : 0, estimated, charsPerToken: cpt, parts, adjustment: used - estimateAll, source }
 }
 
 /** Formato compatto in migliaia: 850 → "850", 3200 → "3,2k", 40960 → "41k". */
