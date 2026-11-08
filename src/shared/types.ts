@@ -381,11 +381,18 @@ export interface SendResult {
   userMessage?: Message
 }
 
+/** Scelte per la singola domanda. */
+export interface SendOptions {
+  /** Bottone libro: la risposta usa (o non usa) la base di conoscenza, a prescindere dall'impostazione della conversazione. */
+  knowledge?: boolean
+}
+
 /**
  * 'summarizing': prima della risposta i messaggi più vecchi vengono riassunti (la risposta arriva dopo).
+ * 'searching': prima della risposta si cercano estratti pertinenti nei documenti della base di conoscenza.
  * 'remembering': prima della risposta si cercano estratti pertinenti nei messaggi riassunti.
  */
-export type StreamEventType = 'summarizing' | 'remembering' | 'thinking' | 'content' | 'done' | 'error'
+export type StreamEventType = 'summarizing' | 'searching' | 'remembering' | 'thinking' | 'content' | 'done' | 'error'
 
 /** 'chat': risposta normale o esecuzione di un piano; 'plan': proposta di un piano (content è JSON). */
 export type StreamKind = 'chat' | 'plan'
@@ -455,6 +462,15 @@ export const IPC = {
   conversationsSummarize: 'conversations:summarize',
   memoryStatus: 'memory:status',
   memoryRebuild: 'memory:rebuild',
+  /** Base di conoscenza della conversazione. */
+  knowledgeStatus: 'knowledge:status',
+  knowledgeSources: 'knowledge:sources',
+  knowledgeAddFiles: 'knowledge:add-files',
+  knowledgePickFiles: 'knowledge:pick-files',
+  knowledgeRemove: 'knowledge:remove',
+  knowledgeReindex: 'knowledge:reindex',
+  /** Evento main → renderer: avanzamento dell'indicizzazione di un documento. */
+  knowledgeProgress: 'knowledge:progress',
   contextCalls: 'context:calls',
   /** Evento main → renderer: nuova chiamata registrata. */
   contextCallAdded: 'context:call-added',

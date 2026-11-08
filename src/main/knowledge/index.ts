@@ -232,7 +232,7 @@ export function createKnowledge({ db, embedder, registry, onProgress }: Knowledg
     }
   }
 
-  return { addFiles, reindex, remove, ensureModel, hasReady, recall, status, wait, isMissingModel: (err: unknown) => err instanceof OllamaError && err.code === 'model' }
+  return { embedder, addFiles, reindex, remove, ensureModel, hasReady, recall, status, wait, isMissingModel: (err: unknown) => err instanceof OllamaError && err.code === 'model' }
 }
 
 export type Knowledge = ReturnType<typeof createKnowledge>

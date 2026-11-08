@@ -51,9 +51,12 @@ export interface ChatPartsInput {
   style: string
   summary: string
   memory: string
+  /** Estratti dei documenti della base di conoscenza ('' se assenti). */
+  knowledge?: string
   /** Messaggi coperti dal riassunto ed estratti scelti. */
   summaryCount: number
   memoryCount: number
+  knowledgeCount?: number
   /** Messaggi inviati dopo il system prompt, in ordine. */
   messages: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>
   cpt: number
@@ -65,7 +68,8 @@ export interface ChatPartsInput {
  */
 export function chatParts(input: ChatPartsInput): ContextPart[] {
   const { cpt } = input
-  const [ti, ts, tsum, tm] = splitTokens(input.system ? estimateTokens(input.system, cpt) : 0, [input.instructions, input.style, input.summary, input.memory])
+  const knowledge = input.knowledge ?? ''
+  const [ti, ts, tsum, tm, tk] = splitTokens(input.system ? estimateTokens(input.system, cpt) : 0, [input.instructions, input.style, input.summary, input.memory, knowledge])
   const last = input.messages.at(-1)
   const question = last?.role === 'user' ? last : null
   const history = question ? input.messages.slice(0, -1) : input.messages
@@ -75,6 +79,7 @@ export function chatParts(input: ChatPartsInput): ContextPart[] {
     ...(input.style ? [{ key: 'style' as const, label: 'style', tokens: ts }] : []),
     ...(input.summary ? [{ key: 'summary' as const, label: 'summary', tokens: tsum, count: input.summaryCount }] : []),
     ...(input.memory ? [{ key: 'memory' as const, label: 'memory', tokens: tm, count: input.memoryCount }] : []),
+    ...(knowledge ? [{ key: 'knowledge' as const, label: 'knowledge', tokens: tk, count: input.knowledgeCount ?? 0 }] : []),
     ...(history.length ? [{ key: 'history' as const, label: 'history', tokens: historyTokens, count: history.length }] : []),
     ...(question ? [{ key: 'question' as const, label: 'question', tokens: estimateTokens(question.content, cpt) }] : [])
   ]
@@ -120,7 +125,7 @@ export interface ReconcileRow {
   delta: number
 }
 
-const ORDER: Array<ContextPart['key']> = ['instructions', 'style', 'summary', 'memory', 'history', 'question']
+const ORDER: Array<ContextPart['key']> = ['instructions', 'style', 'summary', 'memory', 'knowledge', 'history', 'question']
 
 /**
  * Riconcilia l'ultima risposta con lo stato attuale: per ogni voce il valore di allora e di adesso. Allora:

@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { createConversation, listContextCalls, listDocuments, listKnowledgeChunks, saveModelSetting, setSettings } from '../src/main/db/repo'
+import { addMessage, createConversation, listContextCalls, listDocuments, listKnowledgeChunks, listMessages, saveModelSetting, setSettings, updateConversation } from '../src/main/db/repo'
+import { createChatService, wantsKnowledge } from '../src/main/chat'
+import { createMemory } from '../src/main/memory'
 import { createEmbedder } from '../src/main/embedder'
 import { createContextLog } from '../src/main/contextLog'
 import { createKnowledge, hashFile } from '../src/main/knowledge'
@@ -14,7 +16,7 @@ import { textSource } from '../src/main/knowledge/sources/text'
 import { createOllamaClient } from '../src/main/ollama'
 import { buildDocumentChunks, buildKnowledgeSection, knowledgeBudget, normalizeText, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs } from '../src/shared/knowledge'
 import { fromBuffer } from '../src/shared/memory'
-import type { Conversation, KnowledgeProgress } from '../src/shared/types'
+import type { Conversation, KnowledgeProgress, StreamEvent } from '../src/shared/types'
 import { fakeEmbedding, startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
 
 const fixtures = resolve(__dirname, 'fixtures')
@@ -272,5 +274,157 @@ describe('base di conoscenza: servizio', () => {
     expect(s.modelInstalled).toBe(false)
     expect(s.documents[0].status).toBe('error')
     expect(s.documents[0].error).toMatch(/not found/)
+  })
+})
+
+describe('base di conoscenza: nella chat', () => {
+  let fake: FakeOllama
+  let h: DbHandle
+  let events: StreamEvent[]
+  beforeAll(async () => {
+    fake = await startFakeOllama([
+      { name: 'chat', capabilities: ['completion'], contextLength: 8192, parameters: 'num_ctx 4096', chunks: [{ content: 'Quattordici persone [relazione].' }] },
+      { name: 'embeddinggemma:latest', capabilities: ['embedding'] }
+    ])
+  })
+  afterAll(() => fake.close())
+  beforeEach(async () => {
+    h = openDatabase(':memory:')
+    await runMigrations(h, resolve(__dirname, '../drizzle'))
+    events = []
+  })
+  afterEach(() => h.close())
+
+  /** Servizi come li collega il main: un embedder condiviso tra memoria, documenti e chat. */
+  function services() {
+    const ollama = createOllamaClient(() => fake.url)
+    const contextLog = createContextLog(h.db)
+    const embedder = createEmbedder({ db: h.db, ollama, contextLog })
+    const memory = createMemory({ db: h.db, ollama, contextLog, embedder })
+    const knowledge = createKnowledge({ db: h.db, embedder, registry: createRegistry(BUILTIN_SOURCES) })
+    const chat = createChatService({ db: h.db, ollama, memory, knowledge, embedder, contextLog, emit: (_t, e) => events.push(e) })
+    return { knowledge, memory, chat }
+  }
+
+  /** La richiesta di chat che risponde alla domanda (non quella del titolo automatico). */
+  const chatBodyFor = (question: string) =>
+    fake.requests
+      .filter((q) => q.path === '/api/chat')
+      .map((q) => q.body as { messages: Array<{ role: string; content: string }> })
+      .findLast((b) => b.messages.at(-1)?.content === question)!
+  const embedQueries = (from: number) => fake.requests.slice(from).filter((q) => q.path === '/api/embed').length
+
+  it('wantsKnowledge: la scelta sulla domanda vince sull\'impostazione della conversazione', () => {
+    expect(wantsKnowledge({ knowledge: true }, null)).toBe(true)
+    expect(wantsKnowledge({ knowledge: false }, { knowledge: null })).toBe(false)
+    expect(wantsKnowledge({ knowledge: true }, { knowledge: false })).toBe(false)
+    expect(wantsKnowledge({ knowledge: false }, { knowledge: true })).toBe(true)
+  })
+
+  it('pill accesa: «Cerco nei documenti», estratti nel system prompt con la fonte, voce nel monitor, fonti salvate sulla risposta', async () => {
+    const { knowledge, chat } = services()
+    const conv = await createConversation(h.db, { model: 'chat' })
+    await knowledge.addFiles(conv, [join(fixtures, 'relazione.txt'), join(fixtures, 'manuale.md')])
+    await knowledge.wait(conv.id)
+    const before = fake.requests.length
+    const sent = await chat.send({}, conv.id, 'Quante persone ha assunto la sede di Torino?')
+    await chat.wait(sent.streamId)
+    expect(sent.userMessage?.knowledge).toBeNull()
+    const types = events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)
+    expect(types[0]).toBe('searching')
+    expect(types).not.toContain('remembering')
+    const system = chatBodyFor('Quante persone ha assunto la sede di Torino?').messages[0].content
+    expect(system).toContain('# Base di conoscenza')
+    expect(system).toContain('[relazione]\n')
+    expect(system).toContain('Torino')
+    expect(system).not.toContain('Windows')
+    // un solo embedding (la domanda); i documenti erano già indicizzati
+    expect(embedQueries(before)).toBe(1)
+    const calls = (await listContextCalls(h.db, conv.id)).filter((c) => c.kind !== 'title')
+    expect(calls[0].kind).toBe('chat')
+    expect(calls[0].parts.find((p) => p.key === 'knowledge')).toMatchObject({ label: 'knowledge', count: 1 })
+    expect(calls[1].kind).toBe('embed-query')
+    const answer = (await listMessages(h.db, conv.id)).at(-1)!
+    expect(answer.role).toBe('assistant')
+    expect(answer.knowledgeRefs?.[0]).toMatchObject({ title: 'relazione', locator: null })
+    expect(answer.knowledgeRefs?.[0].excerpt).toContain('Torino')
+    expect(answer.memoryRefs).toBeNull()
+  })
+
+  it('bottone libro: spento per una domanda con la pill accesa → nessuna ricerca; acceso con la pill spenta → ricerca; «Rigenera» ripete la scelta', async () => {
+    const { knowledge, chat } = services()
+    let conv = await createConversation(h.db, { model: 'chat' })
+    await knowledge.addFiles(conv, [join(fixtures, 'relazione.txt')])
+    await knowledge.wait(conv.id)
+
+    let before = fake.requests.length
+    let sent = await chat.send({}, conv.id, 'Quante persone ha assunto la sede di Torino?', { knowledge: false })
+    await chat.wait(sent.streamId)
+    expect(sent.userMessage?.knowledge).toBe(false)
+    expect(events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)[0]).toBe('content')
+    expect(embedQueries(before)).toBe(0)
+    expect(chatBodyFor('Quante persone ha assunto la sede di Torino?').messages[0].role).toBe('user')
+    expect((await listMessages(h.db, conv.id)).at(-1)!.knowledgeRefs).toBeNull()
+
+    conv = await updateConversation(h.db, conv.id, { knowledge: false })
+    before = fake.requests.length
+    sent = await chat.send({}, conv.id, 'Quante persone ha assunto la sede di Torino?', { knowledge: true })
+    await chat.wait(sent.streamId)
+    expect(sent.userMessage?.knowledge).toBe(true)
+    expect(events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)[0]).toBe('searching')
+    expect(embedQueries(before)).toBe(1)
+    expect(chatBodyFor('Quante persone ha assunto la sede di Torino?').messages[0].content).toContain('# Base di conoscenza')
+
+    // rigenera: la domanda aveva il libro acceso, la pill è spenta → cerca di nuovo
+    before = fake.requests.length
+    const again = await chat.regenerate({}, conv.id)
+    await chat.wait(again.streamId)
+    expect(events.filter((e) => e.streamId === again.streamId).map((e) => e.type)[0]).toBe('searching')
+    expect(embedQueries(before)).toBe(1)
+  })
+
+  it('senza documenti pronti non si cerca, anche con la pill accesa; plan mode salva la scelta sulla domanda', async () => {
+    const { chat } = services()
+    const conv = await createConversation(h.db, { model: 'chat' })
+    const before = fake.requests.length
+    const sent = await chat.send({}, conv.id, 'Ciao')
+    await chat.wait(sent.streamId)
+    expect(events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)[0]).toBe('content')
+    expect(embedQueries(before)).toBe(0)
+    const plan = await chat.proposePlan({}, conv.id, 'Pianifica', { knowledge: true })
+    await chat.wait(plan.streamId)
+    expect(plan.userMessage?.knowledge).toBe(true)
+  })
+
+  it('documenti e memoria insieme: un solo embedding della domanda, documenti prima della memoria nel budget, entrambe le sezioni nel prompt', async () => {
+    const { knowledge, chat } = services()
+    const conv0 = await createConversation(h.db, { model: 'chat', numCtx: 4096 })
+    const texts = [
+      ['user', 'Organizziamo il viaggio in Portogallo: il budget massimo è ottocento euro per persona'],
+      ['assistant', 'Perfetto, con ottocento euro per persona possiamo stare a Lisbona e Porto.'],
+      ['user', 'Parliamo di cucina: cosa mangiare a Porto?'],
+      ['assistant', 'A Porto: francesinha, tripas, vinho verde.']
+    ] as const
+    for (const [role, content] of texts) await addMessage(h.db, { conversationId: conv0.id, role, content })
+    const msgs = await listMessages(h.db, conv0.id)
+    const conv = await updateConversation(h.db, conv0.id, { summary: 'Viaggio in Portogallo.', summaryUpTo: msgs[3].id, summaryUpdatedAt: Date.now() })
+    await knowledge.addFiles(conv, [join(fixtures, 'relazione.txt')])
+    await knowledge.wait(conv.id)
+    const before = fake.requests.length
+    const sent = await chat.send({}, conv.id, 'Il budget in euro per persona del viaggio basta per le quattordici persone assunte a Torino?')
+    await chat.wait(sent.streamId)
+    const types = events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)
+    expect(types.slice(0, 2)).toEqual(['searching', 'remembering'])
+    const embeds = fake.requests.slice(before).filter((q) => q.path === '/api/embed')
+    // indicizzazione della memoria (1) + domanda (1): la domanda non viene ricalcolata per i documenti
+    expect(embeds.filter((q) => ((q.body as { input: string[] }).input ?? []).some((x) => x.includes('budget in euro'))).length).toBe(1)
+    const system = chatBodyFor('Il budget in euro per persona del viaggio basta per le quattordici persone assunte a Torino?').messages[0].content
+    expect(system.indexOf('# Riassunto della conversazione finora')).toBeLessThan(system.indexOf('# Dalla conversazione precedente'))
+    expect(system.indexOf('# Dalla conversazione precedente')).toBeLessThan(system.indexOf('# Base di conoscenza'))
+    const answer = (await listMessages(h.db, conv.id)).at(-1)!
+    expect(answer.knowledgeRefs?.length).toBeGreaterThan(0)
+    expect(answer.memoryRefs?.length).toBeGreaterThan(0)
+    const call = (await listContextCalls(h.db, conv.id)).find((c) => c.kind === 'chat')!
+    expect(call.parts.map((p) => p.key)).toEqual(['summary', 'memory', 'knowledge', 'question'])
   })
 })

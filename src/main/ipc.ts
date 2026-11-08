@@ -13,7 +13,8 @@ import {
   type ConversationListQuery,
   type ConversationPatch,
   type PlanUpdate,
-  type Result
+  type Result,
+  type SendOptions
 } from '@shared/types'
 import { normalizeSteps } from '@shared/prompt'
 import { LANGUAGE_SETTINGS, resolveLocale, setLocale, t } from '@shared/i18n'
@@ -45,6 +46,10 @@ import {
 import { suggestedFileName, toJson, toMarkdown, type ExportFormat } from './export'
 import { createOllamaClient, OllamaError, type OllamaClient } from './ollama'
 import { createMemory } from './memory'
+import { createEmbedder } from './embedder'
+import { createKnowledge } from './knowledge'
+import { createRegistry } from './knowledge/registry'
+import { BUILTIN_SOURCES } from './knowledge/sources'
 import { createContextLog } from './contextLog'
 import { createSummarizer } from './summary'
 import { isLocalOllama, systemInfo } from './system'
@@ -107,12 +112,24 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     for (const w of BrowserWindow.getAllWindows()) if (!w.webContents.isDestroyed()) w.webContents.send(IPC.contextCallAdded, call)
   })
   const summarizer = createSummarizer({ db, ollama, contextLog })
-  const memory = createMemory({ db, ollama, contextLog })
+  const embedder = createEmbedder({ db, ollama, contextLog })
+  const memory = createMemory({ db, ollama, contextLog, embedder })
+  const registry = createRegistry(BUILTIN_SOURCES)
+  const knowledge = createKnowledge({
+    db,
+    embedder,
+    registry,
+    onProgress: (p) => {
+      for (const w of BrowserWindow.getAllWindows()) if (!w.webContents.isDestroyed()) w.webContents.send(IPC.knowledgeProgress, p)
+    }
+  })
   const chat = createChatService({
     db,
     ollama,
     summarizer,
     memory,
+    knowledge,
+    embedder,
     contextLog,
     emit: (target, event) => {
       const wc = target as WebContents
@@ -285,6 +302,8 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     if (Object.keys(fill).length) conversation = await updateConversation(db, conversation.id, fill)
     // Conversazioni già riassunte: la memoria si costruisce in sottofondo alla prima apertura.
     void memory.indexQuietly(conversation)
+    // Documenti in attesa o indicizzati con un altro modello di embedding: si rifanno in sottofondo.
+    void knowledge.ensureModel(conversation).catch(() => undefined)
     return {
       conversation,
       messages: await listMessages(db, conversation.id),
@@ -338,6 +357,41 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     }
     return memory.status(conv)
   })
+
+  // ---- base di conoscenza
+  handle(IPC.knowledgeSources, () => registry.describe())
+  handle(IPC.knowledgeStatus, async (_e, id: string) => knowledge.status(await convOrThrow(id)))
+  const validPaths = (raw: unknown): string[] => {
+    if (!Array.isArray(raw) || raw.some((p) => typeof p !== 'string' || !p)) throw new Error(t('err.badText'))
+    return raw as string[]
+  }
+  handle(IPC.knowledgeAddFiles, async (_e, id: string, paths: unknown) => knowledge.addFiles(await convOrThrow(id), validPaths(paths)))
+  /** Dialog di scelta dei file, filtrato sulle estensioni dei plugin; poi aggiunta. Null se annullato. */
+  handle(IPC.knowledgePickFiles, async (e, id: string) => {
+    const conv = await convOrThrow(id)
+    const extensions = registry.extensions()
+    const options: Electron.OpenDialogOptions = {
+      title: t('knowledge.pickTitle'),
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: t('knowledge.pickFilter'), extensions }]
+    }
+    // Per i test end-to-end: salta la finestra di dialogo e aggiunge i file indicati.
+    const forced = process.env.FASTCHAT_KNOWLEDGE_FILES
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const { canceled, filePaths } = forced
+      ? { canceled: false, filePaths: forced.split(process.platform === 'win32' ? ';' : ':').filter(Boolean) }
+      : win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options)
+    if (canceled || filePaths.length === 0) return null
+    return knowledge.addFiles(conv, filePaths)
+  })
+  handle(IPC.knowledgeRemove, async (_e, id: string, documentId: string) => {
+    const conv = await convOrThrow(id)
+    await knowledge.remove(conv, requireId(documentId))
+    return knowledge.status(conv)
+  })
+  handle(IPC.knowledgeReindex, async (_e, id: string, documentId: string) => knowledge.reindex(await convOrThrow(id), requireId(documentId)))
 
   /** Riporta temperatura, top_p e num_ctx ai valori suggeriti per il modello e la macchina. */
   handle(IPC.conversationsCalibrate, async (_e, id: string) => {
@@ -408,9 +462,15 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   })
 
   // ---- chat
-  handle(IPC.chatSend, (e, id: string, text: string) => {
+  /** Opzioni dell'invio dal renderer: solo i campi noti, con il tipo giusto. */
+  const sendOptions = (raw: unknown): SendOptions => {
+    const out: SendOptions = {}
+    if (raw && typeof raw === 'object' && typeof (raw as SendOptions).knowledge === 'boolean') out.knowledge = (raw as SendOptions).knowledge
+    return out
+  }
+  handle(IPC.chatSend, (e, id: string, text: string, options?: unknown) => {
     if (typeof text !== 'string') throw new Error(t('err.badMessage'))
-    return chat.send(watch(e.sender), requireId(id), text)
+    return chat.send(watch(e.sender), requireId(id), text, sendOptions(options))
   })
   handle(IPC.chatRegenerate, (e, id: string) => chat.regenerate(watch(e.sender), requireId(id)))
   handle(IPC.chatAbort, (_e, streamId: string) => chat.abort(requireId(streamId)))
@@ -424,9 +484,9 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   handle(IPC.templatesRemove, (_e, id: string) => removeTemplate(db, requireId(id)))
 
   // ---- plan mode
-  handle(IPC.plansPropose, (e, id: string, text: string) => {
+  handle(IPC.plansPropose, (e, id: string, text: string, options?: unknown) => {
     if (typeof text !== 'string') throw new Error(t('err.badMessage'))
-    return chat.proposePlan(watch(e.sender), requireId(id), text)
+    return chat.proposePlan(watch(e.sender), requireId(id), text, sendOptions(options))
   })
   handle(IPC.plansRegenerate, (e, conversationId: string) => chat.regeneratePlan(watch(e.sender), requireId(conversationId)))
   handle(IPC.plansUpdate, (_e, planId: string, update: PlanUpdate) => {

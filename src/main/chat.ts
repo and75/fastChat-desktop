@@ -14,7 +14,20 @@ import {
   withSummary
 } from '@shared/prompt'
 import { resolveSettings } from '@shared/settings'
-import { DEFAULT_TITLE, type Conversation, type DoneReason, type MemoryRef, type ModelCapabilities, type Message, type Plan, type SendResult, type StreamEvent, type StreamKind } from '@shared/types'
+import {
+  DEFAULT_TITLE,
+  type Conversation,
+  type DoneReason,
+  type KnowledgeRef,
+  type MemoryRef,
+  type ModelCapabilities,
+  type Message,
+  type Plan,
+  type SendOptions,
+  type SendResult,
+  type StreamEvent,
+  type StreamKind
+} from '@shared/types'
 import type { Db } from './db/client'
 import {
   addMessage,
@@ -37,6 +50,9 @@ import { callInput, type CallStart, type ContextLog } from './contextLog'
 import type { ChatMessage, ChatOptions, ChatRequest, OllamaClient } from './ollama'
 import { memoryBudget, type Memory, type Recall } from './memory'
 import type { Summarizer } from './summary'
+import { knowledgeBudget } from '@shared/knowledge'
+import type { Knowledge, KnowledgeRecall } from './knowledge'
+import type { Embedder } from './embedder'
 
 /** Destinatario degli eventi di stream (in produzione: il WebContents che ha fatto la richiesta). */
 export type StreamTarget = object
@@ -51,6 +67,10 @@ export interface ChatServiceDeps {
   summarizer?: Summarizer
   /** Memoria della conversazione (RAG sui messaggi riassunti). */
   memory?: Memory
+  /** Base di conoscenza (RAG sui documenti della conversazione). */
+  knowledge?: Knowledge
+  /** Embedding della domanda, condiviso tra memoria e base di conoscenza (se manca si usa quello di memory/knowledge). */
+  embedder?: Embedder
   /** Monitor del contesto: registra ogni chiamata a Ollama. */
   contextLog?: ContextLog
 }
@@ -84,6 +104,14 @@ export function buildOptions(conv: Conversation, caps: ModelCapabilities | null 
   return options
 }
 
+/** Sezioni aggiunte al system prompt dopo il riassunto: estratti della memoria e dei documenti, già pronti. */
+export interface Extras {
+  memory?: string
+  memoryCount?: number
+  knowledge?: string
+  knowledgeCount?: number
+}
+
 /**
  * Messaggi da inviare: system prompt (brief + stile + riassunto; mai troncato) + coda dei messaggi non
  * coperti dal riassunto che sta nel contesto, lasciando liberi i token di riserva per la risposta.
@@ -96,7 +124,7 @@ export function buildChatMessages(
   /** Estratti della memoria della conversazione (sezione già pronta), dopo il riassunto. */
   memory = ''
 ): ChatMessage[] {
-  return composeChat(conv, history, system, caps, memory).messages
+  return composeChat(conv, history, system, caps, { memory }).messages
 }
 
 /** Come buildChatMessages, più le voci per il monitor del contesto e i messaggi rimasti fuori. */
@@ -105,14 +133,16 @@ export function composeChat(
   history: Message[],
   base: string,
   caps: ModelCapabilities | null = null,
-  memory = '',
-  memoryCount = 0
+  extras: Extras = {}
 ): { messages: ChatMessage[]; parts: ContextPart[]; dropped: number } {
   const s = resolveSettings(conv, caps)
   const { recent, aligned } = historyAfter(history, conv.summaryUpTo)
   let system = aligned ? withSummary(base, conv.summary) : base
   const summary = system.slice(base.length)
-  if (memory) system = system ? `${system}\n\n${memory}` : memory
+  const memory = extras.memory ?? ''
+  const knowledge = extras.knowledge ?? ''
+  // Ordine: riassunto, memoria della conversazione, documenti (i più vicini alla domanda per ultimi).
+  for (const section of [memory, knowledge]) if (section) system = system ? `${system}\n\n${section}` : section
   const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.reserveTokens })
   const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
   for (const m of picked) out.push({ role: m.role, content: m.content })
@@ -124,12 +154,22 @@ export function composeChat(
     style: hasStyle ? style : '',
     summary,
     memory,
+    knowledge,
     summaryCount: summary ? history.length - recent.length : 0,
-    memoryCount,
+    memoryCount: extras.memoryCount ?? 0,
+    knowledgeCount: extras.knowledgeCount ?? 0,
     messages: picked,
     cpt: charsPerToken(history)
   })
   return { messages: out, parts, dropped: recent.length - picked.length }
+}
+
+/**
+ * La risposta a questa domanda usa la base di conoscenza? La scelta sulla domanda (bottone libro) vince;
+ * altrimenti vale l'impostazione della conversazione (pill «Usa la base di conoscenza»).
+ */
+export function wantsKnowledge(conv: Pick<Conversation, 'knowledge'>, question: Pick<Message, 'knowledge'> | null | undefined): boolean {
+  return question?.knowledge ?? conv.knowledge
 }
 
 const titlePrompt = (): string => t('prompt.title')
@@ -166,8 +206,9 @@ function systemFor(conv: Conversation, mode: Mode): string {
   }
 }
 
-export function createChatService({ db, ollama, emit, onConversationUpdated, summarizer, memory, contextLog }: ChatServiceDeps) {
+export function createChatService({ db, ollama, emit, onConversationUpdated, summarizer, memory, knowledge, embedder, contextLog }: ChatServiceDeps) {
   const streams = new Map<string, ActiveStream>()
+  const questionEmbedder = embedder ?? memory?.embedder ?? knowledge?.embedder ?? null
 
   const isBusy = (conversationId: string): boolean =>
     [...streams.values()].some((s) => s.conversationId === conversationId)
@@ -269,7 +310,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
       doneReason: DoneReason | null
       aborted: boolean
     },
-    memoryRefs: MemoryRef[] = []
+    memoryRefs: MemoryRef[] = [],
+    knowledgeRefs: KnowledgeRef[] = []
   ): Promise<Partial<StreamEvent>> {
     if (mode.kind === 'plan') {
       if (result.aborted) return { aborted: true }
@@ -290,7 +332,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         promptEvalCount: result.promptEvalCount,
         durationMs: result.durationMs,
         doneReason: result.aborted ? null : result.doneReason,
-        memoryRefs
+        memoryRefs,
+        knowledgeRefs
       })
     }
     const out: Partial<StreamEvent> = { message, aborted: result.aborted }
@@ -305,11 +348,10 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     conv: Conversation,
     mode: Mode,
     caps: ModelCapabilities | null,
-    memorySection = '',
-    memoryCount = 0
+    extras: Extras = {}
   ): Promise<{ request: ChatRequest; start: CallStart }> {
     const history = await listMessages(db, conv.id)
-    const composed = composeChat(conv, history, systemFor(conv, mode), caps, memorySection, memoryCount)
+    const composed = composeChat(conv, history, systemFor(conv, mode), caps, extras)
     const request: ChatRequest = {
       model: conv.model,
       messages: composed.messages,
@@ -354,16 +396,39 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
           emit(target, { ...base, type: 'done', aborted: true })
           return
         }
-        // Memoria della conversazione: dopo il primo riassunto, estratti pertinenti dei messaggi riassunti.
+        // Prima della risposta, con un solo embedding della domanda:
+        // - base di conoscenza (se la domanda o la conversazione la chiede e ci sono documenti pronti):
+        //   estratti dei documenti, fino al 25% della memoria;
+        // - memoria della conversazione (dopo il primo riassunto): estratti dei messaggi riassunti, nel 12%
+        //   dello spazio che resta.
+        let found: KnowledgeRecall = { section: '', refs: [] }
         let recall: Recall = { section: '', refs: [] }
-        if (memory && conv.longMemory && conv.summary) {
-          emit(target, { ...base, type: 'remembering' })
-          const { request: draft } = await buildRequest(conv, mode, caps)
+        const history = await listMessages(db, conv.id)
+        const question = history.findLast((m) => m.role === 'user') ?? null
+        const useKnowledge = !!knowledge && wantsKnowledge(conv, question) && (await knowledge.hasReady(conv.id).catch(() => false))
+        const useMemory = !!memory && (await memory.canRecall(conv).catch(() => false))
+        if (useKnowledge || useMemory) {
+          emit(target, { ...base, type: useKnowledge ? 'searching' : 'remembering' })
           const s = resolveSettings(conv, caps)
-          const used = draft.messages.reduce((n, m) => n + estimateTokens(m.content), 0)
-          recall = await memory.recall(conv, memoryBudget(s.numCtx, s.reserveTokens, used)).catch(() => recall)
+          const cpt = charsPerToken(history)
+          const { request: draft } = await buildRequest(conv, mode, caps)
+          let used = draft.messages.reduce((n, m) => n + estimateTokens(m.content, cpt), 0)
+          const query = await questionEmbedder?.embedQuestion(conv, history).catch(() => null)
+          if (useKnowledge && query) {
+            found = await knowledge!.recall(conv, query, knowledgeBudget(s.numCtx, s.reserveTokens, used), cpt).catch(() => found)
+            if (found.section) used += estimateTokens(found.section, cpt)
+          }
+          if (useMemory) {
+            if (useKnowledge) emit(target, { ...base, type: 'remembering' })
+            recall = await memory!.recall(conv, memoryBudget(s.numCtx, s.reserveTokens, used), query).catch(() => recall)
+          }
         }
-        const { request, start } = await buildRequest(conv, mode, caps, recall.section, recall.refs.length)
+        const { request, start } = await buildRequest(conv, mode, caps, {
+          memory: recall.section,
+          memoryCount: recall.refs.length,
+          knowledge: found.section,
+          knowledgeCount: found.refs.length
+        })
         const result = await ollama
           .chatStream(
             request,
@@ -378,7 +443,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
             throw err
           })
         await contextLog?.record(callInput(start, result))
-        const done = await finish(conv, mode, result, recall.refs)
+        const done = await finish(conv, mode, result, recall.refs, found.refs)
         answered = !!done.message
         emit(target, { ...base, type: 'done', ...done })
       } catch (err) {
@@ -405,10 +470,10 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     return streamId
   }
 
-  async function addUserMessage(conversationId: string, text: string): Promise<Message> {
+  async function addUserMessage(conversationId: string, text: string, options?: SendOptions): Promise<Message> {
     const content = text.trim()
     if (!content) throw new Error(t('err.emptyMessage'))
-    return addMessage(db, { conversationId, role: 'user', content })
+    return addMessage(db, { conversationId, role: 'user', content, knowledge: typeof options?.knowledge === 'boolean' ? options.knowledge : null })
   }
 
   async function loadPlan(planId: string): Promise<{ plan: Plan; conv: Conversation }> {
@@ -418,10 +483,11 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
   }
 
   return {
-    async send(target: StreamTarget, conversationId: string, text: string): Promise<SendResult> {
+    /** `options.knowledge`: scelta del bottone libro per questa domanda (assente = come la conversazione). */
+    async send(target: StreamTarget, conversationId: string, text: string, options?: SendOptions): Promise<SendResult> {
       if (!text.trim()) throw new Error(t('err.emptyMessage'))
       const conv = await loadConversation(conversationId)
-      const userMessage = await addUserMessage(conversationId, text)
+      const userMessage = await addUserMessage(conversationId, text, options)
       return { streamId: await startStream(target, conv, { kind: 'chat' }), userMessage }
     },
 
@@ -443,10 +509,10 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     },
 
     /** Plan mode, fase 1: salva il messaggio e chiede al modello un piano (JSON vincolato da schema). */
-    async proposePlan(target: StreamTarget, conversationId: string, text: string): Promise<SendResult> {
+    async proposePlan(target: StreamTarget, conversationId: string, text: string, options?: SendOptions): Promise<SendResult> {
       if (!text.trim()) throw new Error(t('err.emptyMessage'))
       const conv = await loadConversation(conversationId)
-      const userMessage = await addUserMessage(conversationId, text)
+      const userMessage = await addUserMessage(conversationId, text, options)
       return { streamId: await startStream(target, conv, { kind: 'plan', userMessageId: userMessage.id }), userMessage }
     },
 

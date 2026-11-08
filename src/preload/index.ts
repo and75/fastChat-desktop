@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { Api } from '@shared/api'
-import { IPC, type BenchmarkProgress, type ContextCall, type Conversation, type PullProgress, type Result, type StreamEvent } from '@shared/types'
+import { IPC, type BenchmarkProgress, type ContextCall, type Conversation, type KnowledgeProgress, type PullProgress, type Result, type StreamEvent } from '@shared/types'
 
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<Result<T>> =>
   ipcRenderer.invoke(channel, ...args) as Promise<Result<T>>
@@ -32,6 +32,15 @@ const api: Api = {
     status: (id) => invoke(IPC.memoryStatus, id),
     rebuild: (id) => invoke(IPC.memoryRebuild, id)
   },
+  knowledge: {
+    sources: () => invoke(IPC.knowledgeSources),
+    status: (id) => invoke(IPC.knowledgeStatus, id),
+    addFiles: (id, paths) => invoke(IPC.knowledgeAddFiles, id, paths),
+    pickFiles: (id) => invoke(IPC.knowledgePickFiles, id),
+    remove: (id, documentId) => invoke(IPC.knowledgeRemove, id, documentId),
+    reindex: (id, documentId) => invoke(IPC.knowledgeReindex, id, documentId),
+    onProgress: (cb) => subscribe<KnowledgeProgress>(IPC.knowledgeProgress, cb)
+  },
   context: {
     calls: (id) => invoke(IPC.contextCalls, id),
     onCall: (cb) => subscribe<ContextCall>(IPC.contextCallAdded, cb)
@@ -61,13 +70,13 @@ const api: Api = {
     remove: (id) => invoke(IPC.templatesRemove, id)
   },
   chat: {
-    send: (id, text) => invoke(IPC.chatSend, id, text),
+    send: (id, text, options) => invoke(IPC.chatSend, id, text, options),
     regenerate: (id) => invoke(IPC.chatRegenerate, id),
     abort: (streamId) => invoke(IPC.chatAbort, streamId),
     onStream: (cb) => subscribe<StreamEvent>(IPC.chatStream, cb)
   },
   plans: {
-    propose: (id, text) => invoke(IPC.plansPropose, id, text),
+    propose: (id, text, options) => invoke(IPC.plansPropose, id, text, options),
     regenerate: (id) => invoke(IPC.plansRegenerate, id),
     update: (planId, update) => invoke(IPC.plansUpdate, planId, update),
     execute: (planId) => invoke(IPC.plansExecute, planId)

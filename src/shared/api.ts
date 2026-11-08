@@ -3,6 +3,10 @@ import type {
   BenchmarkProgress,
   MemoryStatus,
   ContextCall,
+  KnowledgeDocument,
+  KnowledgeProgress,
+  KnowledgeSourceInfo,
+  KnowledgeStatus,
   ModelSetting,
   ModelSettingPatch,
   PullProgress,
@@ -16,6 +20,7 @@ import type {
   Plan,
   PlanUpdate,
   Result,
+  SendOptions,
   SendResult,
   StreamEvent
 } from './types'
@@ -52,6 +57,21 @@ export interface Api {
     status(conversationId: string): Promise<Result<MemoryStatus>>
     /** Rifà l'indice da zero (es. dopo aver cambiato il modello di embedding). */
     rebuild(conversationId: string): Promise<Result<MemoryStatus>>
+  }
+  knowledge: {
+    /** Plugin disponibili: etichette, estensioni lette, campi di configurazione. */
+    sources(): Promise<Result<KnowledgeSourceInfo[]>>
+    /** Documenti, connessioni, pezzi indicizzati e stato del modello di embedding. */
+    status(conversationId: string): Promise<Result<KnowledgeStatus>>
+    /** Aggiunge file per percorso (drag&drop): restituisce i documenti, indicizzati in sottofondo. */
+    addFiles(conversationId: string, paths: string[]): Promise<Result<KnowledgeDocument[]>>
+    /** Apre il dialog di scelta dei file e li aggiunge; null se annullato. */
+    pickFiles(conversationId: string): Promise<Result<KnowledgeDocument[] | null>>
+    remove(conversationId: string, documentId: string): Promise<Result<KnowledgeStatus>>
+    /** Rifà l'indice di un documento (dopo un errore o un cambio di modello). */
+    reindex(conversationId: string, documentId: string): Promise<Result<KnowledgeDocument>>
+    /** Avanzamento dell'indicizzazione dei documenti. */
+    onProgress(cb: (p: KnowledgeProgress) => void): () => void
   }
   context: {
     /** Ultime chiamate a Ollama della conversazione, dalla più recente. */
@@ -93,7 +113,8 @@ export interface Api {
     remove(id: string): Promise<Result<void>>
   }
   chat: {
-    send(conversationId: string, text: string): Promise<Result<SendResult>>
+    /** `options.knowledge`: scelta del bottone libro per questa domanda (assente = come la conversazione). */
+    send(conversationId: string, text: string, options?: SendOptions): Promise<Result<SendResult>>
     regenerate(conversationId: string): Promise<Result<SendResult>>
     abort(streamId: string): Promise<Result<boolean>>
     /** Registra un listener per gli eventi di stream; restituisce la funzione per rimuoverlo. */
@@ -101,7 +122,7 @@ export interface Api {
   }
   plans: {
     /** Plan mode: salva il messaggio e avvia la proposta di un piano (evento 'done' con `plan`). */
-    propose(conversationId: string, text: string): Promise<Result<SendResult>>
+    propose(conversationId: string, text: string, options?: SendOptions): Promise<Result<SendResult>>
     /** Nuovo piano per l'ultimo messaggio utente ancora senza risposta. */
     regenerate(conversationId: string): Promise<Result<SendResult>>
     update(planId: string, update: PlanUpdate): Promise<Result<Plan>>

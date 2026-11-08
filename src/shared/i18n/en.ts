@@ -580,6 +580,8 @@ export const en: Record<Key, string> = {
   'knowledge.section.intro': 'Excerpts from documents provided by the user, selected because they are relevant to the question. Base your answer on these excerpts when they cover the question, and cite the source in square brackets as given, e.g. [Report, p. 3]. If the excerpts do not contain the requested information, say so clearly instead of making it up.',
   'knowledge.section.item': '[{source}]\n{text}',
   'knowledge.source.text': 'Text and Markdown',
+  'knowledge.pickTitle': 'Add documents to the knowledge base',
+  'knowledge.pickFilter': 'Documents',
   'settings.modelSection': 'Model settings',
   'settings.language.fr': 'Français',
   // --- fine

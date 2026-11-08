@@ -581,5 +581,7 @@ export const fr: Record<Key, string> = {
   'knowledge.section.intro': 'Extraits des documents fournis par l\'utilisateur, choisis parce qu\'ils sont pertinents pour la question. Appuie ta réponse sur ces extraits quand ils concernent la question, et cite la source entre crochets telle qu\'indiquée, p. ex. [Rapport, p. 3]. Si les extraits ne contiennent pas l\'information demandée, dis-le clairement au lieu d\'inventer.',
   'knowledge.section.item': '[{source}]\n{text}',
   'knowledge.source.text': 'Texte et Markdown',
+  'knowledge.pickTitle': 'Ajouter des documents à la base de connaissances',
+  'knowledge.pickFilter': 'Documents',
   'settings.modelSection': 'Paramètres du modèle'
 }

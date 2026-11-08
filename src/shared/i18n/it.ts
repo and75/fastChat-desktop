@@ -579,6 +579,8 @@ export const it = {
   'knowledge.section.intro': 'Estratti dei documenti forniti dall\'utente, scelti perché pertinenti alla domanda. Rispondi basandoti su questi estratti quando riguardano la domanda, e cita la fonte tra parentesi quadre come indicata, es. [Relazione, p. 3]. Se gli estratti non contengono l\'informazione richiesta, dillo chiaramente invece di inventare.',
   'knowledge.section.item': '[{source}]\n{text}',
   'knowledge.source.text': 'Testo e Markdown',
+  'knowledge.pickTitle': 'Aggiungi documenti alla base di conoscenza',
+  'knowledge.pickFilter': 'Documenti',
   'settings.modelSection': 'Impostazioni del modello',
   'settings.language.fr': 'Français',
   // --- fine

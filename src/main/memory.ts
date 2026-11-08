@@ -1,7 +1,7 @@
 // Memoria della conversazione: indicizza i messaggi coperti dal riassunto (pezzi + embedding in SQLite) e,
 // prima di ogni risposta, recupera gli estratti più pertinenti alla domanda. Attiva solo dopo il primo
 // riassunto: prima tutti i messaggi sono già nel prompt per intero.
-import { buildChunks, buildMemorySection, fromBuffer, MEMORY, memoryQuery, pickChunks, toBuffer } from '@shared/memory'
+import { buildChunks, buildMemorySection, fromBuffer, MEMORY, pickChunks, toBuffer } from '@shared/memory'
 import { charsPerToken, historyAfter } from '@shared/prompt'
 import type { Conversation, MemoryRef, MemoryStatus, Message } from '@shared/types'
 import type { Db } from './db/client'
@@ -83,22 +83,9 @@ export function createMemory({ db, ollama, contextLog, embedder = createEmbedder
   }
 
   /**
-   * Embedding della domanda in attesa (più la fine della risposta precedente), condiviso tra memoria e base di
-   * conoscenza: una sola chiamata a Ollama per risposta. null se non c'è una domanda.
-   */
-  async function embedQuestion(conv: Conversation, history: Message[]): Promise<number[] | null> {
-    const question = history.findLast((m) => m.role === 'user')
-    if (!question) return null
-    const qIdx = history.indexOf(question)
-    const previous = history.slice(0, qIdx).findLast((m) => m.role === 'assistant')
-    const [vector] = await embedder.embed({ conversationId: conv.id, kind: 'embed-query', texts: [memoryQuery(question.content, previous?.content)], chatModel: conv.model, cpt: charsPerToken(history) })
-    return vector
-  }
-
-  /**
    * Estratti pertinenti all'ultima domanda, entro `maxTokens`. Vuoto se la memoria è spenta, se non c'è
    * ancora un riassunto, se il modello di embedding manca o se nulla supera la soglia.
-   * `query` è l'embedding della domanda già calcolato (vedi embedQuestion); se manca si calcola qui.
+   * `query` è l'embedding della domanda già calcolato (embedder.embedQuestion); se manca si calcola qui.
    */
   async function recall(conv: Conversation, maxTokens: number, query?: ArrayLike<number> | null): Promise<Recall> {
     const empty: Recall = { section: '', refs: [] }
@@ -114,7 +101,7 @@ export function createMemory({ db, ollama, contextLog, embedder = createEmbedder
       .filter((c) => coveredIds.has(c.messageId))
       .map((c) => ({ id: c.id, messageId: c.messageId, role: c.role, text: c.text, embedding: fromBuffer(c.embedding) }))
     if (chunks.length === 0) return empty
-    const vector = query ?? (await embedQuestion(conv, history))
+    const vector = query ?? (await embedder.embedQuestion(conv, history))
     if (!vector) return empty
     const picked = pickChunks(vector, chunks, maxTokens * charsPerToken(history))
     const position = new Map(history.map((m, i) => [m.id, i + 1]))
@@ -149,7 +136,7 @@ export function createMemory({ db, ollama, contextLog, embedder = createEmbedder
     return index(conv)
   }
 
-  return { index, indexQuietly, embedQuestion, recall, canRecall, status, rebuild, isMissingModel: (err: unknown) => err instanceof OllamaError && err.code === 'model' }
+  return { embedder, index, indexQuietly, recall, canRecall, status, rebuild, isMissingModel: (err: unknown) => err instanceof OllamaError && err.code === 'model' }
 }
 
 export type Memory = ReturnType<typeof createMemory>

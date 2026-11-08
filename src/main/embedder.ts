@@ -1,7 +1,8 @@
 // Embedding con Ollama, condiviso da memoria della conversazione e base di conoscenza: stesso modello (dalle
 // Impostazioni), stessa esecuzione CPU/GPU del modello di chat, ogni chiamata registrata nel monitor del contesto.
-import { estimateTokens } from '@shared/prompt'
-import type { ContextCallKind } from '@shared/types'
+import { memoryQuery } from '@shared/memory'
+import { charsPerToken, estimateTokens } from '@shared/prompt'
+import type { ContextCallKind, Conversation, Message } from '@shared/types'
 import type { Db } from './db/client'
 import { getModelSetting, getSettings } from './db/repo'
 import { callInput, type ContextLog } from './contextLog'
@@ -64,7 +65,19 @@ export function createEmbedder({ db, ollama, contextLog }: EmbedderDeps) {
     }
   }
 
-  return { model, options, installed, embed }
+  /**
+   * Embedding della domanda in attesa (più la fine della risposta precedente, per «e quello?»), condiviso tra
+   * memoria della conversazione e base di conoscenza: una sola chiamata a Ollama per risposta. null senza domanda.
+   */
+  async function embedQuestion(conv: Conversation, history: Message[]): Promise<number[] | null> {
+    const question = history.findLast((m) => m.role === 'user')
+    if (!question) return null
+    const previous = history.slice(0, history.indexOf(question)).findLast((m) => m.role === 'assistant')
+    const [vector] = await embed({ conversationId: conv.id, kind: 'embed-query', texts: [memoryQuery(question.content, previous?.content)], chatModel: conv.model, cpt: charsPerToken(history) })
+    return vector
+  }
+
+  return { model, options, installed, embed, embedQuestion }
 }
 
 export type Embedder = ReturnType<typeof createEmbedder>
