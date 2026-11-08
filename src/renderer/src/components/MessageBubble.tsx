@@ -109,6 +109,13 @@ export function MessageBubble({
   )
 }
 
+/** Testo dell'estratto senza i prefissi «Domanda/Risposta/Utente» (in entrambe le lingue: i pezzi restano nella lingua in cui sono stati indicizzati). */
+function excerptBody(excerpt: string): string {
+  const m = excerpt.match(/\n(Risposta|Answer): ([\s\S]*)$/)
+  if (m) return m[2]
+  return excerpt.replace(/^(Utente|User|Risposta|Answer): /, '')
+}
+
 /** Estratti della conversazione usati per la risposta: chiusi di default, ognuno salta al messaggio originale. */
 function MemoryRefs({ refs }: { refs: MemoryRef[] }): React.JSX.Element {
   const jump = (id: string): void =>
@@ -126,7 +133,7 @@ function MemoryRefs({ refs }: { refs: MemoryRef[] }): React.JSX.Element {
             </button>{' '}
             <span className="tabular-nums text-zinc-400">({Math.round(r.score * 100)}%)</span>
             <span className="block truncate text-zinc-500" title={r.excerpt}>
-              {r.excerpt.includes('\nRisposta: ') ? r.excerpt.split('\nRisposta: ')[1] : r.excerpt.replace(/^(Utente|Risposta): /, '')}
+              {excerptBody(r.excerpt)}
             </span>
           </li>
         ))}

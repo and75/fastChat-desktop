@@ -1,5 +1,6 @@
 // Memoria della conversazione (RAG sulla storia della chat): funzioni pure per dividere i messaggi in pezzi,
 // confrontare gli embedding, scegliere gli estratti e scriverli nel system prompt.
+import { t } from './i18n'
 import type { MessageRole } from './types'
 
 export const MEMORY = {
@@ -68,15 +69,15 @@ export function buildChunks(messages: ReadonlyArray<ChunkSource>): ChunkDraft[] 
     if (!text) continue
     if (m.role === 'user') {
       if (text.length >= MEMORY.minUserChars) {
-        splitParagraphs(text, MEMORY.chunkChars).forEach((t, part) => out.push({ messageId: m.id, role: 'user', part, text: `Utente: ${t}` }))
+        splitParagraphs(text, MEMORY.chunkChars).forEach((piece, part) => out.push({ messageId: m.id, role: 'user', part, text: t('memory.chunk.user', { text: piece }) }))
       }
       continue
     }
     const question = messages[i - 1]?.role === 'user' ? messages[i - 1].content.trim() : ''
     const q = question.length > MEMORY.questionChars ? `${question.slice(0, MEMORY.questionChars)}…` : question
-    const head = q ? `Domanda: ${q}\n` : ''
-    splitParagraphs(text, MEMORY.chunkChars - head.length).forEach((t, part) =>
-      out.push({ messageId: m.id, role: 'assistant', part, text: `${head}Risposta: ${t}` })
+    const head = q ? t('memory.chunk.question', { q }) : ''
+    splitParagraphs(text, MEMORY.chunkChars - head.length).forEach((piece, part) =>
+      out.push({ messageId: m.id, role: 'assistant', part, text: head + t('memory.chunk.answer', { text: piece }) })
     )
   }
   return out
@@ -140,7 +141,7 @@ export function pickChunks(query: ArrayLike<number>, chunks: ReadonlyArray<Store
 /** Testo da cui calcolare l'embedding della domanda: la domanda più la fine della risposta precedente (per "e quello?"). */
 export function memoryQuery(question: string, previousAnswer: string | null | undefined): string {
   const tail = previousAnswer ? previousAnswer.trim().slice(-500) : ''
-  return tail ? `${question.trim()}\n\nContesto: ${tail}` : question.trim()
+  return tail ? t('memory.query', { question: question.trim(), tail }) : question.trim()
 }
 
 /**
@@ -152,10 +153,6 @@ export function buildMemorySection(picked: ReadonlyArray<{ text: string; role: M
   if (picked.length === 0) return ''
   const items = [...picked]
     .sort((a, b) => a.position - b.position)
-    .map((p) => `[messaggio ${p.position} di ${total} · ${p.role === 'user' ? 'utente' : 'assistente'}]\n${p.text}`)
-  return [
-    '# Dalla conversazione precedente',
-    'Estratti originali di messaggi già riassunti, scelti perché pertinenti alla domanda. Se contraddicono il riassunto o i messaggi recenti, valgono il riassunto e i messaggi recenti: potrebbero essere stati corretti dopo.',
-    ...items
-  ].join('\n\n')
+    .map((p) => t('memory.section.item', { position: p.position, total, who: p.role === 'user' ? t('memory.who.user') : t('memory.who.assistant'), text: p.text }))
+  return [t('memory.section.heading'), t('memory.section.intro'), ...items].join('\n\n')
 }

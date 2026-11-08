@@ -1,4 +1,5 @@
 // Test CPU/GPU per modello: la stessa richiesta con configurazioni diverse di num_gpu, misurando la velocità
+import { t } from '@shared/i18n'
 // reale (tempi restituiti da Ollama) e dove è finito davvero il modello (/api/ps).
 import type { BenchmarkRun, ModelCapabilities } from '@shared/types'
 import type { ChatRequest, OllamaClient } from './ollama'
@@ -70,7 +71,7 @@ export async function runBenchmark(
     if (caps?.thinking) request.think = false
     try {
       const r = await ollama.chatStream(request, {}, signal)
-      if (r.aborted) throw new Error('Test interrotto')
+      if (r.aborted) throw new Error(t('err.benchAborted'))
       const loaded = (await ollama.loadedModels().catch(() => [])).find((m) => m.name === model)
       const vramShare = loaded && loaded.size > 0 ? Math.round((loaded.sizeVram / loaded.size) * 100) / 100 : null
       if (numGpu > 0 && vramShare != null && vramShare > 0) gpuAvailable = true

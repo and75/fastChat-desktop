@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { getLocale, resolveLocale, setLocale, subscribeLocale, t } from '@shared/i18n'
+import { displayTitle, getLocale, resolveLocale, setLocale, subscribeLocale, t } from '@shared/i18n'
 import { BriefPanel } from './components/BriefPanel'
 import { ChatView } from './components/ChatView'
 import { IconButton } from './components/IconButton'
@@ -150,8 +150,8 @@ export default function App(): React.JSX.Element {
         {/* La topbar fa da barra del titolo: si trascina per spostare la finestra. */}
         {/* Altezza fissa (TOPBAR_HEIGHT, h-12): la stessa del blocco del logo, così i contenuti sono allineati. */}
         <header className="drag flex h-12 shrink-0 items-center gap-4 border-b border-zinc-200 pl-4 pr-2 dark:border-zinc-800">
-          <h1 className="min-w-0 flex-1 truncate text-base font-semibold" title={conversation?.title}>
-            {conversation?.title ?? 'FastChat'}
+          <h1 className="min-w-0 flex-1 truncate text-base font-semibold" title={conversation ? displayTitle(conversation.title) : undefined}>
+            {conversation ? displayTitle(conversation.title) : t('app.name')}
           </h1>
           <ModelPicker />
           {conversation && (

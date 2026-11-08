@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { fmtInt, fmtNum, fmtTime, t, tn } from '@shared/i18n'
-import { STYLE_INSTRUCTIONS } from '@shared/prompt'
+import { styleInstruction } from '@shared/prompt'
 import { describeSuggestion, maxNumCtx, minNumCtx, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
 import { RESPONSE_STYLES, type Conversation, type ConversationPatch, type MemoryStatus, type ResponseStyle } from '@shared/types'
 import { useChat } from '../store/useChat'
@@ -207,7 +207,7 @@ export function StyleControl({ conversation, compact = false }: { conversation: 
       </label>
     )
   }
-  const instruction = STYLE_INSTRUCTIONS[conversation.style]
+  const instruction = styleInstruction(conversation.style)
   return (
     <div className="flex flex-col gap-1 text-sm" data-testid="style-control">
       <span className="flex items-baseline justify-between gap-2">
@@ -717,7 +717,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
   })
 
   return (
-    <section className="flex flex-col" aria-label="Impostazioni del modello" data-testid="model-settings">
+    <section className="flex flex-col" aria-label={t('settings.modelSection')} data-testid="model-settings">
       <Group id="run" title={t('group.run')} badge={t('group.run.badge')} summary={runSummary}>
         <ExecutionRow model={conversation.model} />
       </Group>

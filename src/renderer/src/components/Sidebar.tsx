@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { localeTag, t } from '@shared/i18n'
+import { displayTitle, localeTag, t } from '@shared/i18n'
 import type { Conversation } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
@@ -109,10 +109,10 @@ function Item({ conv, active }: { conv: Conversation; active: boolean }): React.
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
           onClick={() => void select(conv.id)}
           onDoubleClick={() => setEditing(true)}
-          title={conv.title}
+          title={displayTitle(conv.title)}
         >
           {streaming && <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-brand-500" />}
-          <span className="truncate">{conv.title}</span>
+          <span className="truncate">{displayTitle(conv.title)}</span>
         </button>
       )}
       {!editing && (

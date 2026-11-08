@@ -1,14 +1,9 @@
 // Funzioni pure per comporre i prompt. Condivise: il main le usa per le chiamate a Ollama,
 // il renderer per l'anteprima del system prompt nel BriefPanel.
-import { localeTag } from './i18n'
+import { localeTag, t } from './i18n'
 import { OLLAMA_DEFAULTS, type Brief, type ContextPart, type PlanStep, type ResponseStyle } from './types'
 
-const SECTIONS: Array<[keyof Brief, string]> = [
-  ['role', 'Ruolo'],
-  ['context', 'Contesto'],
-  ['goals', 'Obiettivi'],
-  ['constraints', 'Vincoli']
-]
+const SECTIONS: Array<keyof Brief> = ['role', 'context', 'goals', 'constraints']
 
 const joinSections = (...parts: string[]): string => parts.filter((p) => p.trim()).join('\n\n')
 
@@ -16,25 +11,15 @@ const joinSections = (...parts: string[]): string => parts.filter((p) => p.trim(
  * Istruzioni di stile, dal più sintetico al più esteso. Riguardano solo il testo finale: la brevità non
  * deve costare precisione, e i modelli con ragionamento possono ragionare quanto serve.
  */
-const ACCURACY = 'La brevità non deve costare precisione: non omettere nulla di necessario alla correttezza o alla sicurezza della risposta. Ragiona quanto serve, ma scrivi solo ciò che è utile a chi legge.'
-export const STYLE_INSTRUCTIONS: Record<ResponseStyle, string | null> = {
-  essential: `Rispondi nel modo più breve possibile: solo ciò che serve a rispondere. Niente premesse, niente ripetizione della domanda, niente riepiloghi finali, niente offerte di aiuto. Elenchi e codice solo se indispensabili. ${ACCURACY}`,
-  concise: `Vai dritto al punto: niente introduzioni né conclusioni. Al massimo un esempio, quando chiarisce. Spiega solo i passaggi non ovvi. ${ACCURACY}`,
-  normal: null,
-  extended: 'Rispondi in modo completo: contesto, alternative, esempi, avvertenze e casi limite. Struttura il testo con titoli ed elenchi quando aiuta.'
-}
-
-export const STYLE_LABELS: Record<ResponseStyle, string> = {
-  essential: 'Essenziale',
-  concise: 'Conciso',
-  normal: 'Normale',
-  extended: 'Esteso'
+export function styleInstruction(style: ResponseStyle | null | undefined): string | null {
+  if (!style || style === 'normal') return null
+  return t(`prompt.style.${style}`, { accuracy: t('prompt.accuracy') })
 }
 
 /** Sezione "# Stile della risposta", o '' per lo stile normale. */
 export function buildStyleSection(style: ResponseStyle | null | undefined): string {
-  const text = style ? STYLE_INSTRUCTIONS[style] : null
-  return text ? `# Stile della risposta\n${text}` : ''
+  const text = styleInstruction(style)
+  return text ? `# ${t('prompt.styleHeading')}\n${text}` : ''
 }
 
 /**
@@ -43,7 +28,7 @@ export function buildStyleSection(style: ResponseStyle | null | undefined): stri
  * Restituisce '' se il brief è vuoto e lo stile è normale.
  */
 export function buildSystemPrompt(brief: Brief, style?: ResponseStyle | null): string {
-  const sections = SECTIONS.map(([key, title]) => [title, brief[key]?.trim() ?? ''] as const)
+  const sections = SECTIONS.map((key) => [t(`prompt.section.${key}`), brief[key]?.trim() ?? ''] as const)
     .filter(([, body]) => body.length > 0)
     .map(([title, body]) => `# ${title}\n${body}`)
   return joinSections(...sections, buildStyleSection(style))
@@ -168,8 +153,7 @@ export function summaryMaxTokens(numCtx: number, reserveTokens: number): number 
 export function withSummary(system: string, summary: string | null | undefined): string {
   const text = summary?.trim()
   if (!text) return system
-  return joinSections(system, `# Riassunto della conversazione finora
-${text}`)
+  return joinSections(system, `# ${t('prompt.summaryHeading')}\n${text}`)
 }
 
 /**
@@ -248,7 +232,7 @@ export function transcriptChunks(messages: ReadonlyArray<HistoryMessage>, maxCha
   const size = Math.max(200, Math.floor(maxChars))
   const pieces: string[] = []
   for (const m of messages) {
-    const who = m.role === 'user' ? 'Utente' : 'Assistente'
+    const who = m.role === 'user' ? t('prompt.transcript.user') : t('prompt.transcript.assistant')
     const text = m.content.trim()
     if (text.length + who.length + 2 <= size) {
       pieces.push(`${who}: ${text}`)
@@ -256,7 +240,7 @@ export function transcriptChunks(messages: ReadonlyArray<HistoryMessage>, maxCha
     }
     const room = size - who.length - 20
     const parts = Math.ceil(text.length / room)
-    for (let i = 0; i < parts; i++) pieces.push(`${who} (parte ${i + 1}/${parts}): ${text.slice(i * room, (i + 1) * room)}`)
+    for (let i = 0; i < parts; i++) pieces.push(t('prompt.transcript.part', { who, i: i + 1, n: parts }) + text.slice(i * room, (i + 1) * room))
   }
   const chunks: string[] = []
   let current = ''
@@ -273,18 +257,12 @@ export function transcriptChunks(messages: ReadonlyArray<HistoryMessage>, maxCha
 
 /** Prompt dell'archivista, con la lunghezza massima del riassunto in parole. */
 export function buildSummaryPrompt(maxWords: number): string {
-  return `Sei l'archivista di una conversazione tra un utente e un assistente. Aggiorna il riassunto della conversazione con i nuovi messaggi.
-Scrivi un riassunto compatto in prosa o elenco, nella lingua della conversazione, con:
-- fatti stabiliti e decisioni prese;
-- richieste dell'utente ancora aperte;
-- nomi, numeri, date, termini tecnici e frammenti di codice essenziali, citati esattamente.
-Se i nuovi messaggi sono una parte di un messaggio più lungo, integra senza ripetere.
-Niente introduzioni né commenti: rispondi solo con il riassunto aggiornato. Massimo ${maxWords} parole.`
+  return t('prompt.summary.system', { maxWords })
 }
 
 /** Testo del messaggio utente per la richiesta di riassunto. */
 export function buildSummaryRequest(previous: string | null, newMessages: string): string {
-  const head = previous?.trim() ? `Riassunto finora:\n${previous.trim()}\n\nNuovi messaggi:` : 'Messaggi:'
+  const head = previous?.trim() ? t('prompt.summary.previous', { previous: previous.trim() }) : t('prompt.summary.messages')
   return `${head}\n${newMessages}`
 }
 
@@ -292,7 +270,7 @@ export function buildSummaryRequest(previous: string | null, newMessages: string
 export function cleanSummary(raw: string): string {
   return raw
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/^\s*#+\s*riassunto[^\n]*\n/i, '')
+    .replace(/^\s*#+\s*(riassunto|summary)[^\n]*\n/i, '')
     .trim()
 }
 
@@ -319,17 +297,9 @@ export const PLAN_SCHEMA = {
   required: ['steps']
 } as const
 
-const PLAN_INSTRUCTIONS = `# Modalità piano
-Non rispondere ancora alla richiesta dell'utente. Proponi prima un piano per rispondere.
-- Da 3 a 7 passi, nell'ordine in cui li eseguirai.
-- Ogni passo ha un titolo breve ("title") e una descrizione di una o due frasi ("detail").
-- Il piano deve rispettare ruolo, contesto, obiettivi e vincoli indicati sopra.
-- Scrivi nella stessa lingua dell'utente.
-Rispondi solo con un oggetto JSON nella forma {"steps":[{"title":"…","detail":"…"}]}.`
-
 /** System prompt per la fase di pianificazione: brief + stile + istruzioni del piano. */
 export function buildPlanPrompt(brief: Brief, style?: ResponseStyle | null): string {
-  return joinSections(buildSystemPrompt(brief, style), PLAN_INSTRUCTIONS)
+  return joinSections(buildSystemPrompt(brief, style), t('prompt.plan'))
 }
 
 export function formatPlan(steps: PlanStep[]): string {
@@ -343,13 +313,7 @@ export function formatPlan(steps: PlanStep[]): string {
 
 /** System prompt per l'esecuzione: brief + stile + piano approvato dall'utente. */
 export function buildExecutePrompt(brief: Brief, steps: PlanStep[], style?: ResponseStyle | null): string {
-  return joinSections(
-    buildSystemPrompt(brief, style),
-    `# Piano approvato
-L'utente ha approvato questo piano per rispondere alla sua ultima richiesta. Seguilo passo per passo, nell'ordine indicato, senza aggiungere né saltare passi. Non ripetere il piano: esegui.
-
-${formatPlan(steps)}`
-  )
+  return joinSections(buildSystemPrompt(brief, style), t('prompt.execute', { plan: formatPlan(steps) }))
 }
 
 /**
@@ -366,7 +330,7 @@ export function normalizeSteps(input: unknown): PlanStep[] {
     }))
     .filter((s) => s.title.length > 0)
     .slice(0, 20)
-  if (steps.length === 0) throw new Error('Il piano non contiene passi validi')
+  if (steps.length === 0) throw new Error(t('err.planNoSteps'))
   return steps
 }
 
@@ -378,18 +342,18 @@ export function parsePlan(content: string): PlanStep[] {
   } catch {
     // Alcuni modelli racchiudono comunque il JSON in un blocco di codice.
     const match = content.match(/\{[\s\S]*\}/)
-    if (!match) throw new Error('Il modello non ha restituito un piano valido')
+    if (!match) throw new Error(t('err.planInvalid'))
     try {
       data = JSON.parse(match[0])
     } catch {
-      throw new Error('Il modello non ha restituito un piano valido')
+      throw new Error(t('err.planInvalid'))
     }
   }
   const steps = Array.isArray(data) ? data : (data as { steps?: unknown })?.steps
   try {
     return normalizeSteps(steps)
   } catch {
-    throw new Error('Il modello non ha restituito un piano valido')
+    throw new Error(t('err.planInvalid'))
   }
 }
 

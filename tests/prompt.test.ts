@@ -5,7 +5,7 @@ import {
   buildSystemPrompt,
   buildStyleSection,
   buildSummaryRequest,
-  STYLE_INSTRUCTIONS,
+  styleInstruction,
   charsPerToken,
   cleanSummary,
   computeContextUsage,
@@ -370,8 +370,8 @@ describe('stile della risposta nel system prompt', () => {
   })
 
   it('i livelli sintetici proteggono la precisione; il piano viene dopo lo stile', () => {
-    for (const style of ['essential', 'concise'] as const) expect(STYLE_INSTRUCTIONS[style]).toContain('La brevità non deve costare precisione')
-    expect(STYLE_INSTRUCTIONS.normal).toBeNull()
+    for (const style of ['essential', 'concise'] as const) expect(styleInstruction(style)).toContain('La brevità non deve costare precisione')
+    expect(styleInstruction('normal')).toBeNull()
     const plan = buildPlanPrompt(brief({ role: 'Tutor' }), 'concise')
     expect(plan.indexOf('# Stile della risposta')).toBeGreaterThan(plan.indexOf('# Ruolo'))
     expect(plan.indexOf('# Modalità piano')).toBeGreaterThan(plan.indexOf('# Stile della risposta'))

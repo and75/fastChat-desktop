@@ -38,9 +38,9 @@ const fake = await startFakeOllama([
   }
 ])
 // Le richieste di generazione del titolo (dopo il primo scambio) non contano come "ultima chat".
-const isTitleRequest = (body) => body?.messages?.[0]?.content?.startsWith('Genera un titolo')
+const isTitleRequest = (body) => /^(Genera un titolo|Generate a short title)/.test(body?.messages?.[0]?.content ?? '')
 // Nemmeno le richieste del riassunto automatico (dopo la risposta) contano come "ultima chat".
-const isSummaryRequest = (body) => body?.messages?.[0]?.content?.startsWith("Sei l'archivista")
+const isSummaryRequest = (body) => /^(Sei l'archivista|You are the archivist)/.test(body?.messages?.[0]?.content ?? '')
 const chatRequests = () => fake.requests.filter((r) => r.path === '/api/chat' && !isTitleRequest(r.body) && !isSummaryRequest(r.body))
 const lastChat = () => chatRequests().at(-1)?.body
 
@@ -1241,6 +1241,44 @@ try {
     }
     await resize(1200, 800)
     await page.waitForFunction(() => innerWidth === 1200)
+  })
+
+  await step('lingua: in inglese cambiano interfaccia e prompt al modello, poi si torna in italiano', async () => {
+    await page.getByRole('button', { name: 'Impostazioni' }).click()
+    const dialog = page.getByTestId('settings-dialog')
+    await dialog.getByTestId('settings-language').selectOption('en')
+    await dialog.getByRole('button', { name: 'Salva' }).click()
+    await dialog.waitFor({ state: 'detached' })
+    // interfaccia: schede, barra laterale, composer
+    await page.getByRole('tab', { name: 'Model' }).waitFor()
+    await page.getByTestId('new-conversation').filter({ hasText: 'New conversation' }).waitFor()
+    await page.getByRole('textbox', { name: 'Message' }).waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.lang), 'en')
+    // il titolo predefinito si legge in inglese, ma nel DB resta quello salvato
+    await page.getByTestId('new-conversation').click()
+    await page.getByTestId('conversation-item').first().filter({ hasText: 'New conversation' }).waitFor()
+    assert.equal((await latestConversation()).title, 'Nuova conversazione')
+    // prompt al modello in inglese: lo stile diventa «# Answer style»
+    await page.selectOption('#model-select', 'llama3.2:3b')
+    await openTab('Brief')
+    await page.getByTestId('brief-panel').getByLabel('Role').fill('Tutor')
+    await page.getByTestId('brief-panel').getByTestId('brief-status').filter({ hasText: 'Saved' }).waitFor()
+    await page.getByTestId('brief-panel').getByText('System prompt preview').click()
+    await page.getByTestId('system-preview').filter({ hasText: '# Role' }).waitFor()
+    const before = chatRequests().length
+    const composer = page.getByRole('textbox', { name: 'Message' })
+    await composer.fill('hello')
+    await composer.press('Enter')
+    await page.getByTestId('message-assistant').first().waitFor()
+    const req = chatRequests()[before].body
+    assert.match(req.messages[0].content, /^# Role\nTutor/)
+    // di nuovo in italiano
+    await page.getByRole('button', { name: 'Settings' }).click()
+    await dialog.getByTestId('settings-language').selectOption('it')
+    await dialog.getByRole('button', { name: 'Save' }).click()
+    await dialog.waitFor({ state: 'detached' })
+    await page.getByRole('tab', { name: 'Modello' }).waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.lang), 'it')
   })
 
   await step('nessun errore JavaScript nel renderer (fase 5)', async () => {

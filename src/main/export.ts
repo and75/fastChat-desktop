@@ -1,4 +1,5 @@
 import { buildSystemPrompt, formatPlan } from '@shared/prompt'
+import { t } from '@shared/i18n'
 import type { Conversation, Message, Plan } from '@shared/types'
 
 export type ExportFormat = 'md' | 'json'
@@ -9,12 +10,7 @@ export interface ExportData {
   plans: Plan[]
 }
 
-const PLAN_STATUS: Record<Plan['status'], string> = {
-  proposed: 'proposto',
-  approved: 'approvato',
-  rejected: 'annullato',
-  executed: 'eseguito'
-}
+const planStatus = (s: Plan['status']): string => t(`md.status.${s}`)
 
 const iso = (ts: number): string => new Date(ts).toISOString()
 
@@ -22,34 +18,34 @@ const iso = (ts: number): string => new Date(ts).toISOString()
 export function toMarkdown({ conversation: c, messages, plans }: ExportData): string {
   const out: string[] = [`# ${c.title}`, '']
   out.push(
-    `- Modello: ${c.model || '—'}`,
-    `- Temperatura: ${c.temperature}`,
-    `- Ragionamento: ${c.think ? 'sì' : 'no'}`,
-    `- Plan mode: ${c.planMode ? 'sì' : 'no'}`,
-    `- Creata: ${iso(c.createdAt)}`,
-    `- Aggiornata: ${iso(c.updatedAt)}`,
+    `- ${t('md.model')}: ${c.model || '—'}`,
+    `- ${t('md.temperature')}: ${c.temperature}`,
+    `- ${t('md.reasoning')}: ${c.think ? t('md.yes') : t('md.no')}`,
+    `- ${t('md.planMode')}: ${c.planMode ? t('md.yes') : t('md.no')}`,
+    `- ${t('md.created')}: ${iso(c.createdAt)}`,
+    `- ${t('md.updated')}: ${iso(c.updatedAt)}`,
     ''
   )
 
   const brief = buildSystemPrompt(c)
   if (brief) {
     // Le sezioni del brief scendono di due livelli, sotto "## Brief".
-    out.push('## Brief', '', brief.replace(/^# /gm, '### '), '')
+    out.push(`## ${t('md.brief')}`, '', brief.replace(/^# /gm, '### '), '')
   }
 
-  if (c.summary) out.push('## Riassunto automatico', '', c.summary, '')
+  if (c.summary) out.push(`## ${t('md.summary')}`, '', c.summary, '')
 
-  out.push('## Conversazione', '')
+  out.push(`## ${t('md.conversation')}`, '')
   for (const m of messages) {
     if (m.role === 'user') {
-      out.push(`### Utente · ${iso(m.createdAt)}`, '', m.content, '')
+      out.push(`### ${t('md.user')} · ${iso(m.createdAt)}`, '', m.content, '')
       for (const p of plans.filter((p) => p.userMessageId === m.id)) {
-        out.push(`#### Piano (${PLAN_STATUS[p.status]})`, '', formatPlan(p.steps), '')
+        out.push(`#### ${t('md.plan', { status: planStatus(p.status) })}`, '', formatPlan(p.steps), '')
       }
     } else {
-      out.push(`### Assistente${m.model ? ` (${m.model})` : ''} · ${iso(m.createdAt)}`, '')
+      out.push(`### ${t('md.assistant')}${m.model ? ` (${m.model})` : ''} · ${iso(m.createdAt)}`, '')
       if (m.thinking) {
-        out.push('<details>', '<summary>Ragionamento</summary>', '', m.thinking.trim(), '', '</details>', '')
+        out.push('<details>', `<summary>${t('md.reasoning')}</summary>`, '', m.thinking.trim(), '', '</details>', '')
       }
       out.push(m.content, '')
     }
@@ -68,6 +64,6 @@ export function suggestedFileName(title: string, format: ExportFormat): string {
       .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '')
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 80) || 'conversazione'
+      .slice(0, 80) || t('export.defaultName')
   return `${base}.${format}`
 }

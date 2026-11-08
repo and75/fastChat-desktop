@@ -63,6 +63,9 @@ export function tn(key: PluralKey, count: number, params?: Params): string {
   return t(`${key}_${form}` as Key, { count: count.toLocaleString(TAGS[current]), ...params })
 }
 
+/** Titolo di una conversazione per l'interfaccia: quello predefinito (salvato in italiano) nella lingua attiva. */
+export const displayTitle = (title: string): string => (title === 'Nuova conversazione' ? t('conversation.untitled') : title)
+
 /** Numero con il separatore delle migliaia anche a 4 cifre (4.096 / 4,096). */
 export const fmtInt = (n: number): string => Math.round(n).toLocaleString(TAGS[current], { useGrouping: 'always' } as Intl.NumberFormatOptions)
 /** Numero con decimali nella lingua attiva. */

@@ -171,7 +171,7 @@ export function createSummarizer({ db, ollama, contextLog }: SummarizerDeps) {
             ...request,
             messages: [
               { role: 'system', content: prompt },
-              { role: 'user', content: `Condensa questo riassunto senza perdere fatti, nomi e richieste aperte:\n${completeLines(next)}` }
+              { role: 'user', content: t('prompt.condense', { summary: completeLines(next) }) }
             ]
           }
           const shorter = await call(condense, {

@@ -31,6 +31,7 @@ import {
   updatePlan
 } from './db/repo'
 import { chatParts } from '@shared/context'
+import { t } from '@shared/i18n'
 import type { ContextPart } from '@shared/types'
 import { callInput, type CallStart, type ContextLog } from './contextLog'
 import type { ChatMessage, ChatOptions, ChatRequest, OllamaClient } from './ollama'
@@ -131,8 +132,7 @@ export function composeChat(
   return { messages: out, parts, dropped: recent.length - picked.length }
 }
 
-const TITLE_PROMPT = `Genera un titolo breve (da 2 a 6 parole) per la conversazione che segue.
-Usa la lingua della conversazione. Niente virgolette, niente punto finale, niente spiegazioni: rispondi solo con il titolo.`
+const titlePrompt = (): string => t('prompt.title')
 
 /** Ripulisce il titolo proposto dal modello: prima riga utile, niente virgolette/markdown/prefissi, max 60 caratteri. */
 export function cleanTitle(raw: string): string {
@@ -174,9 +174,9 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
 
   async function loadConversation(id: string): Promise<Conversation> {
     const conv = await getConversation(db, id)
-    if (!conv) throw new Error('Conversazione non trovata')
-    if (!conv.model) throw new Error('Seleziona un modello per questa conversazione')
-    if (isBusy(id)) throw new Error('Una risposta è già in corso per questa conversazione')
+    if (!conv) throw new Error(t('err.convNotFound'))
+    if (!conv.model) throw new Error(t('err.noModel'))
+    if (isBusy(id)) throw new Error(t('err.busy'))
     return conv
   }
 
@@ -184,7 +184,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
   async function assertPlanIsCurrent(plan: Plan): Promise<void> {
     const last = (await listMessages(db, plan.conversationId)).at(-1)
     if (!last || last.id !== plan.userMessageId) {
-      throw new Error('Il piano non riguarda più l\'ultimo messaggio della conversazione')
+      throw new Error(t('err.planStale'))
     }
   }
 
@@ -221,11 +221,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
       const request: ChatRequest = {
         model: conv.model,
         messages: [
-          { role: 'system', content: TITLE_PROMPT },
-          {
-            role: 'user',
-            content: `Domanda:\n${question.content.slice(0, 1500)}\n\nRisposta:\n${answer.content.slice(0, 1500)}`
-          }
+          { role: 'system', content: titlePrompt() },
+          { role: 'user', content: t('prompt.title.request', { question: question.content.slice(0, 1500), answer: answer.content.slice(0, 1500) }) }
         ],
         options: { ...buildOptions(conv, caps, await numGpuOf(conv.model)), temperature: 0.3, num_predict: 32 }
       }
@@ -236,7 +233,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         model: conv.model,
         numCtx: request.options?.num_ctx ?? null,
         parts: [
-          { key: 'instructions', label: 'instructions', tokens: estimateTokens(TITLE_PROMPT, charsPerToken(history)) },
+          { key: 'instructions', label: 'instructions', tokens: estimateTokens(titlePrompt(), charsPerToken(history)) },
           { key: 'transcript', label: 'transcript.qa', tokens: estimateTokens(request.messages[1].content, charsPerToken(history)) }
         ]
       }
@@ -410,19 +407,19 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
 
   async function addUserMessage(conversationId: string, text: string): Promise<Message> {
     const content = text.trim()
-    if (!content) throw new Error('Messaggio vuoto')
+    if (!content) throw new Error(t('err.emptyMessage'))
     return addMessage(db, { conversationId, role: 'user', content })
   }
 
   async function loadPlan(planId: string): Promise<{ plan: Plan; conv: Conversation }> {
     const plan = await getPlan(db, planId)
-    if (!plan) throw new Error('Piano non trovato')
+    if (!plan) throw new Error(t('err.planNotFound'))
     return { plan, conv: await loadConversation(plan.conversationId) }
   }
 
   return {
     async send(target: StreamTarget, conversationId: string, text: string): Promise<SendResult> {
-      if (!text.trim()) throw new Error('Messaggio vuoto')
+      if (!text.trim()) throw new Error(t('err.emptyMessage'))
       const conv = await loadConversation(conversationId)
       const userMessage = await addUserMessage(conversationId, text)
       return { streamId: await startStream(target, conv, { kind: 'chat' }), userMessage }
@@ -436,10 +433,10 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
       const conv = await loadConversation(conversationId)
       const history = await listMessages(db, conversationId)
       const last = history.at(-1)
-      if (!last) throw new Error('Niente da rigenerare')
+      if (!last) throw new Error(t('err.nothingToRegenerate'))
       if (last.role === 'assistant') await removeMessage(db, last.id)
       const lastUser = history.findLast((m) => m.role === 'user')
-      if (!lastUser) throw new Error('Niente da rigenerare')
+      if (!lastUser) throw new Error(t('err.nothingToRegenerate'))
       const plan = await planToFollow(db, lastUser.id)
       const mode: Mode = plan ? { kind: 'execute', plan } : { kind: 'chat' }
       return { streamId: await startStream(target, conv, mode) }
@@ -447,7 +444,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
 
     /** Plan mode, fase 1: salva il messaggio e chiede al modello un piano (JSON vincolato da schema). */
     async proposePlan(target: StreamTarget, conversationId: string, text: string): Promise<SendResult> {
-      if (!text.trim()) throw new Error('Messaggio vuoto')
+      if (!text.trim()) throw new Error(t('err.emptyMessage'))
       const conv = await loadConversation(conversationId)
       const userMessage = await addUserMessage(conversationId, text)
       return { streamId: await startStream(target, conv, { kind: 'plan', userMessageId: userMessage.id }), userMessage }
@@ -460,7 +457,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     async regeneratePlan(target: StreamTarget, conversationId: string): Promise<SendResult> {
       const conv = await loadConversation(conversationId)
       const last = (await listMessages(db, conversationId)).at(-1)
-      if (!last || last.role !== 'user') throw new Error('Nessun messaggio in attesa di un piano')
+      if (!last || last.role !== 'user') throw new Error(t('err.noPendingPlan'))
       for (const p of await listPlans(db, conversationId)) {
         if (p.userMessageId === last.id && p.status !== 'executed') await removePlan(db, p.id)
       }
@@ -470,7 +467,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     /** Plan mode, fase 2: approva il piano (se serve) e genera la risposta seguendolo. */
     async executePlan(target: StreamTarget, planId: string): Promise<SendResult> {
       const { plan, conv } = await loadPlan(planId)
-      if (plan.status !== 'proposed' && plan.status !== 'approved') throw new Error('Questo piano non si può eseguire')
+      if (plan.status !== 'proposed' && plan.status !== 'approved') throw new Error(t('err.planNotExecutable'))
       await assertPlanIsCurrent(plan)
       const approved = await updatePlan(db, plan.id, { status: 'approved' })
       return { streamId: await startStream(target, conv, { kind: 'execute', plan: approved }) }

@@ -1,6 +1,7 @@
 // Variabili d'ambiente del server Ollama. Ollama le legge solo all'avvio: per cambiarle bisogna salvarle e
 // riavviarlo. Su Windows l'app lo fa da sola (variabili dell'utente + riavvio dell'app Ollama); altrove
 // mostra i comandi da copiare: su Linux servirebbe sudo e su macOS il valore non sopravvive al riavvio.
+import { t } from '@shared/i18n'
 
 export type OllamaEnvName = 'OLLAMA_VULKAN' | 'OLLAMA_FLASH_ATTENTION' | 'OLLAMA_KV_CACHE_TYPE' | 'OLLAMA_MAX_LOADED_MODELS'
 
@@ -67,8 +68,8 @@ export function validateEnv(values: OllamaEnvValues): OllamaEnvValues {
   const out: OllamaEnvValues = {}
   for (const [name, value] of Object.entries(values)) {
     const def = OLLAMA_ENV_VARS.find((v) => v.name === name)
-    if (!def || !NAMES.has(name as OllamaEnvName)) throw new Error(`Variabile non gestita: ${name}`)
-    if (!def.options.some((o) => o.value === (value ?? null))) throw new Error(`Valore non valido per ${name}`)
+    if (!def || !NAMES.has(name as OllamaEnvName)) throw new Error(t('err.envUnknownVar', { name }))
+    if (!def.options.some((o) => o.value === (value ?? null))) throw new Error(t('err.envBadValue', { name }))
     out[name as OllamaEnvName] = value ?? null
   }
   return out
@@ -134,7 +135,7 @@ export const ollamaAppPath = (deps: EnvDeps): string => `${deps.localAppData}\\P
  * direttamente: quello dell'app non contiene ancora le variabili appena salvate.
  */
 export async function applyEnvWindows(deps: EnvDeps, values: OllamaEnvValues): Promise<{ restarted: boolean }> {
-  if (deps.platform !== 'win32') throw new Error('Applicazione automatica disponibile solo su Windows')
+  if (deps.platform !== 'win32') throw new Error(t('err.envWindowsOnly'))
   const clean = validateEnv(values)
   const app = ollamaAppPath(deps)
   if (!deps.exists(app)) throw new Error(`Ollama non trovato in ${app}: imposta le variabili e riavvia Ollama a mano`)

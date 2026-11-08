@@ -16,7 +16,7 @@ import {
   type Result
 } from '@shared/types'
 import { normalizeSteps } from '@shared/prompt'
-import { LANGUAGE_SETTINGS, resolveLocale, setLocale } from '@shared/i18n'
+import { LANGUAGE_SETTINGS, resolveLocale, setLocale, t } from '@shared/i18n'
 import type { SystemInfo } from '@shared/settings'
 import { calibrationPatch, type CalibrateDeps } from './calibrate'
 import { createChatService } from './chat'
@@ -87,14 +87,14 @@ function validOllamaUrl(url: unknown): string {
   try {
     parsed = new URL(String(url).trim())
   } catch {
-    throw new Error('URL di Ollama non valido')
+    throw new Error(t('err.badUrl'))
   }
-  if (!/^https?:$/.test(parsed.protocol)) throw new Error('URL di Ollama non valido: usa http:// o https://')
+  if (!/^https?:$/.test(parsed.protocol)) throw new Error(t('err.badUrlScheme'))
   return parsed.origin + parsed.pathname.replace(/\/+$/, '')
 }
 
 const requireId = (id: unknown): string => {
-  if (typeof id !== 'string' || !id) throw new Error('Id mancante')
+  if (typeof id !== 'string' || !id) throw new Error(t('err.missingId'))
   return id
 }
 
@@ -151,8 +151,8 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   const pulls = new Map<string, AbortController>()
   handle(IPC.modelsPull, async (e, name: string) => {
     const model = String(name ?? '').trim()
-    if (!/^[\w.\-/:]+$/.test(model)) throw new Error('Nome del modello non valido (es. qwen3:8b)')
-    if (pulls.has(model)) throw new Error('Download già in corso')
+    if (!/^[\w.\-/:]+$/.test(model)) throw new Error(t('err.badModelName'))
+    if (pulls.has(model)) throw new Error(t('err.pullInProgress'))
     const controller = new AbortController()
     pulls.set(model, controller)
     const send = (p: Omit<PullProgress, 'model'>): void => {
@@ -236,7 +236,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   // ---- finestra (agisce sulla finestra che ha fatto la richiesta)
   const winOf = (e: IpcMainInvokeEvent): BrowserWindow => {
     const win = BrowserWindow.fromWebContents(e.sender)
-    if (!win) throw new Error('Finestra non trovata')
+    if (!win) throw new Error(t('err.noWindow'))
     return win
   }
   handle(IPC.windowMinimize, (e) => winOf(e).minimize())
@@ -251,7 +251,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
 
   // ---- appunti
   handle(IPC.clipboardWrite, (_e, text: string) => {
-    if (typeof text !== 'string') throw new Error('Testo non valido')
+    if (typeof text !== 'string') throw new Error(t('err.badText'))
     clipboard.writeText(text)
   })
 
@@ -260,11 +260,11 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     if (patch.ollamaUrl !== undefined) patch.ollamaUrl = validOllamaUrl(patch.ollamaUrl)
     if (patch.embeddingModel !== undefined) {
       const name = String(patch.embeddingModel).trim()
-      if (!/^[\w.\-/:]+$/.test(name)) throw new Error('Nome del modello di embedding non valido')
+      if (!/^[\w.\-/:]+$/.test(name)) throw new Error(t('err.badEmbeddingName'))
       patch.embeddingModel = name
     }
-    if (patch.kvCacheType !== undefined && !KV_CACHE_TYPES.includes(patch.kvCacheType)) throw new Error('Tipo di cache KV non valido')
-    if (patch.language !== undefined && !LANGUAGE_SETTINGS.includes(patch.language)) throw new Error('Lingua non valida')
+    if (patch.kvCacheType !== undefined && !KV_CACHE_TYPES.includes(patch.kvCacheType)) throw new Error(t('err.badKv'))
+    if (patch.language !== undefined && !LANGUAGE_SETTINGS.includes(patch.language)) throw new Error(t('err.badLanguage'))
     const next = await setSettings(db, patch)
     if (patch.language !== undefined) setLocale(resolveLocale(next.language, systemLocale()))
     if (patch.ollamaUrl !== undefined) {
@@ -279,7 +279,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
 
   handle(IPC.conversationsGet, async (_e, id: string): Promise<ConversationDetail> => {
     let conversation = await getConversation(db, requireId(id))
-    if (!conversation) throw new Error('Conversazione non trovata')
+    if (!conversation) throw new Error(t('err.convNotFound'))
     // Conversazioni non ancora calibrate (versioni precedenti, o Ollama assente alla creazione).
     const fill = await calibrationPatch(calibrate, conversation.model, conversation, true)
     if (Object.keys(fill).length) conversation = await updateConversation(db, conversation.id, fill)
@@ -308,7 +308,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     let init: ConversationPatch = { model }
     if (fromTemplateId) {
       const template = await getTemplate(db, requireId(fromTemplateId))
-      if (!template) throw new Error('Template non trovato')
+      if (!template) throw new Error(t('err.templateNotFound'))
       init = conversationFromTemplate(template, model)
     }
     // I parametri partono dai valori suggeriti per il modello; il template può fissarne alcuni (temperatura).
@@ -320,7 +320,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   // ---- memoria della conversazione
   const convOrThrow = async (id: string) => {
     const conv = await getConversation(db, requireId(id))
-    if (!conv) throw new Error('Conversazione non trovata')
+    if (!conv) throw new Error(t('err.convNotFound'))
     return conv
   }
   ipcMain.on(IPC.systemLocale, (e) => {
@@ -333,7 +333,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     try {
       await memory.rebuild(conv)
     } catch (err) {
-      if (memory.isMissingModel(err)) throw new Error(`Modello di embedding non installato: scaricalo da Impostazioni → Modelli`)
+      if (memory.isMissingModel(err)) throw new Error(t('err.embeddingMissing'))
       throw err
     }
     return memory.status(conv)
@@ -342,23 +342,23 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   /** Riporta temperatura, top_p e num_ctx ai valori suggeriti per il modello e la macchina. */
   handle(IPC.conversationsCalibrate, async (_e, id: string) => {
     const conv = await getConversation(db, requireId(id))
-    if (!conv) throw new Error('Conversazione non trovata')
+    if (!conv) throw new Error(t('err.convNotFound'))
     const fill = await calibrationPatch(calibrate, conv.model, conv, false)
-    if (!Object.keys(fill).length) throw new Error('Ollama non risponde: impossibile calcolare i valori suggeriti')
+    if (!Object.keys(fill).length) throw new Error(t('err.calibrateNoOllama'))
     return updateConversation(db, conv.id, fill)
   })
 
   handle(IPC.conversationsExport, async (e, id: string, format: ExportFormat): Promise<string | null> => {
-    if (format !== 'md' && format !== 'json') throw new Error('Formato non supportato')
+    if (format !== 'md' && format !== 'json') throw new Error(t('err.badFormat'))
     const conversation = await getConversation(db, requireId(id))
-    if (!conversation) throw new Error('Conversazione non trovata')
+    if (!conversation) throw new Error(t('err.convNotFound'))
     const data = {
       conversation,
       messages: await listMessages(db, conversation.id),
       plans: await listPlans(db, conversation.id)
     }
     const options = {
-      title: 'Esporta conversazione',
+      title: t('export.dialogTitle'),
       defaultPath: suggestedFileName(conversation.title, format),
       filters:
         format === 'md'
@@ -385,8 +385,8 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
       void memory.indexQuietly(r.conversation)
       return r.conversation
     }
-    if (r.outcome === 'not-needed') throw new Error('Niente da riassumere: la conversazione sta nella memoria, a parte l\'ultimo scambio')
-    throw new Error('Il modello non ha prodotto un riassunto. Riprova')
+    if (r.outcome === 'not-needed') throw new Error(t('err.nothingToSummarize'))
+    throw new Error(t('err.summaryFailed'))
   })
 
   handle(IPC.conversationsUpdate, async (_e, id: string, patch: ConversationPatch) => {
@@ -409,7 +409,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
 
   // ---- chat
   handle(IPC.chatSend, (e, id: string, text: string) => {
-    if (typeof text !== 'string') throw new Error('Messaggio non valido')
+    if (typeof text !== 'string') throw new Error(t('err.badMessage'))
     return chat.send(watch(e.sender), requireId(id), text)
   })
   handle(IPC.chatRegenerate, (e, id: string) => chat.regenerate(watch(e.sender), requireId(id)))
@@ -418,14 +418,14 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   // ---- template del brief
   handle(IPC.templatesList, () => listTemplates(db))
   handle(IPC.templatesCreate, (_e, conversationId: string, name: string) => {
-    if (typeof name !== 'string') throw new Error('Nome non valido')
+    if (typeof name !== 'string') throw new Error(t('err.badName'))
     return createTemplateFromConversation(db, requireId(conversationId), name)
   })
   handle(IPC.templatesRemove, (_e, id: string) => removeTemplate(db, requireId(id)))
 
   // ---- plan mode
   handle(IPC.plansPropose, (e, id: string, text: string) => {
-    if (typeof text !== 'string') throw new Error('Messaggio non valido')
+    if (typeof text !== 'string') throw new Error(t('err.badMessage'))
     return chat.proposePlan(watch(e.sender), requireId(id), text)
   })
   handle(IPC.plansRegenerate, (e, conversationId: string) => chat.regeneratePlan(watch(e.sender), requireId(conversationId)))
@@ -433,9 +433,9 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     const patch: PlanUpdate = {}
     if (update?.steps !== undefined) patch.steps = normalizeSteps(update.steps)
     if (update?.status !== undefined) {
-      if (!['proposed', 'approved', 'rejected', 'executed'].includes(update.status)) throw new Error('Stato non valido')
+      if (!['proposed', 'approved', 'rejected', 'executed'].includes(update.status)) throw new Error(t('err.badState'))
       // 'executed' lo imposta solo il main, a esecuzione completata.
-      if (update.status === 'executed') throw new Error('Usa plans.execute per eseguire un piano')
+      if (update.status === 'executed') throw new Error(t('err.usePlansExecute'))
       patch.status = update.status
     }
     return updatePlan(db, requireId(planId), patch)

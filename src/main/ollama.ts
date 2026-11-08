@@ -1,4 +1,5 @@
 import type { DoneReason, ModelCapabilities, ModelDefaults, OllamaModel } from '@shared/types'
+import { t } from '@shared/i18n'
 
 export type OllamaErrorCode = 'unreachable' | 'http' | 'model' | 'parse'
 
@@ -180,7 +181,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       })
     } catch (err) {
       if (isAbort(err)) throw err
-      throw new OllamaError('unreachable', `Ollama non raggiungibile su ${getBaseUrl()}`)
+      throw new OllamaError('unreachable', t('err.unreachable', { url: getBaseUrl() }))
     }
     if (!res.ok) {
       let detail = res.statusText
@@ -269,7 +270,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       try {
         chunk = JSON.parse(line) as ChatChunk
       } catch {
-        throw new OllamaError('parse', `Risposta NDJSON non valida: ${line.slice(0, 120)}`)
+        throw new OllamaError('parse', t('err.badNdjson', { line: line.slice(0, 120) }))
       }
       if (chunk.error) throw new OllamaError('http', chunk.error)
       const thinking = chunk.message?.thinking
@@ -299,7 +300,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
         body: JSON.stringify({ ...req, stream: true }),
         signal
       })
-      if (!res.body) throw new OllamaError('parse', 'Risposta di Ollama senza corpo')
+      if (!res.body) throw new OllamaError('parse', t('err.noBody'))
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -342,7 +343,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     signal?: AbortSignal
   ): Promise<void> {
     const res = await request('/api/pull', { method: 'POST', body: JSON.stringify({ model: name, stream: true }), signal })
-    if (!res.body) throw new OllamaError('parse', 'Risposta di Ollama senza corpo')
+    if (!res.body) throw new OllamaError('parse', t('err.noBody'))
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
@@ -375,7 +376,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     const res = await request('/api/embed', { method: 'POST', body: JSON.stringify({ model, input, ...(options ? { options } : {}) }) })
     const body = (await res.json()) as { embeddings?: number[][]; prompt_eval_count?: number; total_duration?: number; load_duration?: number }
     if (!Array.isArray(body.embeddings) || body.embeddings.length !== input.length) {
-      throw new OllamaError('parse', 'Risposta di /api/embed non valida')
+      throw new OllamaError('parse', t('err.badEmbed'))
     }
     onStats?.({ promptEvalCount: body.prompt_eval_count ?? null, durationMs: ms(body.total_duration), loadMs: ms(body.load_duration) })
     return body.embeddings
