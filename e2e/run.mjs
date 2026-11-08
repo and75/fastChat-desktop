@@ -84,6 +84,8 @@ const app = await electron.launch({
     OLLAMA_URL: fake.url,
     FASTCHAT_USER_DATA: userData,
     FASTCHAT_EXPORT_PATH: join(userData, 'export'),
+    // Base di conoscenza: «Aggiungi documenti» salta il dialog e aggiunge questi file.
+    FASTCHAT_KNOWLEDGE_FILES: [join(root, 'tests', 'fixtures', 'relazione.txt'), join(root, 'tests', 'fixtures', 'bilancio.pdf')].join(process.platform === 'win32' ? ';' : ':'),
     // Macchina finta: 16 GB di RAM. Con un modello da 2 GB e 128 KiB per token la memoria suggerita
     // è ~115k, limitata al massimo del modello: 32.768 (thinker:8b), 8.192 per quelli con contesto 8k.
     FASTCHAT_LANG: 'it',
@@ -681,6 +683,79 @@ try {
   await page.getByTestId('model-settings').getByText('Varietà delle parole').scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(root, 'test-results', 'e2e-phase3.png') })
 
+  await step('base di conoscenza: scheda, documenti (testo e PDF), estratti con fonte, bottone libro per una domanda, pill', async () => {
+    const box = page.getByRole('textbox', { name: 'Messaggio' })
+    const book = page.getByTestId('knowledge-button')
+    const ask = async (text) => {
+      const n = chatRequests().length
+      await box.fill(text)
+      await box.press('Enter')
+      await page.getByTestId('message-streaming').waitFor({ state: 'detached', timeout: 60_000 })
+      await waitUntil(() => chatRequests().length > n)
+      return chatRequests().at(-1).body.messages[0]
+    }
+    // conversazione nuova: senza documenti la scheda è vuota e il bottone libro è disabilitato
+    await page.getByTestId('new-conversation').click()
+    await page.selectOption('#model-select', 'llama3.2:3b')
+    await openTab('Conoscenza')
+    const panel = page.getByTestId('knowledge-panel')
+    await panel.getByTestId('knowledge-status').filter({ hasText: 'Nessun documento' }).waitFor()
+    assert.equal(await book.isDisabled(), true)
+    assert.equal(await page.getByRole('switch', { name: 'Usa la base di conoscenza' }).getAttribute('aria-checked'), 'true')
+    // aggiunta (dialog saltato): un testo e un PDF, indicizzati in sottofondo; il puntino sulla scheda
+    await panel.getByTestId('knowledge-add').click()
+    await panel.locator('[data-testid="knowledge-doc"][data-status="ready"]').nth(1).waitFor({ timeout: 30_000 })
+    await panel.getByTestId('knowledge-status').filter({ hasText: /2 documenti, \d+ pezzi indicizzati con embeddinggemma/ }).waitFor()
+    await page.getByRole('tab', { name: 'Conoscenza (compilato)' }).waitFor()
+    const rows = await panel.getByTestId('knowledge-doc').allInnerTexts()
+    assert.match(rows[0], /relazione[\s\S]*Testo e Markdown/)
+    assert.match(rows[1], /bilancio[\s\S]*PDF/)
+    assert.ok(fake.requests.some((r) => r.path === '/api/embed' && r.body.input.some((x) => x.includes('Genova'))), 'il PDF è stato indicizzato')
+    await page.waitForFunction(() => document.querySelector('[data-testid="knowledge-button"]')?.getAttribute('aria-pressed') === 'true')
+    // domanda: «Cerco nei documenti», sezione nel system prompt con la fonte, fonti sotto la risposta
+    const n0 = chatRequests().length
+    await box.fill('Quante persone ha assunto la sede di Torino?')
+    await box.press('Enter')
+    await page.getByTestId('message-streaming').getByText('Cerco nei documenti').waitFor({ timeout: 20_000 }).catch(() => undefined)
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached', timeout: 60_000 })
+    await waitUntil(() => chatRequests().length > n0)
+    let system = chatRequests().at(-1).body.messages[0]
+    assert.equal(system.role, 'system')
+    assert.match(system.content, /# Base di conoscenza/)
+    assert.match(system.content, /\[relazione\]\n[\s\S]*Torino/)
+    const refs = page.getByTestId('message-assistant').last().getByTestId('knowledge-refs')
+    await refs.getByText(/\d+ font[ei] dai documenti/).click()
+    await refs.getByText(/^relazione/).first().waitFor()
+    await refs.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(root, 'test-results', 'e2e-knowledge.png') })
+    // monitor del contesto: la voce «Estratti dei documenti» nell'ultima risposta
+    const calls = (await page.evaluate((id) => window.api.context.calls(id), (await latestConversation()).id)).data
+    const chatCall = calls.find((c) => c.kind === 'chat')
+    assert.ok(chatCall.parts.some((p) => p.key === 'knowledge' && p.count >= 1), 'voce knowledge nel monitor')
+    assert.ok(calls.some((c) => c.kind === 'embed-doc'), 'indicizzazione dei documenti nel monitor')
+    // bottone libro spento per una domanda sola: niente sezione, poi torna acceso
+    await book.click()
+    assert.equal(await book.getAttribute('aria-pressed'), 'false')
+    system = await ask('E senza documenti?')
+    assert.doesNotMatch(system.content, /# Base di conoscenza/)
+    await page.locator('[data-testid="message-knowledge"][data-on="false"]').waitFor()
+    await page.waitForFunction(() => document.querySelector('[data-testid="knowledge-button"]')?.getAttribute('aria-pressed') === 'true')
+    // pill spenta: il libro è spento; acceso per una domanda sola → sezione presente
+    await page.getByTestId('knowledge-pill').click()
+    await waitUntil(async () => (await latestConversation()).knowledge === false)
+    await page.waitForFunction(() => document.querySelector('[data-testid="knowledge-button"]')?.getAttribute('aria-pressed') === 'false')
+    await book.click()
+    system = await ask('Di nuovo con i documenti: quante persone ha assunto la sede di Torino?')
+    assert.match(system.content, /# Base di conoscenza/)
+    await page.waitForFunction(() => document.querySelector('[data-testid="knowledge-button"]')?.getAttribute('aria-pressed') === 'false')
+    await page.getByTestId('knowledge-pill').click()
+    await waitUntil(async () => (await latestConversation()).knowledge === true)
+    // rimozione di un documento
+    await panel.getByTestId('knowledge-doc-remove').first().click()
+    await waitUntil(async () => (await panel.getByTestId('knowledge-doc').count()) === 1)
+    await panel.getByTestId('knowledge-status').filter({ hasText: /1 documento/ }).waitFor()
+  })
+
   // ------------------------------------------------------------------ fase 4
   const planRequests = () => fake.requests.filter((r) => r.path === '/api/chat' && r.body?.format)
 
@@ -973,7 +1048,7 @@ try {
     assert.deepEqual(scrollbars, ['none', 'none', 'none', 'none'])
   })
 
-  await step('pannello a schede: Modello / Brief, indicatore del brief, tastiera, scheda ricordata', async () => {
+  await step('pannello a schede: Modello / Brief / Conoscenza, indicatore del brief, tastiera, scheda ricordata', async () => {
     const modelPanel = page.locator('#panel-model')
     const briefPanel = page.locator('#panel-brief')
     await openTab('Modello')
@@ -991,12 +1066,17 @@ try {
     await page.getByTestId('brief-filled').waitFor()
     await page.getByRole('tab', { name: 'Brief (compilato)' }).waitFor()
 
-    // frecce: dalla scheda Brief si passa a Modello (due schede: a destra si torna a Brief)
+    // frecce: da Brief a sinistra si va a Modello, a destra a Conoscenza
     await page.getByRole('tab', { name: 'Brief' }).focus()
     await page.keyboard.press('ArrowLeft')
     await page.waitForFunction(() => document.getElementById('panel-tab-model')?.getAttribute('aria-selected') === 'true')
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'panel-tab-model')
-    assert.equal(await page.getByRole('tab').count(), 2)
+    assert.equal(await page.getByRole('tab').count(), 3)
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+    await page.waitForFunction(() => document.getElementById('panel-tab-knowledge')?.getAttribute('aria-selected') === 'true')
+    assert.equal(await page.locator('#panel-knowledge').isVisible(), true)
+    await openTab('Modello')
 
     // in fondo al pannello Modello: stato del contesto con la stessa percentuale del contatore in basso,
     // e sotto, chiusi, il dettaglio del calcolo e le chiamate a Ollama

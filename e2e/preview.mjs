@@ -32,8 +32,9 @@ Richieste aperte:
 const respond = (messages) => {
   const system = messages[0]?.content ?? ''
   if (system.startsWith("Sei l'archivista")) return SUMMARY
-  if (system.startsWith('Genera un titolo')) return 'Viaggio in Portogallo'
+  if (system.startsWith('Genera un titolo')) return /fondo rischi/.test(messages.at(-1)?.content ?? '') ? 'Bilancio e contratto' : 'Viaggio in Portogallo'
   const last = messages.at(-1)?.content ?? ''
+  if (system.includes('# Base di conoscenza')) return 'Secondo la nota integrativa il **fondo rischi ammonta a trecentomila euro** [bilancio, p. 2]; il contratto prevede una penale dello 0,5% al giorno [contratto, Contratto di fornitura › Penali].'
   if (last.includes('Riassumi il testo')) return 'La memoria è condivisa tra pesi e contesto.'
   const base = ANSWERS.find(([re]) => re.test(last))?.[1] ?? 'Va bene.'
   return last.startsWith('Ricordami') ? base : `${base}\n\nSe vuoi, preparo anche un itinerario giorno per giorno con orari e costi stimati per ogni tappa, così teniamo sotto controllo il budget complessivo.`
@@ -64,6 +65,7 @@ const app = await electron.launch({
     OLLAMA_URL: fake.url,
     FASTCHAT_USER_DATA: mkdtempSync(join(tmpdir(), 'fastchat-preview-')),
     FASTCHAT_LANG: 'it',
+    FASTCHAT_KNOWLEDGE_FILES: [join(root, 'tests', 'fixtures', 'bilancio.pdf'), join(root, 'tests', 'fixtures', 'contratto.docx'), join(root, 'tests', 'fixtures', 'relazione.txt')].join(process.platform === 'win32' ? ';' : ':'),
     FASTCHAT_SYSTEM_RAM: String(32 * 1024 ** 3),
     FASTCHAT_SYSTEM_UNIFIED: '0',
     NODE_ENV: 'production'
@@ -206,6 +208,33 @@ await dialog.waitFor({ state: 'detached' })
 await page.getByRole('tab', { name: 'Modèle' }).waitFor()
 await page.waitForTimeout(400)
 await page.screenshot({ path: out('14-french.png') })
+
+// base di conoscenza: nuova conversazione, scheda, documenti (PDF, Word, testo), domanda con le fonti
+await page.getByRole('button', { name: 'Paramètres' }).click()
+await page.getByTestId('settings-dialog').getByTestId('settings-language').selectOption('it')
+await page.getByTestId('settings-dialog').getByRole('button', { name: /Salva|Enregistrer/ }).click()
+await page.getByTestId('settings-dialog').waitFor({ state: 'detached' })
+// il salvataggio delle impostazioni ha riportato l'URL di Ollama a quello salvato: si rimette quello del finto
+await page.evaluate((url) => window.api.settings.set({ ollamaUrl: url }), fake.url)
+await page.getByTestId('new-conversation').click()
+await page.selectOption('#model-select', 'gemma3:27b')
+await page.getByRole('tab', { name: /Conoscenza/ }).click()
+await page.getByTestId('knowledge-add').click()
+await page.getByTestId('knowledge-panel').locator('[data-testid="knowledge-doc"][data-status="ready"]').nth(2).waitFor({ timeout: 30000 }).catch(async (err) => {
+  console.log('documenti:', await page.getByTestId('knowledge-doc').allInnerTexts())
+  await page.screenshot({ path: out('15-base-di-conoscenza-errore.png') })
+  throw err
+})
+await page.waitForTimeout(400)
+await page.screenshot({ path: out('15-base-di-conoscenza.png') })
+await send('A quanto ammonta il fondo rischi, e quali penali prevede il contratto?')
+await page.getByTestId('knowledge-refs').locator('summary').click()
+await page.waitForTimeout(400)
+await page.screenshot({ path: out('16-fonti-dai-documenti.png') })
+await page.getByTestId('knowledge-button').click()
+await box.fill('E a memoria, senza guardare i documenti?')
+await page.waitForTimeout(300)
+await page.screenshot({ path: out('17-libro-spento-per-una-domanda.png') })
 
 await app.close()
 await fake.close()
