@@ -1,17 +1,27 @@
 import { useEffect, useState } from 'react'
+import { fmtNum, t } from '@shared/i18n'
 import type { ModelSetting, OllamaModel } from '@shared/types'
 import { useModels } from '../store/useModels'
 
 const ALL_LAYERS = 999
 
-const gb = (bytes: number): string => `${(bytes / 1024 ** 3).toLocaleString('it-IT', { maximumFractionDigits: 1 })} GB`
+const gb = (bytes: number): string => `${fmtNum(bytes / 1024 ** 3, 1)} GB`
 
 /** Descrizione breve di num_gpu. */
 export function describeNumGpu(numGpu: number | null): string {
-  if (numGpu == null) return 'Automatico'
-  if (numGpu === 0) return 'Solo CPU'
-  if (numGpu >= ALL_LAYERS) return 'Tutto su GPU'
-  return `${numGpu} layer su GPU`
+  if (numGpu == null) return t('gpu.auto')
+  if (numGpu === 0) return t('gpu.cpu')
+  if (numGpu >= ALL_LAYERS) return t('gpu.gpu')
+  return t('gpu.layers', { n: numGpu })
+}
+
+/** Etichetta di una configurazione del test: le chiamate salvate hanno una chiave (`cpu`, `gpu`, `half:N`), quelle vecchie il testo. */
+export function benchLabel(r: { label: string; numGpu?: number | null }): string {
+  if (r.label === 'cpu') return t('bench.label.cpu')
+  if (r.label === 'gpu') return t('bench.label.gpu')
+  if (r.label.startsWith('half:')) return t('bench.label.half', { n: r.label.slice(5) })
+  if (r.label === 'prepare') return t('bench.step.prepare')
+  return r.label
 }
 
 /** Il test va (ri)fatto: mai fatto, oppure il modello è stato aggiornato dopo il test. */
@@ -34,7 +44,7 @@ export function NumGpuSelect({ model, compact = false }: { model: string; compac
   return (
     <span className="flex items-center gap-2">
       <select
-        aria-label={`Esecuzione di ${model}`}
+        aria-label={t('gpu.execOf', { model })}
         className={'rounded border border-zinc-300 bg-white px-1.5 py-0.5 dark:border-zinc-700 dark:bg-zinc-900 ' + (compact ? 'w-36 text-xs' : 'text-sm')}
         value={mode}
         onChange={(e) => {
@@ -44,17 +54,17 @@ export function NumGpuSelect({ model, compact = false }: { model: string; compac
         }}
         data-testid="num-gpu-select"
       >
-        <option value="auto">{compact ? 'Automatico' : 'Automatico (decide Ollama)'}</option>
-        <option value="cpu">Solo CPU</option>
-        <option value="gpu">Tutto su GPU</option>
-        <option value="layers">Layer su GPU…</option>
+        <option value="auto">{compact ? t('gpu.auto') : t('gpu.autoLong')}</option>
+        <option value="cpu">{t('gpu.cpu')}</option>
+        <option value="gpu">{t('gpu.gpu')}</option>
+        <option value="layers">{t('gpu.layersOption')}</option>
       </select>
       {mode === 'layers' && (
         <input
           type="number"
           min={1}
           max={998}
-          aria-label="Layer su GPU"
+          aria-label={t('gpu.layersLabel')}
           className="w-16 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           value={layers}
           onChange={(e) => setLayers(e.target.value)}
@@ -71,25 +81,25 @@ export function NumGpuSelect({ model, compact = false }: { model: string; compac
 /** Risultati del test CPU/GPU di un modello. */
 export function BenchmarkTable({ setting }: { setting: ModelSetting }): React.JSX.Element | null {
   if (!setting.benchmark?.length) return null
-  const fmt = (n: number | null): string => (n == null ? '—' : n.toLocaleString('it-IT', { maximumFractionDigits: 1 }))
+  const fmt = (n: number | null): string => (n == null ? '—' : fmtNum(n, 1))
   return (
     <table className="mt-1 w-full text-xs" data-testid="benchmark-table">
       <thead className="text-zinc-500">
         <tr>
-          <th className="text-left font-normal">Configurazione</th>
-          <th className="text-right font-normal">Scrittura tok/s</th>
-          <th className="text-right font-normal">Lettura tok/s</th>
-          <th className="text-right font-normal">In GPU</th>
+          <th className="text-left font-normal">{t('bench.config')}</th>
+          <th className="text-right font-normal">{t('bench.write')}</th>
+          <th className="text-right font-normal">{t('bench.read')}</th>
+          <th className="text-right font-normal">{t('bench.inGpu')}</th>
         </tr>
       </thead>
       <tbody>
         {setting.benchmark.map((r) => (
           <tr key={r.label} className={r.numGpu === setting.numGpu ? 'font-medium text-brand-700 dark:text-brand-300' : ''}>
             <td>
-              {r.label}
+              {benchLabel(r)}
               {r.numGpu === setting.numGpu ? ' ✓' : ''}
             </td>
-            <td className="text-right tabular-nums">{r.error ? 'errore' : fmt(r.evalTps)}</td>
+            <td className="text-right tabular-nums">{r.error ? t('bench.error') : fmt(r.evalTps)}</td>
             <td className="text-right tabular-nums">{r.error ? '' : fmt(r.promptTps)}</td>
             <td className="text-right tabular-nums">{r.vramShare == null ? '—' : `${Math.round(r.vramShare * 100)}%`}</td>
           </tr>
@@ -100,14 +110,14 @@ export function BenchmarkTable({ setting }: { setting: ModelSetting }): React.JS
 }
 
 /** Avanzamento del test, o pulsante per avviarlo. */
-export function BenchmarkButton({ model, label = 'Esegui test CPU/GPU' }: { model: string; label?: string }): React.JSX.Element {
+export function BenchmarkButton({ model, label }: { model: string; label?: string }): React.JSX.Element {
   const progress = useModels((s) => s.benchmarks[model])
   const benchmark = useModels((s) => s.benchmark)
   const [error, setError] = useState<string | null>(null)
   if (progress) {
     return (
       <span role="status" className="text-xs text-brand-700 dark:text-brand-300" data-testid="benchmark-progress">
-        Test {Math.max(1, progress.step)}/{progress.steps}: {progress.label}…
+        {t('bench.progress', { step: Math.max(1, progress.step), steps: progress.steps, label: benchLabel(progress) })}
       </span>
     )
   }
@@ -116,14 +126,14 @@ export function BenchmarkButton({ model, label = 'Esegui test CPU/GPU' }: { mode
       <button
         type="button"
         className="self-start rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-        title="Prova solo CPU, tutto su GPU e metà dei layer con la stessa domanda, misura la velocità e sceglie la più veloce (1–2 minuti)"
+        title={t('bench.title')}
         onClick={() => {
           setError(null)
           void benchmark(model).then(setError)
         }}
         data-testid="benchmark-run"
       >
-        {label}
+        {label ?? t('bench.run')}
       </button>
       {error && <span className="text-xs text-red-700 dark:text-red-400">{error}</span>}
     </span>
@@ -151,20 +161,20 @@ export function ModelManager(): React.JSX.Element {
           void pull(n).then(setError)
         }}
       >
-        <span className="font-medium">Scarica un modello</span>
+        <span className="font-medium">{t('models.download')}</span>
         <div className="flex gap-2">
           <input
-            aria-label="Nome del modello da scaricare"
-            placeholder="es. qwen3:8b, gemma3:12b"
+            aria-label={t('models.downloadName')}
+            placeholder={t('models.downloadPlaceholder')}
             className="flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
           <button type="submit" className="rounded-lg border border-zinc-300 px-3 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
-            Scarica
+            {t('models.downloadButton')}
           </button>
         </div>
-        <span className="text-xs text-zinc-500">Nomi dalla libreria di Ollama (ollama.com/library). Dopo il download, conviene fare il test CPU/GPU.</span>
+        <span className="text-xs text-zinc-500">{t('models.downloadHint')}</span>
         {downloading.map((p) => (
           <span key={p.model} className="text-xs text-brand-700 dark:text-brand-300" data-testid="pull-progress">
             {p.model}: {p.status}
@@ -174,7 +184,7 @@ export function ModelManager(): React.JSX.Element {
         {error && <span className="text-xs text-red-700 dark:text-red-400">{error}</span>}
       </form>
 
-      <ul className="flex flex-col gap-3" aria-label="Modelli installati">
+      <ul className="flex flex-col gap-3" aria-label={t('models.installed')}>
         {models.map((m) => {
           const setting = modelSettings[m.name]
           const need = needsBenchmark(m, setting)
@@ -187,28 +197,28 @@ export function ModelManager(): React.JSX.Element {
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-3">
-                <span className="text-xs text-zinc-500">Esecuzione</span>
+                <span className="text-xs text-zinc-500">{t('models.execution')}</span>
                 <NumGpuSelect model={m.name} />
-                <BenchmarkButton model={m.name} label={setting?.benchmarkedAt ? 'Ripeti il test' : 'Esegui test CPU/GPU'} />
+                <BenchmarkButton model={m.name} label={setting?.benchmarkedAt ? t('bench.repeat') : t('bench.run')} />
                 <button
                   type="button"
                   className="ml-auto text-xs text-red-700 hover:underline dark:text-red-400"
                   onClick={() => {
-                    if (window.confirm(`Eliminare ${m.name} da Ollama? Il file del modello viene cancellato dal disco.`)) void removeModel(m.name).then(setError)
+                    if (window.confirm(t('models.delete.confirm', { model: m.name }))) void removeModel(m.name).then(setError)
                   }}
                 >
-                  Elimina
+                  {t('models.delete')}
                 </button>
               </div>
-              {need === 'updated' && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">Modello aggiornato dopo il test: conviene ripeterlo.</p>}
+              {need === 'updated' && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{t('models.updatedAfterTest')}</p>}
               {setting?.benchmarkedAt && setting.gpuAvailable === false && (
-                <p className="mt-1 text-xs text-zinc-500">Ollama non usa la GPU per questo modello (driver o Vulkan non attivi): va tutto in CPU.</p>
+                <p className="mt-1 text-xs text-zinc-500">{t('models.noGpu')}</p>
               )}
               {setting && <BenchmarkTable setting={setting} />}
             </li>
           )
         })}
-        {models.length === 0 && <li className="text-zinc-500">Nessun modello installato.</li>}
+        {models.length === 0 && <li className="text-zinc-500">{t('models.none')}</li>}
       </ul>
     </div>
   )
@@ -225,10 +235,10 @@ function EmbeddingModelField(): React.JSX.Element {
   const progress = pulls[current]
   return (
     <div className="flex flex-col gap-1" data-testid="embedding-model">
-      <span className="font-medium">Modello per la memoria delle conversazioni</span>
+      <span className="font-medium">{t('embedding.title')}</span>
       <div className="flex gap-2">
         <input
-          aria-label="Modello di embedding"
+          aria-label={t('embedding.label')}
           list="embedding-models"
           className="flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900"
           value={draft}
@@ -250,13 +260,13 @@ function EmbeddingModelField(): React.JSX.Element {
             className="rounded-lg border border-zinc-300 px-3 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
             onClick={() => void pull(current).then(setError)}
           >
-            {progress ? 'Scarico…' : 'Scarica'}
+            {progress ? t('embedding.downloading') : t('embedding.download')}
           </button>
         )}
       </div>
       <span className="text-xs text-zinc-500">
-        {installed ? 'Installato. ' : 'Non installato: scaricalo per usare la memoria. '}
-        Serve un modello multilingue (embeddinggemma è leggero; bge-m3 più preciso e più pesante). Cambiandolo, l'indice delle conversazioni si rifà.
+        {installed ? t('embedding.installed') : t('embedding.notInstalled')}
+        {t('embedding.hint')}
       </span>
       {error && <span className="text-xs text-red-700 dark:text-red-400">{error}</span>}
     </div>

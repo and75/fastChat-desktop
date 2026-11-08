@@ -45,7 +45,7 @@ describe('test CPU/GPU', () => {
     const ollama = createOllamaClient(() => fake.url)
     const steps: string[] = []
     const r = await runBenchmark(ollama, 'veloce-gpu', await ollama.showModel('veloce-gpu'), (s, n, label) => steps.push(`${s}/${n} ${label}`))
-    expect(steps).toEqual(['1/3 Solo CPU', '2/3 Tutto su GPU', '3/3 Metà su GPU (16 layer)'])
+    expect(steps).toEqual(['1/3 cpu', '2/3 gpu', '3/3 half:16'])
     expect(r.gpuAvailable).toBe(true)
     expect(r.best).toBe(999)
     expect(r.runs.map((x) => x.vramShare)).toEqual([0, 1, 0.5])

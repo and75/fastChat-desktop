@@ -86,6 +86,7 @@ const app = await electron.launch({
     FASTCHAT_EXPORT_PATH: join(userData, 'export'),
     // Macchina finta: 16 GB di RAM. Con un modello da 2 GB e 128 KiB per token la memoria suggerita
     // è ~115k, limitata al massimo del modello: 32.768 (thinker:8b), 8.192 per quelli con contesto 8k.
+    FASTCHAT_LANG: 'it',
     FASTCHAT_SYSTEM_RAM: String(16 * 1024 ** 3),
     FASTCHAT_SYSTEM_UNIFIED: '0',
     NODE_ENV: 'production'
@@ -842,7 +843,8 @@ try {
     // la verifica non salva nulla
     assert.equal((await page.evaluate(() => window.api.settings.get())).data.ollamaUrl, fake.url)
     await url.fill(fake.url)
-    await dialog.getByLabel('Tema').selectOption('dark')
+    // («Tema» è anche dentro «sistema» nell'elenco della lingua: si usa il testid)
+    await dialog.getByTestId('settings-theme').selectOption('dark')
     await dialog.getByLabel('Modello predefinito').selectOption('llama3.2:3b')
     await dialog.getByLabel('Cache KV di Ollama').selectOption('q8_0')
     await dialog.getByRole('button', { name: 'Salva' }).click()

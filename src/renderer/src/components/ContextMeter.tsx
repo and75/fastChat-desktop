@@ -1,4 +1,5 @@
 import { computeContextUsage, DEFAULT_CHARS_PER_TOKEN, formatTokensK, SUMMARY, type ContextUsage } from '@shared/prompt'
+import { fmtInt, fmtNum, t } from '@shared/i18n'
 import { resolveSettings } from '@shared/settings'
 import { useChat } from '../store/useChat'
 import { useModels } from '../store/useModels'
@@ -35,23 +36,18 @@ export function ContextMeter(): React.JSX.Element | null {
   const pct = Math.round(usage.ratio * 100)
   // Oltre la soglia, alla prossima domanda i messaggi più vecchi vengono riassunti prima della risposta.
   const over = usage.ratio > SUMMARY.trigger
-  const fmt = (n: number): string => n.toLocaleString('it-IT', { useGrouping: 'always' })
   const title =
-    `${usage.estimated ? 'Circa ' : ''}${fmt(usage.used)} token usati su ${fmt(usage.total)} disponibili` +
+    t('meter.used', { about: usage.estimated ? t('meter.about') : '', used: fmtInt(usage.used), total: fmtInt(usage.total) }) +
     (usage.estimated
-      ? ` (stima a ${usage.charsPerToken.toLocaleString('it-IT')} caratteri per token${usage.charsPerToken === DEFAULT_CHARS_PER_TOKEN ? '' : ', misurati su questa conversazione'}; il conteggio esatto arriva da Ollama dopo la risposta)`
-      : ' (conteggio di Ollama: prompt + risposta)') +
-    (conversation.summary ? '. I messaggi più vecchi sono nel riassunto automatico' : '') +
-    (conversation.autoSummary
-      ? `. Oltre il ${Math.round(SUMMARY.trigger * 100)}% i messaggi più vecchi vengono riassunti prima della risposta.`
-      : over
-        ? '. Riassunto automatico spento: oltre lo spazio disponibile i messaggi più vecchi non vengono inviati.'
-        : '')
+      ? t('meter.estimated', { cpt: fmtNum(usage.charsPerToken, 2), measured: usage.charsPerToken === DEFAULT_CHARS_PER_TOKEN ? '' : t('meter.measured') })
+      : t('meter.counted')) +
+    (conversation.summary ? t('meter.inSummary') : '') +
+    (conversation.autoSummary ? t('meter.autoSummary', { pct: Math.round(SUMMARY.trigger * 100) }) : over ? t('meter.noSummary') : '')
 
   return (
     <span className="flex items-center gap-2" title={title} data-testid="context-usage">
       <span className="tabular-nums">
-        Contesto {usage.estimated ? '≈' : ''}
+        {t('meter.label')} {usage.estimated ? '≈' : ''}
         {formatTokensK(usage.used)} / {formatTokensK(usage.total)} · {pct > 100 ? '>100' : pct}%
       </span>
       <span

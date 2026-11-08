@@ -1,4 +1,5 @@
 // Parametri del modello per una conversazione: valori suggeriti (calibrazione) e valori effettivi.
+import { t } from './i18n'
 //
 // Principio: il valore configurato nella conversazione è ciò che l'utente vede sul cursore e ciò che
 // va a Ollama. L'app lo riempie quando si sceglie il modello (calibrazione), poi l'utente lo cambia
@@ -83,12 +84,14 @@ export function suggestNumCtx({ system, modelBytes, caps }: SuggestNumCtxInput):
 /** Riga per l'interfaccia: da dove viene il suggerimento. */
 export function describeSuggestion(input: SuggestNumCtxInput): string {
   const gb = (b: number): string => `${Math.round(b / 1024 ** 3)} GB`
-  if (!input.system?.ramBytes) return 'Ollama non è su questa macchina: si usa il valore del modello.'
-  if (!input.modelBytes) return 'Dimensione del modello non nota: si usa il valore del modello.'
-  return (
-    `Calcolato su ${gb(input.system.ramBytes)} di RAM${input.system.unified ? ' unificata' : ''} e un modello da ${gb(input.modelBytes)}` +
-    (input.system.kvCacheType === 'f16' ? '.' : `, con cache KV ${input.system.kvCacheType}.`)
-  )
+  if (!input.system?.ramBytes) return t('suggest.remote')
+  if (!input.modelBytes) return t('suggest.noSize')
+  return t('suggest.computed', {
+    ram: gb(input.system.ramBytes),
+    unified: input.system.unified ? t('suggest.unified') : '',
+    model: gb(input.modelBytes),
+    kv: input.system.kvCacheType === 'f16' ? '.' : t('suggest.kv', { type: input.system.kvCacheType })
+  })
 }
 
 // ---------------------------------------------------------------- riserva per la risposta

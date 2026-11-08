@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import { BrowserWindow, clipboard, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import {
   IPC,
   KV_CACHE_TYPES,
@@ -16,6 +16,7 @@ import {
   type Result
 } from '@shared/types'
 import { normalizeSteps } from '@shared/prompt'
+import { LANGUAGE_SETTINGS, resolveLocale, setLocale } from '@shared/i18n'
 import type { SystemInfo } from '@shared/settings'
 import { calibrationPatch, type CalibrateDeps } from './calibrate'
 import { createChatService } from './chat'
@@ -49,6 +50,9 @@ import { createSummarizer } from './summary'
 import { isLocalOllama, systemInfo } from './system'
 import { runBenchmark } from './benchmark'
 import { applyEnvWindows, envCommands, OLLAMA_ENV_VARS, readUserEnv, validateEnv, type EnvDeps, type OllamaEnvValues } from './ollamaEnv'
+
+/** Lingua del sistema; FASTCHAT_LANG la forza (test end-to-end). */
+export const systemLocale = (): string => process.env.FASTCHAT_LANG || app.getLocale()
 
 export interface IpcDeps {
   db: Db
@@ -260,7 +264,9 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
       patch.embeddingModel = name
     }
     if (patch.kvCacheType !== undefined && !KV_CACHE_TYPES.includes(patch.kvCacheType)) throw new Error('Tipo di cache KV non valido')
+    if (patch.language !== undefined && !LANGUAGE_SETTINGS.includes(patch.language)) throw new Error('Lingua non valida')
     const next = await setSettings(db, patch)
+    if (patch.language !== undefined) setLocale(resolveLocale(next.language, systemLocale()))
     if (patch.ollamaUrl !== undefined) {
       setOllamaUrl(next.ollamaUrl)
       ollama.clearCache()
@@ -317,6 +323,9 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     if (!conv) throw new Error('Conversazione non trovata')
     return conv
   }
+  ipcMain.on(IPC.systemLocale, (e) => {
+    e.returnValue = systemLocale()
+  })
   handle(IPC.contextCalls, (_e, id: string) => listContextCalls(db, requireId(id)))
   handle(IPC.memoryStatus, async (_e, id: string) => memory.status(await convOrThrow(id)))
   handle(IPC.memoryRebuild, async (_e, id: string) => {

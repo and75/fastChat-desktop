@@ -1,4 +1,5 @@
 // Riassunto automatico: quando i messaggi non coperti dal riassunto superano la soglia dello spazio
+import { t } from '@shared/i18n'
 // per lo storico, i più vecchi confluiscono nel riassunto (aggiornato in modo incrementale) e il
 // system prompt li sostituisce. Gira dopo ogni risposta, con lo stesso modello e lo stesso num_ctx.
 import {
@@ -153,13 +154,13 @@ export function createSummarizer({ db, ollama, contextLog }: SummarizerDeps) {
         const start: CallStart = {
           conversationId,
           kind: 'summary',
-          note: chunks.length > 1 ? `blocco ${i + 1} di ${chunks.length}` : null,
+          note: chunks.length > 1 ? t('call.note.block', { i: i + 1, n: chunks.length }) : null,
           model: conv.model,
           numCtx: s.numCtx,
           parts: [
-            { key: 'instructions', label: 'Istruzioni', tokens: estimateTokens(prompt, cpt) },
-            ...(summary ? [{ key: 'summary' as const, label: 'Riassunto precedente', tokens: estimateTokens(summary, cpt) }] : []),
-            { key: 'transcript', label: 'Messaggi da riassumere', tokens: estimateTokens(chunk, cpt), ...(i === 0 ? { count: plan.cover.length } : {}) }
+            { key: 'instructions', label: 'instructions', tokens: estimateTokens(prompt, cpt) },
+            ...(summary ? [{ key: 'summary' as const, label: 'summary.previous', tokens: estimateTokens(summary, cpt) }] : []),
+            { key: 'transcript', label: 'transcript.messages', tokens: estimateTokens(chunk, cpt), ...(i === 0 ? { count: plan.cover.length } : {}) }
           ]
         }
         const result = await call(request, start)
@@ -177,8 +178,8 @@ export function createSummarizer({ db, ollama, contextLog }: SummarizerDeps) {
             ...start,
             kind: 'condense',
             parts: [
-              { key: 'instructions', label: 'Istruzioni', tokens: estimateTokens(prompt, cpt) },
-              { key: 'summary', label: 'Riassunto da condensare', tokens: estimateTokens(condense.messages[1].content, cpt) }
+              { key: 'instructions', label: 'instructions', tokens: estimateTokens(prompt, cpt) },
+              { key: 'summary', label: 'summary.condense', tokens: estimateTokens(condense.messages[1].content, cpt) }
             ]
           })
           const text = cleanSummary(shorter.content)

@@ -41,6 +41,7 @@ const api: Api = {
     apply: (values) => invoke(IPC.ollamaEnvApply, values)
   },
   system: {
+    locale: ipcRenderer.sendSync(IPC.systemLocale) as string,
     info: () => invoke(IPC.systemInfo)
   },
   conversations: {

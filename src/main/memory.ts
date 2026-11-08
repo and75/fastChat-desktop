@@ -49,7 +49,7 @@ export function createMemory({ db, ollama, contextLog }: MemoryDeps) {
       kind,
       model,
       numCtx: null,
-      parts: [{ key: 'texts' as const, label: kind === 'embed-index' ? 'Pezzi da indicizzare' : 'Domanda e contesto', tokens: texts.reduce((n, t) => n + estimateTokens(t, cpt), 0), count: texts.length }]
+      parts: [{ key: 'texts' as const, label: kind === 'embed-index' ? 'texts.index' : 'texts.query', tokens: texts.reduce((n, x) => n + estimateTokens(x, cpt), 0), count: texts.length }]
     }
     try {
       const vectors = await ollama.embed(model, texts, options, (s) => (stats = s))

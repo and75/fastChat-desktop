@@ -63,6 +63,7 @@ const app = await electron.launch({
     ...process.env,
     OLLAMA_URL: fake.url,
     FASTCHAT_USER_DATA: mkdtempSync(join(tmpdir(), 'fastchat-preview-')),
+    FASTCHAT_LANG: 'it',
     FASTCHAT_SYSTEM_RAM: String(32 * 1024 ** 3),
     FASTCHAT_SYSTEM_UNIFIED: '0',
     NODE_ENV: 'production'

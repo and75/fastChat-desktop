@@ -1,4 +1,5 @@
 import { formatFullDate, formatMessageDate } from '@shared/format'
+import { t, tn } from '@shared/i18n'
 import type { MemoryRef, Message } from '@shared/types'
 import { Markdown } from './Markdown'
 import { WaitingIndicator } from './Loader'
@@ -31,7 +32,7 @@ interface Props {
 function formatMeta(meta: NonNullable<Props['meta']>): string {
   const parts: string[] = []
   if (meta.model) parts.push(meta.model)
-  if (meta.evalCount != null) parts.push(`${meta.evalCount} token`)
+  if (meta.evalCount != null) parts.push(t('message.tokens', { count: meta.evalCount }))
   if (meta.durationMs != null) parts.push(`${(meta.durationMs / 1000).toFixed(1)} s`)
   if (meta.evalCount && meta.durationMs) parts.push(`${((meta.evalCount / meta.durationMs) * 1000).toFixed(1)} tok/s`)
   return parts.join(' · ')
@@ -84,7 +85,7 @@ export function MessageBubble({
         {content ? (
           <Markdown text={content} />
         ) : streaming && !thinking ? (
-          <WaitingIndicator since={startedAt} label={summarizing ? 'Sto riassumendo i messaggi più vecchi' : remembering ? 'Cerco nella conversazione' : undefined} />
+          <WaitingIndicator since={startedAt} label={summarizing ? t('message.summarizing') : remembering ? t('message.remembering') : undefined} />
         ) : null}
         {streaming && content && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-zinc-400 align-middle" />}
       </div>
@@ -95,10 +96,10 @@ export function MessageBubble({
           {truncated && (
             <span
               className="text-amber-700 dark:text-amber-400"
-              title="Ollama ha fermato la risposta perché la memoria della conversazione è esaurita. Chiedi di continuare, o alza la memoria nel pannello Modello."
+              title={t('message.truncated.title')}
               data-testid="truncated-note"
             >
-              Risposta interrotta: memoria esaurita
+              {t('message.truncated')}
             </span>
           )}
           {actions}
@@ -115,13 +116,13 @@ function MemoryRefs({ refs }: { refs: MemoryRef[] }): React.JSX.Element {
   return (
     <details className="text-xs text-zinc-500" data-testid="memory-refs">
       <summary className="cursor-pointer select-none">
-        Ha usato {refs.length === 1 ? '1 estratto' : `${refs.length} estratti`} della conversazione
+        {tn('message.usedExcerpts', refs.length)}
       </summary>
       <ul className="mt-1 flex flex-col gap-1.5 border-l-2 border-brand-200 pl-3 dark:border-brand-900">
         {refs.map((r) => (
           <li key={`${r.messageId}-${r.position}`}>
             <button type="button" className="text-brand-700 hover:underline dark:text-brand-300" onClick={() => jump(r.messageId)}>
-              Messaggio {r.position} · {r.role === 'user' ? 'tu' : 'assistente'}
+              {t('message.ref', { position: r.position, who: r.role === 'user' ? t('role.you') : t('role.assistant') })}
             </button>{' '}
             <span className="tabular-nums text-zinc-400">({Math.round(r.score * 100)}%)</span>
             <span className="block truncate text-zinc-500" title={r.excerpt}>

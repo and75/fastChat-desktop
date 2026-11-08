@@ -6,40 +6,40 @@ export type OllamaEnvName = 'OLLAMA_VULKAN' | 'OLLAMA_FLASH_ATTENTION' | 'OLLAMA
 
 export interface OllamaEnvVar {
   name: OllamaEnvName
+  /** Id dell'etichetta: il renderer la traduce (env.<label>, env.<label>.desc). */
   label: string
   description: string
-  /** Valori ammessi; null nell'elenco = non impostata (predefinito di Ollama). */
+  /** Valori ammessi; null nell'elenco = non impostata (predefinito di Ollama). L'etichetta è un id o il valore stesso. */
   options: Array<{ value: string | null; label: string }>
 }
 
 export const OLLAMA_ENV_VARS: OllamaEnvVar[] = [
   {
     name: 'OLLAMA_VULKAN',
-    label: 'GPU tramite Vulkan',
-    description:
-      'Permette a Ollama di usare le GPU AMD e Intel (anche integrate) senza driver ROCm. Non serve con NVIDIA (CUDA) né su Mac (Metal). Con Vulkan attivo, la scelta CPU/GPU si fa per modello.',
+    label: 'vulkan',
+    description: '',
     options: [
-      { value: null, label: 'Non impostata' },
-      { value: '1', label: 'Attiva' },
-      { value: '0', label: 'Disattiva' }
+      { value: null, label: 'unset' },
+      { value: '1', label: 'on' },
+      { value: '0', label: 'off' }
     ]
   },
   {
     name: 'OLLAMA_FLASH_ATTENTION',
-    label: 'Flash attention',
-    description: 'Calcolo dell\'attenzione più efficiente; necessaria per la cache KV quantizzata.',
+    label: 'flash',
+    description: '',
     options: [
-      { value: null, label: 'Non impostata' },
-      { value: '1', label: 'Attiva' },
-      { value: '0', label: 'Disattiva' }
+      { value: null, label: 'unset' },
+      { value: '1', label: 'on' },
+      { value: '0', label: 'off' }
     ]
   },
   {
     name: 'OLLAMA_KV_CACHE_TYPE',
-    label: 'Cache KV',
-    description: 'q8_0 dimezza la memoria del contesto, q4_0 la riduce a un quarto (con flash attention). L\'app usa lo stesso valore per la memoria suggerita.',
+    label: 'kv',
+    description: '',
     options: [
-      { value: null, label: 'Non impostata (f16)' },
+      { value: null, label: 'unset-f16' },
       { value: 'f16', label: 'f16' },
       { value: 'q8_0', label: 'q8_0' },
       { value: 'q4_0', label: 'q4_0' }
@@ -47,10 +47,10 @@ export const OLLAMA_ENV_VARS: OllamaEnvVar[] = [
   },
   {
     name: 'OLLAMA_MAX_LOADED_MODELS',
-    label: 'Modelli caricati insieme',
-    description: 'Quanti modelli Ollama tiene in memoria contemporaneamente (es. chat + embedding).',
+    label: 'maxLoaded',
+    description: '',
     options: [
-      { value: null, label: 'Non impostata (automatico)' },
+      { value: null, label: 'unset-auto' },
       { value: '1', label: '1' },
       { value: '2', label: '2' },
       { value: '3', label: '3' }

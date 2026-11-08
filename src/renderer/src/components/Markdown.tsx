@@ -1,4 +1,5 @@
 import { memo, useRef } from 'react'
+import { t } from '@shared/i18n'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import remarkGfm from 'remark-gfm'
@@ -16,7 +17,7 @@ function CodeBlock({ children }: { children?: React.ReactNode }): React.JSX.Elem
       <pre ref={pre}>{children}</pre>
       <button
         type="button"
-        aria-label={copied ? 'Codice copiato' : 'Copia il codice'}
+        aria-label={copied ? t('copy.codeDone') : t('copy.code')}
         onClick={() => void copy(text())}
         className={
           'absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-zinc-800/90 px-2 py-1 text-xs text-zinc-200 opacity-0 transition-opacity hover:bg-zinc-700 focus-visible:opacity-100 group-hover/code:opacity-100 ' +
@@ -24,7 +25,7 @@ function CodeBlock({ children }: { children?: React.ReactNode }): React.JSX.Elem
         }
       >
         {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-        {copied ? 'Copiato' : 'Copia'}
+        {copied ? t('copy.copied') : t('copy.copy')}
       </button>
     </div>
   )

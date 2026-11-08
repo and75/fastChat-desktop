@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { t } from '@shared/i18n'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
@@ -35,7 +36,7 @@ export function ModelPicker(): React.JSX.Element {
   return (
     <div className="flex shrink-0 items-center gap-2" data-testid="model-picker">
       <label htmlFor="model-select" className="text-sm text-zinc-500">
-        Modello
+        {t('picker.model')}
       </label>
       <select
         id="model-select"
@@ -47,7 +48,7 @@ export function ModelPicker(): React.JSX.Element {
       >
         {(!value || missing) && (
           <option value={value ?? ''} disabled>
-            {status === 'loading' ? 'Caricamento…' : missing ? `${value} (non installato)` : 'Scegli un modello'}
+            {status === 'loading' ? t('picker.loading') : missing ? t('picker.notInstalled', { model: value ?? '' }) : t('picker.choose')}
           </option>
         )}
         {models.map((m) => (
@@ -74,7 +75,7 @@ export function ModelPicker(): React.JSX.Element {
           }
           title={caps.capabilities.join(', ')}
         >
-          {caps.thinking ? 'ragionamento' : 'senza ragionamento'}
+          {caps.thinking ? t('picker.thinking') : t('picker.noThinking')}
         </span>
       )}
 
@@ -82,7 +83,7 @@ export function ModelPicker(): React.JSX.Element {
         type="button"
         onClick={() => void refresh()}
         className="rounded-md px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-        title="Aggiorna elenco modelli"
+        title={t('picker.refresh')}
       >
         ↻
       </button>

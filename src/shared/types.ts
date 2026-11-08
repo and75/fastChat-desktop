@@ -322,6 +322,8 @@ export interface AppSettings {
   kvCacheType: KvCacheType
   /** Modello di Ollama per gli embedding della memoria delle conversazioni (multilingue). */
   embeddingModel: string
+  /** Lingua dell'interfaccia e dei prompt al modello: automatica (sistema), italiano o inglese. */
+  language: 'auto' | 'it' | 'en'
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -329,7 +331,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   defaultModel: null,
   kvCacheType: 'f16',
-  embeddingModel: 'embeddinggemma'
+  embeddingModel: 'embeddinggemma',
+  language: 'auto'
 }
 
 /** Esito tipizzato delle chiamate IPC: gli errori arrivano al renderer come valori, non come eccezioni. */
@@ -340,6 +343,8 @@ export const IPC = {
   modelsCapabilities: 'models:capabilities',
   modelsCheck: 'models:check',
   systemInfo: 'system:info',
+  /** Sincrono (sendSync): lingua del sistema, letta dal preload prima del primo render. */
+  systemLocale: 'system:locale',
   conversationsList: 'conversations:list',
   conversationsGet: 'conversations:get',
   conversationsCreate: 'conversations:create',

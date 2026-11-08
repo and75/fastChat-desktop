@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { t } from '@shared/i18n'
 import { IconButton } from './IconButton'
 import { CloseIcon, MinusIcon, RestoreIcon, SquareIcon } from './icons'
 
@@ -21,17 +22,17 @@ export function WindowControls(): React.JSX.Element | null {
 
   return (
     <div className="ml-1 flex items-center gap-0.5 border-l border-zinc-200 pl-2 dark:border-zinc-800" data-testid="window-controls">
-      <IconButton tooltip="Riduci a icona" onClick={() => void window.api.window.minimize()}>
+      <IconButton tooltip={t('window.minimize')} onClick={() => void window.api.window.minimize()}>
         <MinusIcon size={16} />
       </IconButton>
       <IconButton
-        tooltip={maximized ? 'Ripristina' : 'Ingrandisci'}
+        tooltip={maximized ? t('window.restore') : t('window.maximize')}
         onClick={() => void window.api.window.toggleMaximize().then((r) => r.ok && setMaximized(r.data))}
       >
         {maximized ? <RestoreIcon size={15} /> : <SquareIcon size={15} />}
       </IconButton>
       <IconButton
-        tooltip="Chiudi"
+        tooltip={t('window.close')}
         onClick={() => void window.api.window.close()}
       >
         <CloseIcon size={16} />

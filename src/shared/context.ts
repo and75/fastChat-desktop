@@ -1,18 +1,45 @@
 // Monitor del contesto: funzioni pure per descrivere cosa parte verso Ollama (stima per voce) e confrontarlo
 // con quello che Ollama conta davvero (prompt_eval_count, eval_count).
+import { t, type Key } from './i18n'
 import { estimateTokens, splitTokens } from './prompt'
 import type { ContextCall, ContextCallKind, ContextPart } from './types'
 
-export const CALL_LABELS: Record<ContextCallKind, string> = {
-  chat: 'Risposta',
-  plan: 'Piano',
-  execute: 'Risposta col piano',
-  summary: 'Riassunto',
-  condense: 'Riassunto (condensa)',
-  title: 'Titolo',
-  'embed-index': 'Indicizzazione memoria',
-  'embed-query': 'Ricerca nella memoria'
+/** Nome del tipo di chiamata nella lingua attiva. */
+export const callKindLabel = (kind: ContextCallKind): string => t(`call.${kind}`)
+
+/** Etichette delle voci salvate come id (le chiamate registrate prima avevano il testo italiano). */
+const PART_LABEL_KEYS: Record<string, Key> = {
+  instructions: 'part.instructions',
+  style: 'part.style',
+  summary: 'part.summary',
+  memory: 'part.memory',
+  history: 'part.history',
+  question: 'part.question',
+  'transcript.qa': 'part.transcript.qa',
+  'transcript.messages': 'part.transcript.messages',
+  'summary.previous': 'part.summary.previous',
+  'summary.condense': 'part.summary.condense',
+  'texts.index': 'part.texts.index',
+  'texts.query': 'part.texts.query',
+  answer: 'part.answer',
+  ollama: 'part.ollamaDelta',
+  // testi delle chiamate registrate prima della traduzione
+  Istruzioni: 'part.instructions',
+  'Stile della risposta': 'part.style',
+  Riassunto: 'part.summary',
+  'Estratti della memoria': 'part.memory',
+  Storico: 'part.history',
+  Domanda: 'part.question',
+  'Domanda e risposta': 'part.transcript.qa',
+  'Messaggi da riassumere': 'part.transcript.messages',
+  'Riassunto precedente': 'part.summary.previous',
+  'Riassunto da condensare': 'part.summary.condense',
+  'Pezzi da indicizzare': 'part.texts.index',
+  'Domanda e contesto': 'part.texts.query'
 }
+
+/** Etichetta di una voce nella lingua attiva (il testo salvato, se non è un id noto). */
+export const partLabel = (label: string): string => (PART_LABEL_KEYS[label] ? t(PART_LABEL_KEYS[label]) : label)
 
 export interface ChatPartsInput {
   /** System prompt inviato per intero. */
@@ -42,12 +69,12 @@ export function chatParts(input: ChatPartsInput): ContextPart[] {
   const history = question ? input.messages.slice(0, -1) : input.messages
   const historyTokens = history.reduce((n, m) => n + estimateTokens(m.content, cpt), 0)
   return [
-    ...(input.instructions.trim() ? [{ key: 'instructions' as const, label: 'Istruzioni', tokens: ti }] : []),
-    ...(input.style ? [{ key: 'style' as const, label: 'Stile della risposta', tokens: ts }] : []),
-    ...(input.summary ? [{ key: 'summary' as const, label: 'Riassunto', tokens: tsum, count: input.summaryCount }] : []),
-    ...(input.memory ? [{ key: 'memory' as const, label: 'Estratti della memoria', tokens: tm, count: input.memoryCount }] : []),
-    ...(history.length ? [{ key: 'history' as const, label: 'Storico', tokens: historyTokens, count: history.length }] : []),
-    ...(question ? [{ key: 'question' as const, label: 'Domanda', tokens: estimateTokens(question.content, cpt) }] : [])
+    ...(input.instructions.trim() ? [{ key: 'instructions' as const, label: 'instructions', tokens: ti }] : []),
+    ...(input.style ? [{ key: 'style' as const, label: 'style', tokens: ts }] : []),
+    ...(input.summary ? [{ key: 'summary' as const, label: 'summary', tokens: tsum, count: input.summaryCount }] : []),
+    ...(input.memory ? [{ key: 'memory' as const, label: 'memory', tokens: tm, count: input.memoryCount }] : []),
+    ...(history.length ? [{ key: 'history' as const, label: 'history', tokens: historyTokens, count: history.length }] : []),
+    ...(question ? [{ key: 'question' as const, label: 'question', tokens: estimateTokens(question.content, cpt) }] : [])
   ]
 }
 
@@ -111,8 +138,8 @@ export function reconcile(
     rows.push({ key, label: (t ?? n)!.label, then: t?.tokens ?? null, now: n?.tokens ?? null, thenCount: t?.count, nowCount: n?.count, delta: (n?.tokens ?? 0) - (t?.tokens ?? 0) })
   }
   const answer = call.evalCount ?? 0
-  if (answer) rows.push({ key: 'answer', label: 'Risposta generata', then: answer, now: null, delta: -answer })
+  if (answer) rows.push({ key: 'answer', label: 'answer', then: answer, now: null, delta: -answer })
   const thenAdj = a.delta ?? 0
-  if (thenAdj || now.adjustment) rows.push({ key: 'ollama', label: 'Scarto di Ollama', then: thenAdj || null, now: now.adjustment || null, delta: now.adjustment - thenAdj })
+  if (thenAdj || now.adjustment) rows.push({ key: 'ollama', label: 'ollama', then: thenAdj || null, now: now.adjustment || null, delta: now.adjustment - thenAdj })
   return { rows, thenTotal: a.sent + answer + thenAdj, nowTotal: now.used }
 }

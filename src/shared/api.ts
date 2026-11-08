@@ -65,6 +65,8 @@ export interface Api {
     apply(values: Record<string, string | null>): Promise<Result<{ applied: boolean; restarted: boolean; commands: string }>>
   }
   system: {
+    /** Lingua del sistema (o FASTCHAT_LANG), per la scelta «Automatica». */
+    locale: string
     /** RAM e tipo di memoria della macchina, se Ollama gira qui: per il calcolo della memoria della conversazione. */
     info(): Promise<Result<SystemInfo>>
   }

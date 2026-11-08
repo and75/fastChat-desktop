@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { t } from '@shared/i18n'
 import { CheckIcon, CopyIcon } from './icons'
 
 /** Copia negli appunti con conferma «Copiato» per qualche istante. */
@@ -6,8 +7,8 @@ export function useCopy(): [boolean, (text: string) => Promise<void>] {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return
-    const t = setTimeout(() => setCopied(false), 1800)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => setCopied(false), 1800)
+    return () => clearTimeout(timer)
   }, [copied])
   const copy = async (text: string): Promise<void> => {
     const res = await window.api.clipboard.writeText(text)
@@ -22,7 +23,7 @@ export function CopyAction({ text }: { text: string }): React.JSX.Element {
   return (
     <button
       type="button"
-      aria-label={copied ? 'Risposta copiata' : 'Copia la risposta'}
+      aria-label={copied ? t('copy.answerDone') : t('copy.answer')}
       onClick={() => void copy(text)}
       className={
         'inline-flex items-center gap-1 ' +
@@ -30,7 +31,7 @@ export function CopyAction({ text }: { text: string }): React.JSX.Element {
       }
     >
       {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-      {copied ? 'Copiato' : 'Copia'}
+      {copied ? t('copy.copied') : t('copy.copy')}
     </button>
   )
 }

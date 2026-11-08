@@ -68,7 +68,7 @@ export const useModels = create<ModelsState>((set, get) => ({
   },
 
   async benchmark(model) {
-    set((s) => ({ benchmarks: { ...s.benchmarks, [model]: { model, step: 0, steps: 3, label: 'Preparazione' } } }))
+    set((s) => ({ benchmarks: { ...s.benchmarks, [model]: { model, step: 0, steps: 3, label: 'prepare' } } }))
     const res = await window.api.models.benchmark(model)
     set((s) => {
       const benchmarks = { ...s.benchmarks }

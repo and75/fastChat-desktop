@@ -236,8 +236,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         model: conv.model,
         numCtx: request.options?.num_ctx ?? null,
         parts: [
-          { key: 'instructions', label: 'Istruzioni', tokens: estimateTokens(TITLE_PROMPT, charsPerToken(history)) },
-          { key: 'transcript', label: 'Domanda e risposta', tokens: estimateTokens(request.messages[1].content, charsPerToken(history)) }
+          { key: 'instructions', label: 'instructions', tokens: estimateTokens(TITLE_PROMPT, charsPerToken(history)) },
+          { key: 'transcript', label: 'transcript.qa', tokens: estimateTokens(request.messages[1].content, charsPerToken(history)) }
         ]
       }
       const result = await ollama.chatStream(request, {}).catch(async (err: unknown) => {

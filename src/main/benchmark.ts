@@ -26,11 +26,11 @@ export interface BenchmarkResult {
 /** Configurazioni da provare: solo CPU, tutto su GPU, e metà dei layer se il numero è noto. */
 export function benchmarkConfigs(caps: ModelCapabilities | null): Array<{ label: string; numGpu: number }> {
   const configs = [
-    { label: 'Solo CPU', numGpu: 0 },
-    { label: 'Tutto su GPU', numGpu: ALL_LAYERS }
+    { label: 'cpu', numGpu: 0 },
+    { label: 'gpu', numGpu: ALL_LAYERS }
   ]
   const layers = caps?.layers ?? null
-  if (layers && layers >= 4) configs.push({ label: `Metà su GPU (${Math.floor(layers / 2)} layer)`, numGpu: Math.floor(layers / 2) })
+  if (layers && layers >= 4) configs.push({ label: `half:${Math.floor(layers / 2)}`, numGpu: Math.floor(layers / 2) })
   return configs
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { localeTag, t } from '@shared/i18n'
 import type { Conversation } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
@@ -21,27 +22,27 @@ function TemplateMenu({ onDone }: { onDone(): void }): React.JSX.Element {
       className="flex flex-col gap-0.5 rounded-lg border border-zinc-200 bg-white p-1 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
     >
       {templates.length === 0 && (
-        <p className="px-2 py-2 text-zinc-500">Nessun template. Usa «Salva come template» nel pannello del brief.</p>
+        <p className="px-2 py-2 text-zinc-500">{t('sidebar.noTemplates')}</p>
       )}
-      {templates.map((t) => (
-        <div key={t.id} className="group flex items-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
+      {templates.map((tpl) => (
+        <div key={tpl.id} className="group flex items-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
           <button
             type="button"
             className="min-w-0 flex-1 truncate px-2 py-1.5 text-left"
-            title={[t.role, t.goals].filter(Boolean).join(' · ') || t.name}
+            title={[tpl.role, tpl.goals].filter(Boolean).join(' · ') || tpl.name}
             onClick={() => {
               onDone()
-              void create(t.id)
+              void create(tpl.id)
             }}
           >
-            {t.name}
+            {tpl.name}
           </button>
           <button
             type="button"
-            aria-label={`Elimina il template ${t.name}`}
+            aria-label={t('sidebar.deleteTemplate', { name: tpl.name })}
             className="hidden px-2 text-zinc-400 hover:text-red-600 group-hover:block"
             onClick={() => {
-              if (window.confirm(`Eliminare il template "${t.name}"?`)) void remove(t.id)
+              if (window.confirm(t('sidebar.deleteTemplate.confirm', { name: tpl.name }))) void remove(tpl.id)
             }}
           >
             ✕
@@ -52,12 +53,11 @@ function TemplateMenu({ onDone }: { onDone(): void }): React.JSX.Element {
   )
 }
 
-const dateFmt = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short' })
-const timeFmt = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit' })
-
 function formatWhen(ts: number): string {
   const d = new Date(ts)
-  return d.toDateString() === new Date().toDateString() ? timeFmt.format(d) : dateFmt.format(d)
+  return d.toDateString() === new Date().toDateString()
+    ? new Intl.DateTimeFormat(localeTag(), { hour: '2-digit', minute: '2-digit' }).format(d)
+    : new Intl.DateTimeFormat(localeTag(), { day: 'numeric', month: 'short' }).format(d)
 }
 
 function Item({ conv, active }: { conv: Conversation; active: boolean }): React.JSX.Element {
@@ -90,7 +90,7 @@ function Item({ conv, active }: { conv: Conversation; active: boolean }): React.
       {editing ? (
         <input
           ref={input}
-          aria-label="Titolo conversazione"
+          aria-label={t('sidebar.conversationTitle')}
           className="min-w-0 flex-1 rounded border border-brand-500 bg-white px-1 dark:bg-zinc-900"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -119,13 +119,13 @@ function Item({ conv, active }: { conv: Conversation; active: boolean }): React.
         <>
           <span className="shrink-0 text-xs text-zinc-400 group-hover:hidden">{formatWhen(conv.updatedAt)}</span>
           <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex group-focus-within:flex">
-            <button type="button" className={btn} title="Rinomina" onClick={() => setEditing(true)}>
+            <button type="button" className={btn} title={t('sidebar.rename')} onClick={() => setEditing(true)}>
               ✎
             </button>
             <button
               type="button"
               className={btn}
-              title={conv.archived ? 'Ripristina' : 'Archivia'}
+              title={conv.archived ? t('sidebar.restore') : t('sidebar.archive')}
               onClick={() => void update(conv.id, { archived: !conv.archived })}
             >
               {conv.archived ? '↩' : '⤓'}
@@ -133,9 +133,9 @@ function Item({ conv, active }: { conv: Conversation; active: boolean }): React.
             <button
               type="button"
               className={btn}
-              title="Elimina"
+              title={t('sidebar.delete')}
               onClick={() => {
-                if (window.confirm(`Eliminare "${conv.title}" e tutti i suoi messaggi?`)) void remove(conv.id)
+                if (window.confirm(t('sidebar.delete.confirm', { title: conv.title }))) void remove(conv.id)
               }}
             >
               🗑
@@ -183,14 +183,14 @@ function NewConversationButton(): React.JSX.Element {
           className={part + ' flex-1 gap-2 whitespace-nowrap px-3 py-2'}
         >
           <PlusIcon size={16} />
-          Nuova conversazione
+          {t('sidebar.new')}
         </button>
         <button
           type="button"
           aria-haspopup="menu"
           aria-expanded={open}
-          aria-label="Nuova da template"
-          title="Nuova conversazione da un preset"
+          aria-label={t('sidebar.newFromTemplate')}
+          title={t('sidebar.newFromTemplate.title')}
           onClick={() => setOpen((o) => !o)}
           className={part + ' border-l border-brand-600 px-2.5 dark:border-brand-500 ' + (open ? 'bg-brand-50 dark:bg-brand-950/60' : '')}
         >
@@ -233,7 +233,7 @@ function CollapsedRail({ onExpand, onOpenSettings }: { onExpand(): void; onOpenS
   const create = useConversations((s) => s.create)
   return (
     <aside
-      aria-label="Barra laterale"
+      aria-label={t('sidebar.label')}
       data-collapsed="true"
       className={
         'flex shrink-0 flex-col items-center border-r border-zinc-200 bg-zinc-50 pb-3 dark:border-zinc-800 dark:bg-zinc-950 ' +
@@ -247,15 +247,15 @@ function CollapsedRail({ onExpand, onOpenSettings }: { onExpand(): void; onOpenS
         <div className={'flex h-12 w-full shrink-0 items-center justify-center ' + (isMac ? '-mt-3' : '')}>
           <AppLogo size={30} />
         </div>
-        <IconButton tooltip="Apri la barra laterale" tooltipPlacement="right" aria-expanded={false} onClick={onExpand}>
+        <IconButton tooltip={t('sidebar.open')} tooltipPlacement="right" aria-expanded={false} onClick={onExpand}>
           <PanelLeftIcon size={18} />
         </IconButton>
       </div>
-      <IconButton tooltip="Nuova conversazione" tooltipPlacement="right" data-testid="new-conversation-rail" onClick={() => void create()}>
+      <IconButton tooltip={t('sidebar.new')} tooltipPlacement="right" data-testid="new-conversation-rail" onClick={() => void create()}>
         <PlusIcon size={18} />
       </IconButton>
       <div className="flex-1" />
-      <IconButton tooltip="Impostazioni" tooltipPlacement="right" onClick={onOpenSettings}>
+      <IconButton tooltip={t('settings.title')} tooltipPlacement="right" onClick={onOpenSettings}>
         <SettingsIcon size={18} />
       </IconButton>
     </aside>
@@ -274,15 +274,15 @@ function ExpandedSidebar({ onOpenSettings, onCollapse }: { onOpenSettings(): voi
 
   // Ricerca con debounce.
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       if (query !== useConversations.getState().search) setSearch(query)
     }, 200)
-    return () => clearTimeout(t)
+    return () => clearTimeout(timer)
   }, [query, setSearch])
 
   return (
     <aside
-      aria-label="Barra laterale"
+      aria-label={t('sidebar.label')}
       className="flex w-64 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950"
     >
       {/* Logo e nome dell'app, pulsante di chiusura a destra; zona di trascinamento. Su macOS lascia spazio ai semafori. */}
@@ -292,7 +292,7 @@ function ExpandedSidebar({ onOpenSettings, onCollapse }: { onOpenSettings(): voi
         <span className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight" data-testid="app-name">
           FastChat
         </span>
-        <IconButton tooltip="Chiudi la barra laterale" tooltipPlacement="bottom-end" aria-expanded={true} onClick={onCollapse}>
+        <IconButton tooltip={t('sidebar.close')} tooltipPlacement="bottom-end" aria-expanded={true} onClick={onCollapse}>
           <PanelLeftIcon size={18} />
         </IconButton>
       </div>
@@ -306,25 +306,25 @@ function ExpandedSidebar({ onOpenSettings, onCollapse }: { onOpenSettings(): voi
           id="sidebar-conversations"
           className="px-4 pb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400"
         >
-          Conversazioni
+          {t('sidebar.conversations')}
         </h2>
         <div className="px-3 pb-3">
           <input
             type="search"
-            aria-label="Cerca conversazioni"
-            placeholder="Cerca…"
+            aria-label={t('sidebar.search')}
+            placeholder={t('sidebar.search.placeholder')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
         </div>
-        <ul className="relative flex-1 space-y-1 overflow-y-auto px-2 pb-3" aria-label="Conversazioni">
+        <ul className="relative flex-1 space-y-1 overflow-y-auto px-2 pb-3" aria-label={t('sidebar.conversations')}>
           {conversations.map((c) => (
             <Item key={c.id} conv={c} active={c.id === activeId} />
           ))}
           {conversations.length === 0 && (
             <li className="px-2 py-4 text-center text-sm text-zinc-500">
-              {search ? 'Nessun risultato' : showArchived ? 'Nessuna conversazione archiviata' : 'Nessuna conversazione'}
+              {search ? t('sidebar.noResults') : showArchived ? t('sidebar.noArchived') : t('sidebar.noConversations')}
             </li>
           )}
         </ul>
@@ -333,14 +333,14 @@ function ExpandedSidebar({ onOpenSettings, onCollapse }: { onOpenSettings(): voi
       <div className="flex items-center justify-between border-t border-zinc-200 px-3 py-2 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
         <label className="flex items-center gap-2 whitespace-nowrap">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-          Mostra archiviate
+          {t('sidebar.showArchived')}
         </label>
         <button
           type="button"
           onClick={onOpenSettings}
-          aria-label="Impostazioni"
+          aria-label={t('settings.title')}
           className="rounded px-2 py-1 text-base hover:bg-zinc-200 dark:hover:bg-zinc-800"
-          title="Impostazioni"
+          title={t('settings.title')}
         >
           ⚙
         </button>

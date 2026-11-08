@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { analyzeCall, CALL_LABELS, reconcile, type ReconcileRow } from '@shared/context'
+import { analyzeCall, callKindLabel, partLabel, reconcile, type ReconcileRow } from '@shared/context'
+import { fmtInt, fmtNum, fmtTime, localeTag, t, tn } from '@shared/i18n'
 import { formatElapsed } from '@shared/format'
 import { DEFAULT_CHARS_PER_TOKEN, SUMMARY, type ContextUsage } from '@shared/prompt'
 import { MEMORY } from '@shared/memory'
@@ -19,16 +20,14 @@ const COLORS: Record<ContextPart['key'], string> = {
   texts: 'bg-sky-500'
 }
 
-const int = (n: number): string => Math.round(n).toLocaleString('it-IT', { useGrouping: 'always' } as Intl.NumberFormatOptions)
-const pct = (n: number, total: number | null): string =>
-  total ? ((n / total) * 100).toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : ''
-const hhmmss = (ms: number): string => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-const hhmm = (ms: number): string => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-const speed = (tokens: number | null, ms: number | null): string =>
-  tokens && ms ? ` · ${(tokens / (ms / 1000)).toLocaleString('it-IT', { maximumFractionDigits: 1 })} tok/s` : ''
+const int = fmtInt
+const pct = (n: number, total: number | null): string => (total ? fmtNum((n / total) * 100, 1, 1) : '')
+const hhmmss = (ms: number): string => new Date(ms).toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+const hhmm = fmtTime
+const speed = (tokens: number | null, ms: number | null): string => (tokens && ms ? ` · ${fmtNum(tokens / (ms / 1000), 1)} tok/s` : '')
 
 /** Etichetta della chiamata nel selettore. */
-const callLabel = (c: ContextCall): string => `${CALL_LABELS[c.kind]}${c.note ? ` (${c.note})` : ''} · ${hhmmss(c.createdAt)}`
+const callLabel = (c: ContextCall): string => `${callKindLabel(c.kind)}${c.note ? ` (${c.note})` : ''} · ${hhmmss(c.createdAt)}`
 
 /**
  * Scheda «Contesto»: per ogni chiamata a Ollama della conversazione, cosa è stato inviato (stima dell'app,
@@ -60,18 +59,13 @@ export function ContextMonitor({ conversation }: { conversation: Conversation })
       <ContextState conversation={conversation} lastAnswer={lastAnswer ?? null} />
       <details className="group/calls" data-testid="context-calls">
         <summary className="cursor-pointer list-none text-brand-700 dark:text-brand-300 [&::-webkit-details-marker]:hidden">
-          <span aria-hidden className="inline-block transition-transform group-open/calls:rotate-90">▸</span> Chiamate a Ollama
-          {calls.length > 0 && (
-            <span className="text-zinc-500">
-              {' '}· {calls.length}, ultima {hhmm(last.createdAt)}
-            </span>
-          )}
+          <span aria-hidden className="inline-block transition-transform group-open/calls:rotate-90">▸</span> {t('ctx.calls')}
+          {calls.length > 0 && <span className="text-zinc-500">{t('ctx.calls.count', { n: calls.length, time: hhmm(last.createdAt) })}</span>}
         </summary>
         <div className="pt-2">
           {calls.length === 0 ? (
             <p className="text-zinc-500" data-testid="context-empty">
-              Nessuna chiamata ancora. Qui compare, per ogni richiesta a Ollama (risposta, riassunto, titolo, memoria), quanto contesto
-              viene inviato e quanto ne occupa davvero.
+              {t('ctx.empty')}
             </p>
           ) : (
             <CallDetail calls={calls} selected={selected} setSelected={setSelected} />
@@ -104,12 +98,12 @@ function CallDetail({
 
   return (
     <div className="flex flex-col gap-3 text-xs" data-testid="context-call">
-      <p className="text-zinc-500">Cosa è stato inviato a Ollama e quanto ha occupato davvero. Le voci sono stime dell'app; i valori «consumato» li conta Ollama.</p>
+      <p className="text-zinc-500">{t('ctx.intro')}</p>
 
       <div className="flex items-center gap-1.5">
         <button
           type="button"
-          aria-label="Chiamata precedente"
+          aria-label={t('ctx.prev')}
           disabled={index >= calls.length - 1}
           onClick={() => go(index + 1)}
           className="rounded border border-zinc-300 px-1.5 text-xs disabled:opacity-40 dark:border-zinc-700"
@@ -117,7 +111,7 @@ function CallDetail({
           ‹
         </button>
         <select
-          aria-label="Chiamata"
+          aria-label={t('ctx.call')}
           className="min-w-0 flex-1 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
           value={call.id}
           onChange={(e) => go(calls.findIndex((c) => c.id === e.target.value))}
@@ -131,7 +125,7 @@ function CallDetail({
         </select>
         <button
           type="button"
-          aria-label="Chiamata successiva"
+          aria-label={t('ctx.next')}
           disabled={index === 0}
           onClick={() => go(index - 1)}
           className="rounded border border-zinc-300 px-1.5 text-xs disabled:opacity-40 dark:border-zinc-700"
@@ -140,9 +134,9 @@ function CallDetail({
         </button>
       </div>
       <p className="-mt-2 text-xs text-zinc-500">
-        Chiamata {calls.length - index} di {calls.length} · {call.model}
-        {ctx ? ` · num_ctx ${int(ctx)}` : ' · contesto predefinito del modello'}
-        {index === 0 ? ' · ultima' : ''}
+        {t('ctx.callN', { n: calls.length - index, total: calls.length, model: call.model })}
+        {ctx ? t('ctx.numCtx', { n: int(ctx) }) : t('ctx.defaultCtx')}
+        {index === 0 ? t('ctx.last') : ''}
       </p>
 
       <div>
@@ -162,10 +156,10 @@ function CallDetail({
         {ctx && (
           <div className="relative mt-0.5 h-3 text-[10px] text-zinc-400">
             <span className="absolute -translate-x-full pr-1" style={{ left: `${SUMMARY.trigger * 100}%` }}>
-              riassunto 70%
+              {t('ctx.mark.summary', { pct: Math.round(SUMMARY.trigger * 100) })}
             </span>
             <span className="absolute pl-1" style={{ left: `${(1 - RESERVE_SHARE) * 100}%` }}>
-              riserva
+              {t('ctx.mark.reserve')}
             </span>
           </div>
         )}
@@ -174,9 +168,9 @@ function CallDetail({
       <table className="w-full text-xs" data-testid="context-sent">
         <thead className="text-zinc-500">
           <tr>
-            <th className="text-left font-normal">Inviato (stima)</th>
-            <th className="text-right font-normal">token</th>
-            {ctx && <th className="w-12 text-right font-normal">% ctx</th>}
+            <th className="text-left font-normal">{t('ctx.sent')}</th>
+            <th className="text-right font-normal">{t('ctx.tokens')}</th>
+            {ctx && <th className="w-12 text-right font-normal">{t('ctx.pctCtx')}</th>}
           </tr>
         </thead>
         <tbody>
@@ -184,7 +178,7 @@ function CallDetail({
             <tr key={p.key + p.label}>
               <td className="py-0.5">
                 <i className={`mr-1.5 inline-block h-2 w-2 rounded-sm ${COLORS[p.key]}`} />
-                {p.label}
+                {partLabel(p.label)}
                 {p.count != null && <span className="text-zinc-500"> ({p.count})</span>}
               </td>
               <td className="text-right tabular-nums">{int(p.tokens)}</td>
@@ -192,7 +186,7 @@ function CallDetail({
             </tr>
           ))}
           <tr className="border-t border-zinc-200 font-semibold dark:border-zinc-800">
-            <td className="pt-1">Totale inviato</td>
+            <td className="pt-1">{t('ctx.totalSent')}</td>
             <td className="pt-1 text-right tabular-nums">≈ {int(a.sent)}</td>
             {ctx && <td className="pt-1 text-right tabular-nums">{pct(a.sent, ctx)}</td>}
           </tr>
@@ -200,8 +194,7 @@ function CallDetail({
       </table>
       {call.droppedMessages > 0 && (
         <p className="-mt-2 text-xs text-zinc-500">
-          {call.droppedMessages === 1 ? '1 messaggio non riassunto è rimasto fuori' : `${call.droppedMessages} messaggi non riassunti sono rimasti fuori`}: non
-          entravano nella memoria.
+          {tn('ctx.dropped', call.droppedMessages)}
         </p>
       )}
 
@@ -209,7 +202,7 @@ function CallDetail({
         <thead>
           <tr>
             <th colSpan={ctx ? 3 : 2} className="pb-0.5 text-left text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
-              Consumato (da Ollama)
+              {t('ctx.consumed')}
             </th>
           </tr>
         </thead>
@@ -217,13 +210,13 @@ function CallDetail({
           {call.error ? (
             <tr>
               <td colSpan={3} className="text-red-700 dark:text-red-400">
-                Chiamata fallita: {call.error}
+                {t('ctx.failed', { error: call.error })}
               </td>
             </tr>
           ) : call.promptEvalCount == null ? (
             <tr>
               <td colSpan={3} className="text-zinc-500">
-                {call.aborted ? 'Interrotta prima della fine: Ollama non ha mandato i conteggi.' : 'Ollama non ha mandato i conteggi.'}
+                {call.aborted ? t('ctx.noCounts.aborted') : t('ctx.noCounts')}
               </td>
             </tr>
           ) : (
@@ -231,13 +224,13 @@ function CallDetail({
               <tr>
                 <td className="py-0.5">
                   <i className="mr-1.5 inline-block h-2 w-2 rounded-sm bg-amber-300" />
-                  Prompt letto <span className="text-zinc-400">prompt_eval_count</span>
+                  {t('ctx.promptRead')} <span className="text-zinc-400">prompt_eval_count</span>
                 </td>
                 <td className="text-right tabular-nums">{int(call.promptEvalCount)}</td>
                 {ctx && <td className="w-12 text-right tabular-nums text-zinc-500">{pct(call.promptEvalCount, ctx)}</td>}
               </tr>
               <tr className="text-zinc-500">
-                <td className="py-0.5 pl-3.5">Scarto rispetto alla stima</td>
+                <td className="py-0.5 pl-3.5">{t('ctx.delta')}</td>
                 <td className="text-right tabular-nums">
                   {a.delta! > 0 ? '+' : ''}
                   {int(a.delta!)}
@@ -252,20 +245,20 @@ function CallDetail({
                 <tr>
                   <td className="py-0.5">
                     <i className="mr-1.5 inline-block h-2 w-2 rounded-sm bg-emerald-500" />
-                    Risposta <span className="text-zinc-400">eval_count</span>
+                    {t('ctx.answer')} <span className="text-zinc-400">eval_count</span>
                   </td>
                   <td className="text-right tabular-nums">{int(call.evalCount)}</td>
                   {ctx && <td className="text-right tabular-nums text-zinc-500">{pct(call.evalCount, ctx)}</td>}
                 </tr>
               )}
               <tr className="border-t border-zinc-200 font-semibold dark:border-zinc-800">
-                <td className="pt-1">Occupato</td>
+                <td className="pt-1">{t('ctx.occupied')}</td>
                 <td className="pt-1 text-right tabular-nums">{int(a.occupied!)}</td>
                 {ctx && <td className="pt-1 text-right tabular-nums">{pct(a.occupied!, ctx)}</td>}
               </tr>
               {ctx && (
                 <tr className="text-zinc-500">
-                  <td>Libero</td>
+                  <td>{t('ctx.free')}</td>
                   <td className="text-right tabular-nums">{int(Math.max(0, ctx - a.occupied!))}</td>
                   <td className="text-right tabular-nums">{pct(Math.max(0, ctx - a.occupied!), ctx)}</td>
                 </tr>
@@ -280,20 +273,20 @@ function CallDetail({
           <thead>
             <tr>
               <th colSpan={2} className="pb-0.5 text-left text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
-                Tempi
+                {t('ctx.times')}
               </th>
             </tr>
           </thead>
           <tbody>
             {call.loadMs != null && (
               <tr>
-                <td>Caricamento del modello</td>
+                <td>{t('ctx.loadTime')}</td>
                 <td className="text-right tabular-nums">{formatElapsed(call.loadMs)}</td>
               </tr>
             )}
             {call.promptEvalMs != null && (
               <tr>
-                <td>Lettura del prompt</td>
+                <td>{t('ctx.readTime')}</td>
                 <td className="text-right tabular-nums">
                   {formatElapsed(call.promptEvalMs)}
                   {speed(call.promptEvalCount, call.promptEvalMs)}
@@ -302,7 +295,7 @@ function CallDetail({
             )}
             {call.evalMs != null && (
               <tr>
-                <td>Scrittura della risposta</td>
+                <td>{t('ctx.writeTime')}</td>
                 <td className="text-right tabular-nums">
                   {formatElapsed(call.evalMs)}
                   {speed(call.evalCount, call.evalMs)}
@@ -311,7 +304,7 @@ function CallDetail({
             )}
             {call.durationMs != null && (
               <tr className="text-zinc-500">
-                <td>Totale</td>
+                <td>{t('ctx.total')}</td>
                 <td className="text-right tabular-nums">{formatElapsed(call.durationMs)}</td>
               </tr>
             )}
@@ -321,33 +314,31 @@ function CallDetail({
 
       {a.truncated && (
         <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-          Il prompt non entrava in num_ctx: Ollama l'ha <b>troncato</b> (ha letto {int(call.promptEvalCount ?? 0)} token contro {int(a.sent)} stimati).
-          La parte iniziale può essere andata persa.
+          {t('ctx.truncated.before')}<b>{t('ctx.truncated.bold')}</b>{t('ctx.truncated.after', { read: int(call.promptEvalCount ?? 0), sent: int(a.sent) })}
         </p>
       )}
       {a.readLess && (
         <p className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-          Ollama ha letto molto meno della stima: probabilmente ha riusato la parte del prompt già in memoria (cache) e conta solo i
-          token nuovi.
+          {t('ctx.readLess')}
         </p>
       )}
-      {call.doneReason === 'length' && <p className="text-xs text-amber-700 dark:text-amber-400">Risposta fermata al limite di token.</p>}
+      {call.doneReason === 'length' && <p className="text-xs text-amber-700 dark:text-amber-400">{t('ctx.lengthStop')}</p>}
     </div>
   )
 }
 
 /** Come è stato calcolato il numero del contatore. */
 function sourceText(usage: ContextUsage): string {
-  const cpt = `${usage.charsPerToken.toLocaleString('it-IT')} caratteri per token${usage.charsPerToken === DEFAULT_CHARS_PER_TOKEN ? ' (valore predefinito)' : ', misurati sulla conversazione'}`
+  const cpt = t('ctx.cpt', { cpt: fmtNum(usage.charsPerToken, 2), note: usage.charsPerToken === DEFAULT_CHARS_PER_TOKEN ? t('ctx.cpt.default') : t('ctx.cpt.measured') })
   switch (usage.source) {
     case 'ollama':
-      return `Conteggio di Ollama dell'ultima risposta (prompt + risposta)${usage.estimated ? ', più la stima dei messaggi successivi' : ''}. Le voci sono stime: la differenza è lo scarto di Ollama.`
+      return t('ctx.source.ollama', { more: usage.estimated ? t('ctx.source.ollama.more') : '' })
     case 'summary-changed':
-      return `Stima con ${cpt}. I conteggi di Ollama dell'ultima risposta non valgono più: il riassunto è cambiato dopo.`
+      return t('ctx.source.summaryChanged', { cpt })
     case 'cache':
-      return `Stima con ${cpt}. Il conteggio di Ollama dell'ultima risposta era troppo basso (cache dei prompt): non attendibile.`
+      return t('ctx.source.cache', { cpt })
     default:
-      return `Stima con ${cpt}: Ollama non ha ancora dato conteggi per questi messaggi.`
+      return t('ctx.source.none', { cpt })
   }
 }
 
@@ -357,19 +348,19 @@ function rowNote(row: ReconcileRow, rows: ReconcileRow[]): string | null {
   const entered = (summary?.nowCount ?? 0) - (summary?.thenCount ?? 0)
   switch (row.key) {
     case 'summary':
-      if (row.then == null) return `creato dopo la risposta: copre ${row.nowCount} messaggi`
-      if (row.now == null) return 'non più in vigore'
-      return entered > 0 ? `aggiornato dopo la risposta: copre ${row.nowCount} messaggi invece di ${row.thenCount}` : null
+      if (row.then == null) return t('rec.summary.created', { n: row.nowCount ?? 0 })
+      if (row.now == null) return t('rec.summary.gone')
+      return entered > 0 ? t('rec.summary.updated', { now: row.nowCount ?? 0, then: row.thenCount ?? 0 }) : null
     case 'memory':
-      return row.now == null ? 'si scelgono di nuovo a ogni domanda: non contano finché non si invia' : null
+      return row.now == null ? t('rec.memory') : null
     case 'history': {
       const notes = []
-      if (entered > 0) notes.push(`${entered} messaggi entrati nel riassunto`)
-      if (rows.some((r) => r.key === 'question' || r.key === 'answer')) notes.push('domanda e risposta ora fanno parte dello storico')
+      if (entered > 0) notes.push(t('rec.history.entered', { n: entered }))
+      if (rows.some((r) => r.key === 'question' || r.key === 'answer')) notes.push(t('rec.history.qa'))
       return notes.length ? notes.join('; ') : null
     }
     case 'ollama':
-      return 'prompt letto da Ollama meno la stima delle voci'
+      return t('rec.ollama')
     default:
       return null
   }
@@ -395,7 +386,7 @@ function ContextState({ conversation, lastAnswer }: { conversation: Conversation
   return (
     <div className="flex flex-col gap-1.5" data-testid="context-state">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-[13px] font-semibold">Stato del contesto</h3>
+        <h3 className="text-[13px] font-semibold">{t('ctx.state')}</h3>
         <span className="text-[13px] font-semibold tabular-nums" data-testid="context-state-total">
           {usage.estimated ? '≈ ' : ''}
           {int(usage.used)} / {int(ctx)} · {pctOf(usage.used)}
@@ -413,20 +404,20 @@ function ContextState({ conversation, lastAnswer }: { conversation: Conversation
         {usage.parts.map((p) => (
           <span key={p.key}>
             <i className={`mr-1 inline-block h-2 w-2 rounded-sm ${COLORS[p.key]}`} />
-            {p.key === 'instructions' ? 'Istruzioni' : p.key === 'style' ? 'Stile' : p.label}
+            {p.key === 'style' ? t('part.style.short') : partLabel(p.label)}
             {p.key === 'history' && p.count != null ? ` (${p.count})` : ''} {int(p.tokens)}
           </span>
         ))}
         {usage.adjustment !== 0 && (
           <span>
             <i className="mr-1 inline-block h-2 w-2 rounded-sm bg-amber-300" />
-            Scarto di Ollama {signed(usage.adjustment)}
+            {t('part.ollamaDelta')} {signed(usage.adjustment)}
           </span>
         )}
       </div>
       <details className="group/calc" data-testid="context-reconcile">
         <summary className="cursor-pointer list-none text-brand-700 dark:text-brand-300 [&::-webkit-details-marker]:hidden">
-          <span aria-hidden className="inline-block transition-transform group-open/calc:rotate-90">▸</span> Dettaglio del calcolo
+          <span aria-hidden className="inline-block transition-transform group-open/calc:rotate-90">▸</span> {t('ctx.detail')}
           {rec && (
             <span className="text-zinc-500 tabular-nums">
               {' '}· {int(rec.thenTotal)} → {int(rec.nowTotal)}
@@ -436,21 +427,19 @@ function ContextState({ conversation, lastAnswer }: { conversation: Conversation
         <div className="flex flex-col gap-1.5 pt-1.5">
           <p className="text-zinc-500" data-testid="context-state-source">
             {sourceText(usage)}{' '}
-            {conversation.autoSummary
-              ? `Il riassunto scatta oltre ${int(ctx * SUMMARY.trigger)} (${Math.round(SUMMARY.trigger * 100)}%); `
-              : ''}
-            {int(Math.floor(ctx * RESERVE_SHARE))} ({Math.round(RESERVE_SHARE * 100)}%) restano liberi per la risposta.
+            {conversation.autoSummary ? t('ctx.trigger', { n: int(ctx * SUMMARY.trigger), pct: Math.round(SUMMARY.trigger * 100) }) : ''}
+            {t('ctx.reserve', { n: int(Math.floor(ctx * RESERVE_SHARE)), pct: Math.round(RESERVE_SHARE * 100) })}
           </p>
           <p className="text-zinc-400">
-            Alla prossima domanda si aggiungono la domanda{memoryRoom > 0 ? ` e gli estratti della memoria (fino a ${int(memoryRoom)})` : ''}.
+            {t('ctx.nextQuestion', { memory: memoryRoom > 0 ? t('ctx.nextQuestion.memory', { n: int(memoryRoom) }) : '' })}
           </p>
           {rec && (
             <table className="mt-0.5 w-full">
               <thead className="text-zinc-500">
                 <tr>
-                  <th className="text-left font-normal">Voce</th>
-                  <th className="text-right font-normal">Risposta {lastAnswer ? hhmm(lastAnswer.createdAt) : ''}</th>
-                  <th className="text-right font-normal">Ora</th>
+                  <th className="text-left font-normal">{t('ctx.col.item')}</th>
+                  <th className="text-right font-normal">{t('ctx.col.answer', { time: lastAnswer ? hhmm(lastAnswer.createdAt) : '' })}</th>
+                  <th className="text-right font-normal">{t('ctx.col.now')}</th>
                   <th className="w-12 text-right font-normal">Δ</th>
                 </tr>
               </thead>
@@ -460,7 +449,7 @@ function ContextState({ conversation, lastAnswer }: { conversation: Conversation
                   return <FragmentRow key={r.key} row={r} note={note} cell={cell} signed={signed} />
                 })}
                 <tr className="border-t border-zinc-200 font-semibold dark:border-zinc-800">
-                  <td className="pt-1">Totale</td>
+                  <td className="pt-1">{t('ctx.total')}</td>
                   <td className="pt-1 text-right tabular-nums">{int(rec.thenTotal)}</td>
                   <td className="pt-1 text-right tabular-nums">{int(rec.nowTotal)}</td>
                   <td className="pt-1 text-right tabular-nums">{signed(rec.nowTotal - rec.thenTotal)}</td>
@@ -488,7 +477,7 @@ function FragmentRow({
   return (
     <>
       <tr>
-        <td className="pt-0.5">{row.label}</td>
+        <td className="pt-0.5">{partLabel(row.label)}</td>
         <td className="text-right tabular-nums">{row.key === 'ollama' && row.then != null ? signed(row.then) : cell(row.then, row.key === 'history' ? row.thenCount : undefined)}</td>
         <td className="text-right tabular-nums">{row.key === 'ollama' && row.now != null ? signed(row.now) : cell(row.now, row.key === 'history' ? row.nowCount : undefined)}</td>
         <td className="text-right tabular-nums">{signed(row.delta)}</td>

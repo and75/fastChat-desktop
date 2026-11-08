@@ -1,15 +1,11 @@
 import { useState } from 'react'
+import { t, tn } from '@shared/i18n'
 import type { Plan, PlanStatus, PlanStep } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { Elapsed, TypingDots } from './Loader'
 import { ThinkingBlock } from './ThinkingBlock'
 
-const STATUS_LABEL: Record<PlanStatus, string> = {
-  proposed: 'Proposto',
-  approved: 'Approvato',
-  rejected: 'Annullato',
-  executed: 'Eseguito'
-}
+const statusLabel = (s: PlanStatus): string => t(`plan.status.${s}`)
 
 type KeyedStep = PlanStep & { key: number }
 let nextKey = 1
@@ -37,13 +33,13 @@ export function PlanChecklist({ plan, busy }: { plan: Plan; busy: boolean }): Re
 
   return (
     <section
-      aria-label="Piano proposto"
+      aria-label={t('plan.proposed')}
       data-testid="plan-checklist"
       className="rounded-xl border border-brand-300 bg-brand-50/60 p-3 dark:border-brand-800/70 dark:bg-brand-950/20"
     >
       <header className="mb-2 flex items-baseline justify-between">
-        <h3 className="font-semibold text-brand-900 dark:text-brand-200">Piano proposto</h3>
-        <span className="text-xs text-brand-800/70 dark:text-brand-300/70">Modifica i passi, poi approva</span>
+        <h3 className="font-semibold text-brand-900 dark:text-brand-200">{t('plan.proposed')}</h3>
+        <span className="text-xs text-brand-800/70 dark:text-brand-300/70">{t('plan.editHint')}</span>
       </header>
 
       <ol className="flex flex-col gap-2">
@@ -56,17 +52,17 @@ export function PlanChecklist({ plan, busy }: { plan: Plan; busy: boolean }): Re
             <span className="mt-1 w-5 shrink-0 text-right text-sm font-semibold text-zinc-400">{i + 1}.</span>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <input
-                aria-label={`Titolo del passo ${i + 1}`}
+                aria-label={t('plan.stepTitle', { n: i + 1 })}
                 value={step.title}
-                placeholder="Titolo del passo"
+                placeholder={t('plan.stepTitle.placeholder')}
                 disabled={busy}
                 onChange={(e) => edit(i, { title: e.target.value })}
                 className="rounded border border-transparent bg-transparent px-1 font-medium hover:border-zinc-200 focus:border-brand-500 focus:outline-none dark:hover:border-zinc-700"
               />
               <textarea
-                aria-label={`Dettaglio del passo ${i + 1}`}
+                aria-label={t('plan.stepDetail', { n: i + 1 })}
                 value={step.detail}
-                placeholder="Dettaglio (facoltativo)"
+                placeholder={t('plan.stepDetail.placeholder')}
                 rows={Math.max(1, Math.ceil(step.detail.length / 70))}
                 disabled={busy}
                 onChange={(e) => edit(i, { detail: e.target.value })}
@@ -74,20 +70,20 @@ export function PlanChecklist({ plan, busy }: { plan: Plan; busy: boolean }): Re
               />
             </div>
             <div className="flex shrink-0 flex-col items-center text-sm">
-              <button type="button" className={iconBtn} title="Sposta su" aria-label={`Sposta su il passo ${i + 1}`} disabled={busy || i === 0} onClick={() => move(i, -1)}>
+              <button type="button" className={iconBtn} title={t('plan.moveUp')} aria-label={t('plan.moveUp.step', { n: i + 1 })} disabled={busy || i === 0} onClick={() => move(i, -1)}>
                 ↑
               </button>
               <button
                 type="button"
                 className={iconBtn}
-                title="Sposta giù"
-                aria-label={`Sposta giù il passo ${i + 1}`}
+                title={t('plan.moveDown')}
+                aria-label={t('plan.moveDown.step', { n: i + 1 })}
                 disabled={busy || i === steps.length - 1}
                 onClick={() => move(i, 1)}
               >
                 ↓
               </button>
-              <button type="button" className={iconBtn} title="Elimina passo" aria-label={`Elimina il passo ${i + 1}`} disabled={busy} onClick={() => remove(i)}>
+              <button type="button" className={iconBtn} title={t('plan.removeStep')} aria-label={t('plan.removeStep.step', { n: i + 1 })} disabled={busy} onClick={() => remove(i)}>
                 ✕
               </button>
             </div>
@@ -101,7 +97,7 @@ export function PlanChecklist({ plan, busy }: { plan: Plan; busy: boolean }): Re
         onClick={() => setSteps((list) => [...list, { title: '', detail: '', key: nextKey++ }])}
         className="mt-2 text-sm text-brand-900 hover:underline disabled:opacity-40 dark:text-brand-200"
       >
-        + Aggiungi passo
+        {t('plan.addStep')}
       </button>
 
       <footer className="mt-3 flex flex-wrap items-center gap-2">
@@ -116,7 +112,7 @@ export function PlanChecklist({ plan, busy }: { plan: Plan; busy: boolean }): Re
           }
           className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
         >
-          {plan.status === 'approved' ? 'Esegui il piano' : 'Approva ed esegui'}
+          {plan.status === 'approved' ? t('plan.execute') : t('plan.approveExecute')}
         </button>
         <button
           type="button"
@@ -124,7 +120,7 @@ export function PlanChecklist({ plan, busy }: { plan: Plan; busy: boolean }): Re
           onClick={() => void regeneratePlan()}
           className="rounded-lg px-3 py-1.5 text-sm hover:bg-zinc-200 disabled:opacity-40 dark:hover:bg-zinc-800"
         >
-          ↻ Rigenera
+          {t('plan.regenerate')}
         </button>
         <button
           type="button"
@@ -132,7 +128,7 @@ export function PlanChecklist({ plan, busy }: { plan: Plan; busy: boolean }): Re
           onClick={() => void rejectPlan(plan.id)}
           className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-200 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
         >
-          Annulla
+          {t('plan.cancel')}
         </button>
       </footer>
     </section>
@@ -144,7 +140,7 @@ export function PlanSummary({ plan }: { plan: Plan }): React.JSX.Element {
   return (
     <details data-testid="plan-summary" className="rounded-lg border border-zinc-200 text-sm dark:border-zinc-800">
       <summary className="cursor-pointer px-3 py-1.5 text-zinc-600 dark:text-zinc-400">
-        Piano · {plan.steps.length} passi · <span data-testid="plan-status">{STATUS_LABEL[plan.status]}</span>
+        {tn('plan.summary', plan.steps.length)}<span data-testid="plan-status">{statusLabel(plan.status)}</span>
       </summary>
       <ol className="list-decimal space-y-1 border-t border-zinc-200 py-2 pl-9 pr-3 dark:border-zinc-800">
         {plan.steps.map((s, i) => (
@@ -178,8 +174,8 @@ export function PlanLoading({
       <div role="status" className="flex items-center gap-2 text-sm text-brand-800 dark:text-brand-300">
         <TypingDots />
         <span>
-          {summarizing ? 'Sto riassumendo i messaggi più vecchi…' : 'Sto preparando il piano…'}
-          {found > 0 && ` ${found} ${found === 1 ? 'passo' : 'passi'}`}
+          {summarizing ? t('plan.loading.summarizing') : t('plan.loading')}
+          {found > 0 && tn('plan.steps', found)}
         </span>
         <span aria-hidden>·</span>
         <Elapsed since={startedAt} />

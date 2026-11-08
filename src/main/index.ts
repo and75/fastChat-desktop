@@ -4,7 +4,8 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { openDatabase, runMigrations, type DbHandle } from './db/client'
 import { getSettings } from './db/repo'
 import { IPC } from '@shared/types'
-import { registerIpc } from './ipc'
+import { registerIpc, systemLocale } from './ipc'
+import { resolveLocale, setLocale } from '@shared/i18n'
 import { createOllamaClient } from './ollama'
 
 // Per i test end-to-end: dati isolati in una cartella temporanea.
@@ -71,6 +72,8 @@ async function bootstrap(): Promise<void> {
   await runMigrations(dbHandle, join(app.getAppPath(), 'drizzle'))
 
   const settings = await getSettings(dbHandle.db)
+  // Lingua di errori e prompt al modello: come l'interfaccia.
+  setLocale(resolveLocale(settings.language, systemLocale()))
   let ollamaUrl = process.env.OLLAMA_URL || settings.ollamaUrl
   const ollama = createOllamaClient(() => ollamaUrl)
 

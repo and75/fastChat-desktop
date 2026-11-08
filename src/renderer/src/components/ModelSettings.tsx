@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { STYLE_INSTRUCTIONS, STYLE_LABELS } from '@shared/prompt'
+import { fmtInt, fmtNum, fmtTime, t, tn } from '@shared/i18n'
+import { STYLE_INSTRUCTIONS } from '@shared/prompt'
 import { describeSuggestion, maxNumCtx, minNumCtx, resolveSettings, suggestNumCtx, suggestSettings } from '@shared/settings'
 import { RESPONSE_STYLES, type Conversation, type ConversationPatch, type MemoryStatus, type ResponseStyle } from '@shared/types'
 import { useChat } from '../store/useChat'
@@ -103,16 +104,16 @@ export function ThinkToggle({ conversation, compact = false }: { conversation: C
   const caps = useModels((s) => s.capabilities[conversation.model])
   const supported = caps?.thinking === true
   const title = !conversation.model
-    ? 'Nessun modello selezionato'
+    ? t('think.noModel')
     : !caps
-      ? 'Verifica delle capacità del modello…'
+      ? t('think.checking')
       : supported
-        ? 'Il modello ragiona prima di rispondere (più lento, spesso più accurato)'
-        : `${conversation.model} non supporta il ragionamento`
+        ? t('think.supported')
+        : t('think.unsupported', { model: conversation.model })
 
   return (
     <Switch
-      label="Ragionamento"
+      label={t('think.label')}
       checked={supported && conversation.think}
       disabled={!supported}
       title={title}
@@ -134,8 +135,7 @@ export function ExecutionRow({ model }: { model: string }): React.JSX.Element | 
   const setModelSetting = useModels((s) => s.setModelSetting)
   if (!model) return null
   const need = needsBenchmark(info, setting)
-  const tps = (r: { evalTps: number | null } | undefined): string | null =>
-    r?.evalTps != null ? r.evalTps.toLocaleString('it-IT', { maximumFractionDigits: 1 }) : null
+  const tps = (r: { evalTps: number | null } | undefined): string | null => (r?.evalTps != null ? fmtNum(r.evalTps, 1) : null)
   const best = tps(setting?.benchmark?.find((r) => r.numGpu === setting.numGpu))
   const cpu = tps(setting?.benchmark?.find((r) => r.numGpu === 0))
   const gpu = tps(setting?.benchmark?.find((r) => r.numGpu != null && r.numGpu >= 999))
@@ -146,42 +146,36 @@ export function ExecutionRow({ model }: { model: string }): React.JSX.Element | 
         {best && <span>{best} tok/s</span>}
       </span>
       <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
-        {model}, CPU o GPU in tutte le conversazioni.
-        {cpu || gpu ? ` Dal test: ${[cpu && `${cpu} token/s in CPU`, gpu && `${gpu} in GPU`].filter(Boolean).join(', ')}.` : ''}{' '}
-        <code className="text-[11px] text-zinc-400" title="Nome del parametro in Ollama">
+        {t('exec.desc', { model })}
+        {cpu || gpu ? t('exec.fromTest', { results: [cpu && t('exec.cpuTps', { tps: cpu }), gpu && t('exec.gpuTps', { tps: gpu })].filter(Boolean).join(', ') }) : ''}{' '}
+        <code className="text-[11px] text-zinc-400" title={t('exec.paramName')}>
           num_gpu
         </code>
       </span>
       {need && (
         <div className="mt-1 flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs dark:border-amber-800 dark:bg-amber-950/40" data-testid="benchmark-notice">
           <span>
-            {need === 'new'
-              ? 'Modello nuovo: un test di 1–2 minuti dice se va più veloce in CPU o in GPU su questa macchina.'
-              : 'Modello aggiornato dopo il test: conviene ripeterlo.'}
+            {need === 'new' ? t('exec.newModel') : t('exec.updatedModel')}
           </span>
           <span className="flex items-center gap-3">
             <BenchmarkButton model={model} />
             {need === 'new' && (
               <button type="button" className="text-zinc-500 hover:underline" onClick={() => void setModelSetting(model, { dismissed: true })}>
-                Non chiedere più
+                {t('exec.dontAsk')}
               </button>
             )}
           </span>
         </div>
       )}
       {setting?.benchmarkedAt && !need && setting.gpuAvailable === false && (
-        <span className="text-xs text-zinc-500">Ollama non usa la GPU per questo modello: va tutto in CPU.</span>
+        <span className="text-xs text-zinc-500">{t('exec.noGpu')}</span>
       )}
     </div>
   )
 }
 
-const STYLE_HINTS: Record<ResponseStyle, string> = {
-  essential: 'Solo la risposta: niente premesse, riepiloghi o esempi. Per domande secche; su problemi complessi meglio «Conciso».',
-  concise: 'Dritto al punto, un esempio al massimo. Buon compromesso per l\'uso quotidiano.',
-  normal: 'Nessuna istruzione: il modello scrive come è abituato.',
-  extended: 'Completo: contesto, alternative, esempi, avvertenze.'
-}
+const styleHint = (s: ResponseStyle): string => t(`style.hint.${s}`)
+const styleLabel = (s: ResponseStyle): string => t(`style.${s}`)
 
 /**
  * Stile della risposta: quattro livelli dal più sintetico al più esteso. Ogni livello è un'istruzione nel
@@ -195,10 +189,10 @@ export function StyleControl({ conversation, compact = false }: { conversation: 
   }
   if (compact) {
     return (
-      <label className="flex items-center gap-1" title={STYLE_HINTS[conversation.style]}>
-        <span>Stile</span>
+      <label className="flex items-center gap-1" title={styleHint(conversation.style)}>
+        <span>{t('style.short')}</span>
         <select
-          aria-label="Stile della risposta"
+          aria-label={t('style.title')}
           className="rounded border border-zinc-300 bg-transparent px-1 py-0.5 text-xs dark:border-zinc-700"
           value={conversation.style}
           onChange={(e) => set(e.target.value as ResponseStyle)}
@@ -206,7 +200,7 @@ export function StyleControl({ conversation, compact = false }: { conversation: 
         >
           {RESPONSE_STYLES.map((st) => (
             <option key={st} value={st}>
-              {STYLE_LABELS[st]}
+              {styleLabel(st)}
             </option>
           ))}
         </select>
@@ -217,22 +211,22 @@ export function StyleControl({ conversation, compact = false }: { conversation: 
   return (
     <div className="flex flex-col gap-1 text-sm" data-testid="style-control">
       <span className="flex items-baseline justify-between gap-2">
-        <span className="font-medium text-zinc-700 dark:text-zinc-300">Stile della risposta</span>
-        <code className="text-[11px] text-zinc-400" title="Diventa una sezione del system prompt">
-          system prompt
+        <span className="font-medium text-zinc-700 dark:text-zinc-300">{t('style.title')}</span>
+        <code className="text-[11px] text-zinc-400" title={t('style.systemPrompt.title')}>
+          {t('style.systemPrompt')}
         </code>
       </span>
       <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
-        Quanto il modello scrive. È un'istruzione, non un limite di token: la risposta non si tronca e la precisione non cambia.
+        {t('style.desc')}
       </span>
-      <div role="radiogroup" aria-label="Stile della risposta" className="mt-1 grid grid-cols-4 overflow-hidden rounded-lg border border-zinc-300 text-xs dark:border-zinc-700">
+      <div role="radiogroup" aria-label={t('style.title')} className="mt-1 grid grid-cols-4 overflow-hidden rounded-lg border border-zinc-300 text-xs dark:border-zinc-700">
         {RESPONSE_STYLES.map((st) => (
           <button
             key={st}
             type="button"
             role="radio"
             aria-checked={conversation.style === st}
-            title={STYLE_HINTS[st]}
+            title={styleHint(st)}
             className={
               'px-1 py-1.5 transition-colors ' +
               (conversation.style === st
@@ -241,17 +235,17 @@ export function StyleControl({ conversation, compact = false }: { conversation: 
             }
             onClick={() => set(st)}
           >
-            {STYLE_LABELS[st]}
+            {styleLabel(st)}
           </button>
         ))}
       </div>
       <span className="text-xs text-zinc-500" data-testid="style-hint">
-        {STYLE_HINTS[conversation.style]}
+        {styleHint(conversation.style)}
       </span>
       {instruction && (
         <details className="group/instr text-xs text-zinc-500">
           <summary className="cursor-pointer list-none text-brand-700 dark:text-brand-300 [&::-webkit-details-marker]:hidden">
-            <span aria-hidden className="inline-block transition-transform group-open/instr:rotate-90">▸</span> Istruzione inviata al modello
+            <span aria-hidden className="inline-block transition-transform group-open/instr:rotate-90">▸</span> {t('style.instruction')}
           </summary>
           <p className="mt-1 whitespace-pre-wrap rounded-lg bg-zinc-100 p-2 dark:bg-zinc-900">{instruction}</p>
         </details>
@@ -280,7 +274,7 @@ export function SummaryPanel({ conversation }: { conversation: Conversation }): 
     const ok = await summarize(conversation.id)
     if (!ok) {
       const err = useConversations.getState().error
-      setFeedback(err && err !== before ? err : 'Riassunto non riuscito')
+      setFeedback(err && err !== before ? err : t('summary.failed'))
       useConversations.setState({ error: before })
     }
     setWorking(false)
@@ -289,18 +283,19 @@ export function SummaryPanel({ conversation }: { conversation: Conversation }): 
   return (
     <div className="flex flex-col gap-2" data-testid="summary-panel">
       <Switch
-        label="Riassunto automatico"
+        label={t('autoSummary.label')}
         checked={conversation.autoSummary}
-        title="Quando i messaggi non stanno più nella memoria, prima della risposta i più vecchi vengono riassunti dal modello e il riassunto prende il loro posto nel system prompt"
+        title={t('autoSummary.title')}
         color="bg-brand-600"
         onChange={(autoSummary) => void update(conversation.id, { autoSummary })}
       />
       <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
         {conversation.summary
-          ? `Riassunto in vigore: copre ${covered > 0 ? `i primi ${covered} messaggi` : 'i messaggi più vecchi'}` +
-            (conversation.summaryUpdatedAt ? `, aggiornato alle ${new Date(conversation.summaryUpdatedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : '') +
-            '. Lo trovi nella conversazione, al confine con i messaggi inviati per intero.'
-          : 'Nessun riassunto: tutti i messaggi vengono inviati per intero (finché stanno nella memoria).'}
+          ? t('autoSummary.active', {
+              what: covered > 0 ? tn('autoSummary.first', covered) : t('autoSummary.older'),
+              updated: conversation.summaryUpdatedAt ? t('autoSummary.updatedAt', { time: fmtTime(conversation.summaryUpdatedAt) }) : ''
+            })
+          : t('autoSummary.none')}
       </span>
       <div className="flex flex-wrap gap-2 text-xs">
         {conversation.summary ? (
@@ -310,18 +305,18 @@ export function SummaryPanel({ conversation }: { conversation: Conversation }): 
             onClick={() => document.querySelector('[data-testid="summary-card"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
             data-testid="summary-goto"
           >
-            Vai al riassunto
+            {t('autoSummary.goto')}
           </button>
         ) : (
           <button
             type="button"
             className="rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
             disabled={working || busy || messages.length < 3}
-            title="Riassume subito i messaggi più vecchi, lasciando per intero l'ultimo scambio"
+            title={t('autoSummary.now.title')}
             onClick={() => void run()}
             data-testid="summary-now"
           >
-            {working ? 'Riassumo…' : 'Riassumi ora'}
+            {working ? t('autoSummary.working') : t('autoSummary.now')}
           </button>
         )}
       </div>
@@ -355,21 +350,21 @@ export function MemoryPanel({ conversation }: { conversation: Conversation }): R
 
   const model = settings?.embeddingModel ?? 'embeddinggemma'
   const text = !conversation.longMemory
-    ? 'Spenta: dopo il riassunto il modello vede solo il riassunto e i messaggi recenti.'
+    ? t('longMemory.off')
     : !conversation.summary
-      ? 'Si attiva dopo il primo riassunto: fino ad allora tutti i messaggi sono già nel prompt.'
+      ? t('longMemory.waiting')
       : status && !status.modelInstalled
-        ? `Serve il modello di embedding ${model}, non installato.`
+        ? t('longMemory.missing', { model })
         : status
-          ? `${status.chunks} ${status.chunks === 1 ? 'pezzo indicizzato' : 'pezzi indicizzati'}${status.pending ? `, ${status.pending} da indicizzare` : ''} con ${model}.`
-          : 'Lettura dello stato…'
+          ? tn('longMemory.indexed', status.chunks) + (status.pending ? t('longMemory.pending', { n: status.pending }) : '') + t('longMemory.with', { model })
+          : t('longMemory.reading')
 
   return (
     <div className="flex flex-col gap-2" data-testid="memory-panel">
       <Switch
-        label="Memoria a lungo termine"
+        label={t('longMemory.label')}
         checked={conversation.longMemory}
-        title="Dopo il primo riassunto, prima di ogni risposta cerca nei messaggi riassunti gli estratti più pertinenti alla domanda e li fornisce al modello"
+        title={t('longMemory.title')}
         color="bg-brand-600"
         onChange={(longMemory) => void update(conversation.id, { longMemory })}
       />
@@ -384,7 +379,7 @@ export function MemoryPanel({ conversation }: { conversation: Conversation }): R
           onClick={() => void pull(model).then((e) => (e ? setError(e) : load()))}
           data-testid="memory-download"
         >
-          {pulling ? `Scarico ${model}… ${pulling.total ? `${Math.round(((pulling.completed ?? 0) / pulling.total) * 100)}%` : ''}` : `Scarica ${model}`}
+          {pulling ? t('longMemory.downloading', { model, pct: pulling.total ? `${Math.round(((pulling.completed ?? 0) / pulling.total) * 100)}%` : '' }) : t('longMemory.download', { model })}
         </button>
       )}
       {conversation.longMemory && conversation.summary && status?.modelInstalled && (
@@ -392,7 +387,7 @@ export function MemoryPanel({ conversation }: { conversation: Conversation }): R
           type="button"
           disabled={working || busy}
           className="self-start rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          title="Rifà l'indice da zero (es. dopo aver cambiato il modello di embedding)"
+          title={t('longMemory.rebuild.title')}
           onClick={() => {
             setWorking(true)
             setError(null)
@@ -404,12 +399,12 @@ export function MemoryPanel({ conversation }: { conversation: Conversation }): R
           }}
           data-testid="memory-rebuild"
         >
-          {working ? 'Indicizzo…' : 'Ricostruisci l\'indice'}
+          {working ? t('longMemory.indexing') : t('longMemory.rebuild')}
         </button>
       )}
       {conversation.longMemory && (
         <span className="text-xs text-zinc-400">
-          Consigliato: in Impostazioni → Ollama, «Modelli caricati insieme» almeno 2, altrimenti Ollama ricarica il modello di chat a ogni ricerca.
+          {t('longMemory.hint')}
         </span>
       )}
       {error && <span className="text-xs text-red-700 dark:text-red-300">{error}</span>}
@@ -422,9 +417,9 @@ export function PlanModeToggle({ conversation, compact = false }: { conversation
   const update = useConversations((s) => s.update)
   return (
     <Switch
-      label="Plan mode"
+      label={t('plan.label')}
       checked={conversation.planMode}
-      title="Prima il piano, poi l'esecuzione: il modello propone i passi, tu li approvi o li modifichi"
+      title={t('plan.title')}
       compact={compact}
       color="bg-brand-500"
       onChange={(planMode) => void update(conversation.id, { planMode })}
@@ -461,7 +456,7 @@ function NumberField(props: {
     <div className="flex flex-col gap-1 text-sm">
       <span className="flex items-baseline justify-between gap-2">
         <span className="font-medium text-zinc-700 dark:text-zinc-300">{props.label}</span>
-        <code className="text-[11px] text-zinc-400" title="Nome del parametro in Ollama">
+        <code className="text-[11px] text-zinc-400" title={t('slider.paramName')}>
           {props.technical}
         </code>
       </span>
@@ -499,10 +494,10 @@ function NumberField(props: {
 }
 
 // Separatore delle migliaia anche a 4 cifre (4.096 come 32.768), per coerenza tra i valori.
-const fmt = (n: number): string => n.toLocaleString('it-IT', { useGrouping: 'always' })
+const fmt = fmtInt
 
 /** Un token è circa ¾ di parola: conversione indicativa per chi non conosce i token. */
-const approxWords = (tokens: number): string => `≈ ${fmt(Math.round((tokens * 0.75) / 100) * 100)} parole`
+const approxWords = (tokens: number): string => t('words.approx', { n: fmt(Math.round((tokens * 0.75) / 100) * 100) })
 
 /**
  * Cursore di un parametro del modello. Il valore è sempre quello configurato nella conversazione
@@ -559,7 +554,7 @@ function SettingSlider(props: {
     <div className="flex flex-col gap-1 text-sm">
       <span className="flex items-baseline justify-between gap-2">
         <span className="font-medium text-zinc-700 dark:text-zinc-300">{props.label}</span>
-        <code className="text-[11px] text-zinc-400" title="Nome del parametro in Ollama">
+        <code className="text-[11px] text-zinc-400" title={t('slider.paramName')}>
           {props.technical}
         </code>
       </span>
@@ -576,11 +571,11 @@ function SettingSlider(props: {
           <button
             type="button"
             onClick={() => set(props.suggested!)}
-            title={`Torna al valore suggerito: ${props.format(props.suggested)}` + (props.suggestedSource ? ` (${props.suggestedSource})` : '')}
-            aria-label={`Torna al valore suggerito: ${props.label}`}
+            title={t('slider.reset.title', { value: props.format(props.suggested), source: props.suggestedSource ? ` (${props.suggestedSource})` : '' })}
+            aria-label={t('slider.reset.label', { label: props.label })}
             className="shrink-0 rounded px-1.5 text-xs text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-950"
           >
-            ↺ Suggerito {props.format(props.suggested)}
+            {t('slider.suggested', { value: props.format(props.suggested) })}
           </button>
         )}
       </div>
@@ -621,9 +616,9 @@ export function contextSteps(max: number): number[] {
   return steps
 }
 
-const SOURCE_MODEL = 'consigliato dal modello'
-const SOURCE_OLLAMA = 'predefinito di Ollama'
-const SOURCE_MACHINE = 'calcolato per questa macchina'
+const SOURCE_MODEL = (): string => t('source.model')
+const SOURCE_OLLAMA = (): string => t('source.ollama')
+const SOURCE_MACHINE = (): string => t('source.machine')
 
 const GROUP_KEY = 'fastchat.modelGroups'
 
@@ -703,60 +698,65 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
   const bestRun = runSetting?.benchmark?.find((r) => r.numGpu === runSetting.numGpu)
   const runSummary =
     describeNumGpu(runSetting?.numGpu ?? null) +
-    (bestRun?.evalTps != null
-      ? ` · ${bestRun.evalTps.toLocaleString('it-IT', { maximumFractionDigits: 1 })} token/s dal test`
-      : needsBenchmark(runInfo, runSetting)
-        ? ' · test CPU/GPU da fare'
-        : '')
+    (bestRun?.evalTps != null ? t('exec.summary.tps', { tps: fmtNum(bestRun.evalTps, 1) }) : needsBenchmark(runInfo, runSetting) ? t('exec.summary.todo') : '')
   const thinkSupported = caps?.thinking === true
   const covered = conversation.summary && conversation.summaryUpTo ? messages.findIndex((m) => m.id === conversation.summaryUpTo) + 1 : 0
-  const wordsSummary = `temperatura ${effective.temperature.toFixed(2)} · varietà ${effective.topP.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · seed ${conversation.seed ?? 'casuale'}`
-  const answerSummary = `ragionamento ${!caps ? '…' : !thinkSupported ? 'non disponibile' : conversation.think ? 'attivo' : 'spento'} · stile ${STYLE_LABELS[conversation.style]}`
-  const memorySummary =
-    `${fmt(effective.numCtx)} token · riassunto ${conversation.summary ? `attivo (${covered > 0 ? `${covered} messaggi` : 'in vigore'})` : conversation.autoSummary ? 'automatico' : 'spento'}` +
-    ` · memoria lunga ${conversation.longMemory ? 'attiva' : 'spenta'}`
+  const wordsSummary = t('group.words.summary', { temp: effective.temperature.toFixed(2), topP: fmtNum(effective.topP, 2, 2), seed: conversation.seed ?? t('group.seed.random') })
+  const answerSummary = t('group.answer.summary', {
+    think: !caps ? '…' : !thinkSupported ? t('state.unavailable') : conversation.think ? t('state.on') : t('state.off'),
+    style: styleLabel(conversation.style)
+  })
+  const memorySummary = t('group.memory.summary', {
+    tokens: fmt(effective.numCtx),
+    summary: conversation.summary
+      ? t('group.memory.summaryActive', { what: covered > 0 ? tn('group.memory.messages', covered) : t('group.memory.inEffect') })
+      : conversation.autoSummary
+        ? t('group.memory.auto')
+        : t('state.off'),
+    memory: conversation.longMemory ? t('state.onF') : t('state.offF')
+  })
 
   return (
     <section className="flex flex-col" aria-label="Impostazioni del modello" data-testid="model-settings">
-      <Group id="run" title="Dove gira" badge="per modello" summary={runSummary}>
+      <Group id="run" title={t('group.run')} badge={t('group.run.badge')} summary={runSummary}>
         <ExecutionRow model={conversation.model} />
       </Group>
 
-      <Group id="words" title="Come sceglie le parole" summary={wordsSummary}>
+      <Group id="words" title={t('group.words')} summary={wordsSummary}>
         <SettingSlider
-          label="Temperatura"
+          label={t('param.temperature')}
           technical="temperature"
-          description="Quanto le risposte possono essere fantasiose. Bassa per fatti e codice, alta per idee e testi creativi."
+          description={t('param.temperature.desc')}
           value={effective.temperature}
           suggested={suggested.temperature}
-          suggestedSource={caps?.defaults.temperature != null ? SOURCE_MODEL : SOURCE_OLLAMA}
+          suggestedSource={caps?.defaults.temperature != null ? SOURCE_MODEL() : SOURCE_OLLAMA()}
           min={0}
           max={2}
           step={0.05}
           format={(v) => v.toFixed(2)}
-          ends={['precisa', 'creativa']}
+          ends={[t('param.temperature.low'), t('param.temperature.high')]}
           onChange={(v) => save({ temperature: v })}
         />
         <SettingSlider
-          label="Varietà delle parole"
+          label={t('param.topP')}
           technical="top_p"
-          description="Quante parole alternative il modello considera a ogni passo. Più a sinistra: risposte più prevedibili e ripetitive; più a destra: più varie."
+          description={t('param.topP.desc')}
           value={effective.topP}
           suggested={suggested.topP}
-          suggestedSource={caps?.defaults.topP != null ? SOURCE_MODEL : SOURCE_OLLAMA}
+          suggestedSource={caps?.defaults.topP != null ? SOURCE_MODEL() : SOURCE_OLLAMA()}
           min={0.05}
           max={1}
           step={0.05}
-          format={(v) => v.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          format={(v) => fmtNum(v, 2, 2)}
           onChange={(v) => save({ topP: v })}
         />
         <NumberField
-          label="Risposte ripetibili"
+          label={t('param.seed')}
           technical="seed"
-          description="Con un numero qualsiasi, la stessa domanda dà sempre la stessa risposta: utile per confrontare. Vuoto: ogni risposta è diversa."
+          description={t('param.seed.desc')}
           step={1}
           value={conversation.seed}
-          placeholder="vuoto = sempre diverse"
+          placeholder={t('param.seed.placeholder')}
           onChange={(v) => save({ seed: v })}
         />
         {!allSuggested && (
@@ -764,47 +764,43 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
             type="button"
             onClick={() => void calibrate(conversation.id)}
             className="self-start rounded-lg border border-zinc-300 px-2.5 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            title="Riporta temperatura, varietà e memoria ai valori suggeriti per questo modello e questa macchina"
+            title={t('param.allSuggested.title')}
           >
-            ↺ Tutti i valori suggeriti
+            {t('param.allSuggested')}
           </button>
         )}
       </Group>
 
-      <Group id="answer" title="Come risponde" summary={answerSummary}>
+      <Group id="answer" title={t('group.answer')} summary={answerSummary}>
         <div className="flex flex-col gap-1">
           <ThinkToggle conversation={conversation} />
           <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
             {!conversation.model
-              ? 'Nessun modello selezionato.'
+              ? `${t('think.noModel')}.`
               : !caps
-                ? 'Verifica delle capacità del modello…'
+                ? t('think.checking')
                 : thinkSupported
-                  ? 'Il modello ragiona prima di rispondere: più lento, spesso più accurato.'
-                  : `${conversation.model} non supporta il ragionamento.`}
+                  ? t('think.supported.desc')
+                  : `${t('think.unsupported', { model: conversation.model })}.`}
           </span>
         </div>
         <StyleControl conversation={conversation} />
       </Group>
 
-      <Group id="memory" title="Cosa ricorda" summary={memorySummary}>
+      <Group id="memory" title={t('group.memory')} summary={memorySummary}>
         <SettingSlider
-          label="Memoria della conversazione"
+          label={t('param.numCtx')}
           technical="num_ctx"
-          description={
-            'Quanto testo il modello tiene a mente, in token (circa ¾ di parola ciascuno). Più a destra: ricorda messaggi più vecchi, ma usa più memoria ed è più lento. ' +
-            describeSuggestion(input) +
-            (caps?.contextLength ? '' : ' Il massimo di questo modello non è noto.')
-          }
+          description={t('param.numCtx.desc') + describeSuggestion(input) + (caps?.contextLength ? '' : t('param.numCtx.unknownMax'))}
           value={effective.numCtx}
           suggested={suggested.numCtx}
-          suggestedSource={machineCtx != null ? SOURCE_MACHINE : caps?.defaults.numCtx != null ? SOURCE_MODEL : SOURCE_OLLAMA}
+          suggestedSource={machineCtx != null ? SOURCE_MACHINE() : caps?.defaults.numCtx != null ? SOURCE_MODEL() : SOURCE_OLLAMA()}
           steps={ctxSteps}
-          format={(v) => `${fmt(v)} token`}
+          format={(v) => t('tokens.n', { n: fmt(v) })}
           extra={approxWords}
           warning={(v) =>
             v < minCtx
-              ? `Sotto il minimo per questo modello (${fmt(minCtx)} token, predefinito di Ollama): le risposte possono interrompersi e il riassunto perde dettagli.`
+              ? t('param.numCtx.belowMin', { min: fmt(minCtx) })
               : null
           }
           onChange={(v) => save({ numCtx: v })}

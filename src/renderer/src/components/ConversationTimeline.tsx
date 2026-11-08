@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { t } from '@shared/i18n'
 import { excerpt, formatMessageDate, timelinePositions } from '@shared/format'
 import type { Message } from '@shared/types'
 
@@ -142,7 +143,7 @@ export function ConversationTimeline({ items, scroller }: Props): React.JSX.Elem
 
   return (
     <nav
-      aria-label="Cronologia della conversazione"
+      aria-label={t('timeline.label')}
       data-testid="timeline"
       // nascosta (ma misurabile) finché la conversazione non è più lunga dello schermo
       className={'absolute bottom-4 right-3 top-4 w-4 ' + (visible ? '' : 'invisible')}
@@ -155,10 +156,13 @@ export function ConversationTimeline({ items, scroller }: Props): React.JSX.Elem
         {visible &&
           items.map((it, i) => {
             const user = it.role === 'user'
-            const label =
-              `Messaggio ${i + 1} di ${items.length}, ${user ? 'tu' : 'assistente'}` +
-              (it.summarized ? ' (nel riassunto)' : '') +
-              `: ${excerpt(it.content, 80) || '…'}`
+            const label = t('timeline.dot', {
+              n: i + 1,
+              total: items.length,
+              who: user ? t('role.you') : t('role.assistant'),
+              summarized: it.summarized ? t('timeline.inSummary') : '',
+              excerpt: excerpt(it.content, 80) || '…'
+            })
             return (
               <button
                 key={it.id}
@@ -203,9 +207,9 @@ export function ConversationTimeline({ items, scroller }: Props): React.JSX.Elem
             style={{ top: layout.positions[hover] }}
           >
             <span className="mb-0.5 block text-[11px] opacity-70">
-              {tip.role === 'user' ? 'Tu' : 'Assistente'}
-              {tip.live ? ' · in corso' : tip.createdAt != null ? ` · ${formatMessageDate(tip.createdAt)}` : ''}
-              {tip.summarized ? ' · nel riassunto' : ''}
+              {tip.role === 'user' ? t('role.You') : t('role.Assistant')}
+              {tip.live ? t('timeline.live') : tip.createdAt != null ? ` · ${formatMessageDate(tip.createdAt)}` : ''}
+              {tip.summarized ? t('timeline.tipSummary') : ''}
             </span>
             {excerpt(tip.content) || '…'}
           </div>

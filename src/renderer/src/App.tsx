@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { getLocale, resolveLocale, setLocale, subscribeLocale, t } from '@shared/i18n'
 import { BriefPanel } from './components/BriefPanel'
 import { ChatView } from './components/ChatView'
 import { IconButton } from './components/IconButton'
@@ -22,15 +23,15 @@ function ExportMenu({ conversationId }: { conversationId: string }): React.JSX.E
   const run = async (format: 'md' | 'json'): Promise<void> => {
     setOpen(false)
     const res = await window.api.conversations.export(conversationId, format)
-    if (!res.ok) setStatus(`Errore: ${res.error}`)
-    else if (res.data) setStatus(`Salvata in ${res.data}`)
+    if (!res.ok) setStatus(t('export.error', { error: res.error }))
+    else if (res.data) setStatus(t('export.savedTo', { path: res.data }))
     else setStatus(null)
   }
 
   useEffect(() => {
     if (!status) return
-    const t = setTimeout(() => setStatus(null), 6000)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => setStatus(null), 6000)
+    return () => clearTimeout(timer)
   }, [status])
 
   // Chiusura con clic fuori o Esc.
@@ -65,7 +66,7 @@ function ExportMenu({ conversationId }: { conversationId: string }): React.JSX.E
       )}
       <IconButton
         ref={button}
-        tooltip="Esporta conversazione"
+        tooltip={t('export.title')}
         hideTooltip={open}
         active={open}
         aria-haspopup="menu"
@@ -77,7 +78,7 @@ function ExportMenu({ conversationId }: { conversationId: string }): React.JSX.E
       {open && (
         <div
           role="menu"
-          aria-label="Esporta conversazione"
+          aria-label={t('export.title')}
           className="absolute right-0 top-full z-50 mt-1.5 min-w-48 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
         >
           <button type="button" role="menuitem" autoFocus className={item} onClick={() => void run('md')}>
@@ -95,6 +96,9 @@ function ExportMenu({ conversationId }: { conversationId: string }): React.JSX.E
 export default function App(): React.JSX.Element {
   const initModels = useModels((s) => s.init)
   const theme = useModels((s) => s.settings?.theme ?? 'system')
+  const language = useModels((s) => s.settings?.language ?? 'auto')
+  // Al cambio di lingua l'intera interfaccia si rimonta (key sulla radice): niente testi vecchi in giro.
+  const locale = useSyncExternalStore(subscribeLocale, getLocale)
   const conversation = useChat((s) => s.conversation)
   const [briefOpen, setBriefOpen] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -120,6 +124,13 @@ export default function App(): React.JSX.Element {
   }, [initModels])
 
   useEffect(() => {
+    setLocale(resolveLocale(language, window.api.system.locale))
+  }, [language])
+  useEffect(() => {
+    document.documentElement.lang = locale
+  }, [locale])
+
+  useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
     const apply = (): void => {
       const dark = theme === 'dark' || (theme === 'system' && media.matches)
@@ -131,7 +142,7 @@ export default function App(): React.JSX.Element {
   }, [theme])
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full" key={locale}>
       <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
       {/* overflow-hidden: con la finestra stretta la colonna si restringe (gli elementi della topbar vengono
           tagliati) invece di allargare il documento oltre la finestra. */}
@@ -147,7 +158,7 @@ export default function App(): React.JSX.Element {
             <div className="flex shrink-0 items-center gap-1">
               <ExportMenu conversationId={conversation.id} />
               <IconButton
-                tooltip={briefOpen ? 'Nascondi il pannello della conversazione' : 'Mostra il pannello della conversazione'}
+                tooltip={briefOpen ? t('topbar.hidePanel') : t('topbar.showPanel')}
                 aria-pressed={briefOpen}
                 aria-controls="conversation-panel"
                 active={briefOpen}

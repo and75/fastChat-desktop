@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { t } from '@shared/i18n'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { ContextMeter } from './ContextMeter'
@@ -22,11 +23,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
     ref.current?.focus()
   }, [conversationId])
 
-  const placeholder = disabled
-    ? 'Seleziona un modello per iniziare'
-    : conversation?.planMode
-      ? 'Descrivi la richiesta: il modello proporrà prima un piano…'
-      : 'Scrivi un messaggio… (Maiusc+Invio per andare a capo)'
+  const placeholder = disabled ? t('chat.placeholder.noModel') : conversation?.planMode ? t('chat.placeholder.plan') : t('chat.placeholder')
 
   /**
    * Altezza del campo: segue il testo fino al 40% della finestra, poi il testo scorre dentro.
@@ -86,7 +83,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
           rows={1}
           value={text}
           disabled={disabled}
-          aria-label="Messaggio"
+          aria-label={t('chat.message')}
           placeholder={placeholder}
           className="max-h-[40vh] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 outline-none disabled:cursor-not-allowed"
           onChange={(e) => setText(e.target.value)}
@@ -103,7 +100,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
             onClick={() => void abort()}
             className="rounded-lg bg-zinc-200 px-3 py-1.5 text-sm font-medium hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600"
           >
-            Interrompi
+            {t('chat.stop')}
           </button>
         ) : (
           <button
@@ -111,7 +108,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
             disabled={disabled || !text.trim()}
             className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
           >
-            {conversation?.planMode ? 'Pianifica' : 'Invia'}
+            {conversation?.planMode ? t('chat.plan') : t('chat.send')}
           </button>
         )}
       </div>
@@ -119,7 +116,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
         <div className="mt-2 flex items-center gap-4 px-1 text-xs text-zinc-500">
           <ThinkToggle conversation={conversation} compact />
           <PlanModeToggle conversation={conversation} compact />
-          <span data-testid="composer-temperature">Temperatura {conversation.temperature.toFixed(2)}</span>
+          <span data-testid="composer-temperature">{t('chat.temperature', { value: conversation.temperature.toFixed(2) })}</span>
           <StyleControl conversation={conversation} compact />
           <ContextMeter />
         </div>
@@ -129,7 +126,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
 }
 
 /** Messaggio inviato da "Continua": la risposta tagliata al limite di token riprende da dove si è fermata. */
-export const CONTINUE_PROMPT = 'Continua da dove ti sei fermato, senza ripetere quanto già scritto.'
+export const continuePrompt = (): string => t('chat.continuePrompt')
 
 export function ChatView(): React.JSX.Element {
   const { conversation, messages, plans, streams, error, regenerate, retry, clearError, send } = useChat()
@@ -173,13 +170,13 @@ export function ChatView(): React.JSX.Element {
   if (!conversation) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-zinc-500">
-        <p>Nessuna conversazione selezionata.</p>
+        <p>{t('chat.noConversation')}</p>
         <button
           type="button"
           onClick={() => void create()}
           className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
         >
-          Nuova conversazione
+          {t('sidebar.new')}
         </button>
       </div>
     )
@@ -203,7 +200,7 @@ export function ChatView(): React.JSX.Element {
           <div className="mx-auto flex max-w-3xl flex-col gap-10 px-4 py-6 @max-[52rem]:pr-10" data-testid="messages">
             {messages.length === 0 && !live && (
               <p className="text-center text-sm text-zinc-500">
-                Scrivi il primo messaggio. Il brief nel pannello a destra viene inviato come system prompt.
+                {t('chat.firstMessage')}
               </p>
             )}
             {messages.map((m) => (
@@ -224,11 +221,11 @@ export function ChatView(): React.JSX.Element {
                           <button
                             type="button"
                             className="inline-flex items-center gap-1 font-medium text-brand-700 hover:text-brand-800 dark:text-brand-300 dark:hover:text-brand-200"
-                            title="Chiede al modello di proseguire la risposta da dove si è fermato"
-                            onClick={() => void send(CONTINUE_PROMPT)}
+                            title={t('chat.continue.title')}
+                            onClick={() => void send(continuePrompt())}
                             data-testid="continue-answer"
                           >
-                            Continua
+                            {t('chat.continue')}
                           </button>
                         )}
                         {canRegenerate && m === last && (
@@ -238,7 +235,7 @@ export function ChatView(): React.JSX.Element {
                             onClick={() => void regenerate()}
                           >
                             <RegenerateIcon size={13} />
-                            Rigenera
+                            {t('chat.regenerate')}
                           </button>
                         )}
                         {m.content && <CopyAction text={m.content} />}
@@ -283,10 +280,10 @@ export function ChatView(): React.JSX.Element {
                 <span className="flex-1">{error}</span>
                 {last?.role === 'user' && (
                   <button type="button" className="font-medium underline" onClick={() => void retry()}>
-                    Riprova
+                    {t('chat.retry')}
                   </button>
                 )}
-                <button type="button" aria-label="Chiudi" onClick={clearError}>
+                <button type="button" aria-label={t('common.close')} onClick={clearError}>
                   ✕
                 </button>
               </div>

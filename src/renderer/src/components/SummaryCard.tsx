@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react'
+import { fmtTime, t, tn } from '@shared/i18n'
 import { summaryPreview } from '@shared/format'
 import type { Conversation } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
-
-/** Ora in formato HH:MM. */
-const hhmm = (ms: number): string => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
 
 /**
  * Scheda del riassunto automatico, nel flusso dei messaggi al confine tra la parte riassunta (sopra) e
@@ -31,7 +29,7 @@ export function SummaryCard({ conversation, covered }: { conversation: Conversat
     const ok = await summarize(conversation.id)
     if (!ok) {
       const err = useConversations.getState().error
-      setFeedback(err && err !== before ? err : 'Riassunto non riuscito')
+      setFeedback(err && err !== before ? err : t('summary.failed'))
       useConversations.setState({ error: before })
     }
     setWorking(false)
@@ -39,46 +37,46 @@ export function SummaryCard({ conversation, covered }: { conversation: Conversat
 
   return (
     <section
-      aria-label="Riassunto automatico"
+      aria-label={t('summary.card')}
       data-testid="summary-card"
       data-message-id="summary"
       className="scroll-mt-4 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 px-4 py-3 text-sm dark:border-brand-800 dark:bg-brand-950/40"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <span className="font-medium text-brand-800 dark:text-brand-300">
-          Riassunto automatico
+          {t('summary.card')}
           <span className="ml-2 text-xs font-normal text-zinc-500">
-            copre {covered === 1 ? 'il messaggio' : `i ${covered} messaggi`} qui sopra
-            {conversation.summaryUpdatedAt ? ` · aggiornato alle ${hhmm(conversation.summaryUpdatedAt)}` : ''}
+            {tn('summary.covers', covered)}
+            {conversation.summaryUpdatedAt ? t('summary.updatedAt', { time: fmtTime(conversation.summaryUpdatedAt) }) : ''}
           </span>
         </span>
         <span className="flex gap-2 text-xs">
           <button type="button" className="text-brand-700 hover:underline dark:text-brand-300" onClick={() => setOpen((o) => !o)} data-testid="summary-toggle">
-            {open ? 'Nascondi' : 'Mostra e modifica'}
+            {open ? t('summary.hide') : t('summary.showEdit')}
           </button>
           <button
             type="button"
             className="text-brand-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-brand-300"
             disabled={working || busy}
-            title="Rifà il riassunto con i messaggi più vecchi, lasciando per intero l'ultimo scambio"
+            title={t('summary.refresh.title')}
             onClick={() => void refresh()}
             data-testid="summary-refresh"
           >
-            {working ? 'Riassumo…' : 'Aggiorna'}
+            {working ? t('summary.refreshing') : t('summary.refresh')}
           </button>
           <button
             type="button"
             className="text-red-700 hover:underline dark:text-red-300"
-            title="Toglie il riassunto: i messaggi qui sopra tornano a essere inviati per intero (quelli che stanno nella memoria)"
+            title={t('summary.delete.title')}
             onClick={() => void update(conversation.id, { summary: null })}
             data-testid="summary-clear"
           >
-            Elimina
+            {t('summary.delete')}
           </button>
         </span>
       </div>
       <p className="mt-1 text-xs text-zinc-500">
-        I messaggi qui sopra non vengono più inviati al modello per intero: al loro posto va questo riassunto. Restano leggibili e salvati.
+        {t('summary.explain')}
       </p>
       {!open && (
         <p className="mt-1 truncate text-zinc-700 dark:text-zinc-300" title={conversation.summary} data-testid="summary-preview">
@@ -87,7 +85,7 @@ export function SummaryCard({ conversation, covered }: { conversation: Conversat
       )}
       {open && (
         <textarea
-          aria-label="Testo del riassunto"
+          aria-label={t('summary.text')}
           rows={8}
           value={draft}
           className="mt-2 w-full resize-y rounded-lg border border-zinc-300 bg-white p-2 text-xs leading-snug dark:border-zinc-700 dark:bg-zinc-900"

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { t } from '@shared/i18n'
 import { Elapsed, TypingDots } from './Loader'
 
 interface Props {
@@ -39,7 +40,7 @@ export function ThinkingBlock({ text, live = false, startedAt }: Props): React.J
         {live ? (
           <span className="flex items-center gap-2">
             <TypingDots />
-            Sta ragionando…
+            {t('thinking.live')}
             {startedAt != null && (
               <>
                 <span aria-hidden>·</span>
@@ -48,7 +49,7 @@ export function ThinkingBlock({ text, live = false, startedAt }: Props): React.J
             )}
           </span>
         ) : (
-          <span>Ragionamento · {words(text)} parole</span>
+          <span>{t('thinking.done', { words: words(text) })}</span>
         )}
       </button>
       {open && (

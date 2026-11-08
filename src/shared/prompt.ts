@@ -1,5 +1,6 @@
 // Funzioni pure per comporre i prompt. Condivise: il main le usa per le chiamate a Ollama,
 // il renderer per l'anteprima del system prompt nel BriefPanel.
+import { localeTag } from './i18n'
 import { OLLAMA_DEFAULTS, type Brief, type ContextPart, type PlanStep, type ResponseStyle } from './types'
 
 const SECTIONS: Array<[keyof Brief, string]> = [
@@ -449,10 +450,10 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage {
   const summaryText = aligned ? withSummary('', input.summary) : ''
   const [ti, ts, tsum] = splitTokens(systemTokens, [instructions, style, summaryText])
   const parts: ContextPart[] = [
-    ...(instructions ? [{ key: 'instructions' as const, label: 'Istruzioni', tokens: ti }] : []),
-    ...(style ? [{ key: 'style' as const, label: 'Stile della risposta', tokens: ts }] : []),
-    ...(summaryText ? [{ key: 'summary' as const, label: 'Riassunto', tokens: tsum, count: input.messages.length - messages.length }] : []),
-    ...(messages.length ? [{ key: 'history' as const, label: 'Storico', tokens: historyTokens, count: messages.length }] : [])
+    ...(instructions ? [{ key: 'instructions' as const, label: 'instructions', tokens: ti }] : []),
+    ...(style ? [{ key: 'style' as const, label: 'style', tokens: ts }] : []),
+    ...(summaryText ? [{ key: 'summary' as const, label: 'summary', tokens: tsum, count: input.messages.length - messages.length }] : []),
+    ...(messages.length ? [{ key: 'history' as const, label: 'history', tokens: historyTokens, count: messages.length }] : [])
   ]
 
   let lastIdx = -1
@@ -489,5 +490,5 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage {
 export function formatTokensK(n: number): string {
   if (n < 1000) return String(Math.round(n))
   const k = n / 1000
-  return (k < 10 ? k.toLocaleString('it-IT', { maximumFractionDigits: 1 }) : Math.round(k).toLocaleString('it-IT')) + 'k'
+  return (k < 10 ? k.toLocaleString(localeTag(), { maximumFractionDigits: 1 }) : Math.round(k).toLocaleString(localeTag())) + 'k'
 }
