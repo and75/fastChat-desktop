@@ -94,6 +94,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }): React.JSX.Elem
             <option value="auto">{t('settings.language.auto')}</option>
             <option value="it">{t('settings.language.it')}</option>
             <option value="en">{t('settings.language.en')}</option>
+            <option value="fr">{t('settings.language.fr')}</option>
           </select>
           <span className="text-xs text-zinc-500">{t('settings.language.hint')}</span>
         </label>

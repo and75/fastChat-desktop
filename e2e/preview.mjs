@@ -199,6 +199,13 @@ await page.getByRole('button', { name: 'Settings' }).click()
 await page.getByTestId('settings-dialog').waitFor()
 await page.waitForTimeout(300)
 await page.screenshot({ path: out('13-english-settings.png') })
+// e in francese
+await dialog.getByTestId('settings-language').selectOption('fr')
+await dialog.getByRole('button', { name: 'Save' }).click()
+await dialog.waitFor({ state: 'detached' })
+await page.getByRole('tab', { name: 'Modèle' }).waitFor()
+await page.waitForTimeout(400)
+await page.screenshot({ path: out('14-french.png') })
 
 await app.close()
 await fake.close()

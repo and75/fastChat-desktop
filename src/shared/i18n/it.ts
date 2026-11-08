@@ -563,6 +563,7 @@ export const it = {
   'memory.who.user': 'utente',
   'memory.who.assistant': 'assistente',
   'settings.modelSection': 'Impostazioni del modello',
+  'settings.language.fr': 'Français',
   // --- fine
 } as const satisfies Record<string, string>
 

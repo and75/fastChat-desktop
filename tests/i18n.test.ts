@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { fmtInt, getLocale, LOCALES, resolveLocale, setLocale, t, tn } from '../src/shared/i18n'
 import { en } from '../src/shared/i18n/en'
+import { fr } from '../src/shared/i18n/fr'
 import { it as itDict, type Key } from '../src/shared/i18n/it'
 import { formatElapsed, formatMessageDate } from '../src/shared/format'
 import { buildMemorySection } from '../src/shared/memory'
@@ -11,12 +12,14 @@ const placeholders = (s: string): string[] => [...s.matchAll(/\{(\w+)\}/g)].map(
 describe('dizionari', () => {
   afterEach(() => setLocale('it'))
 
-  it('inglese: stesse chiavi, stessi segnaposto, nessun testo vuoto', () => {
+  it('inglese e francese: stesse chiavi, stessi segnaposto, nessun testo vuoto', () => {
     const keys = Object.keys(itDict) as Key[]
-    expect(Object.keys(en).sort()).toEqual([...keys].sort())
-    for (const k of keys) {
-      expect(en[k], k).not.toBe('')
-      expect(placeholders(en[k]), k).toEqual(placeholders(itDict[k]))
+    for (const dict of [en, fr]) {
+      expect(Object.keys(dict).sort()).toEqual([...keys].sort())
+      for (const k of keys) {
+        expect(dict[k], k).not.toBe('')
+        expect(placeholders(dict[k]), k).toEqual(placeholders(itDict[k]))
+      }
     }
   })
 
@@ -43,9 +46,10 @@ describe('dizionari', () => {
   it('resolveLocale: scelta esplicita, altrimenti dal sistema (italiano o inglese)', () => {
     expect(resolveLocale('en', 'it-IT')).toBe('en')
     expect(resolveLocale('auto', 'it-CH')).toBe('it')
-    expect(resolveLocale('auto', 'fr-FR')).toBe('en')
+    expect(resolveLocale('auto', 'fr-FR')).toBe('fr')
+    expect(resolveLocale('auto', 'de-DE')).toBe('en')
     expect(resolveLocale(null, undefined)).toBe('en')
-    expect(LOCALES).toEqual(['it', 'en'])
+    expect(LOCALES).toEqual(['it', 'en', 'fr'])
   })
 
   it('i prompt al modello seguono la lingua: sezioni del brief, stile, riassunto, memoria', () => {
@@ -58,6 +62,10 @@ describe('dizionari', () => {
     expect(withSummary('x', 'facts')).toBe('x\n\n# Summary of the conversation so far\nfacts')
     expect(buildSummaryPrompt(120)).toContain('At most 120 words')
     expect(buildMemorySection([{ text: 'User: hi', role: 'user', position: 2 }], 9)).toContain('[message 2 of 9 · user]')
+    setLocale('fr')
+    expect(buildSystemPrompt(brief, 'concise')).toMatch(/^# Rôle\nTutor\n\n# Style de la réponse\nVa droit au but/)
+    expect(tn('settings.connected', 1)).toBe('Connecté · 1 modèle')
+    expect(fmtInt(4096)).toBe('4\u202f096')
   })
 
   it('formati: date e tempi nella lingua attiva', () => {

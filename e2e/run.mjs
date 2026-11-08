@@ -38,9 +38,9 @@ const fake = await startFakeOllama([
   }
 ])
 // Le richieste di generazione del titolo (dopo il primo scambio) non contano come "ultima chat".
-const isTitleRequest = (body) => /^(Genera un titolo|Generate a short title)/.test(body?.messages?.[0]?.content ?? '')
+const isTitleRequest = (body) => /^(Genera un titolo|Generate a short title|Génère un titre)/.test(body?.messages?.[0]?.content ?? '')
 // Nemmeno le richieste del riassunto automatico (dopo la risposta) contano come "ultima chat".
-const isSummaryRequest = (body) => /^(Sei l'archivista|You are the archivist)/.test(body?.messages?.[0]?.content ?? '')
+const isSummaryRequest = (body) => /^(Sei l'archivista|You are the archivist|Tu es l'archiviste)/.test(body?.messages?.[0]?.content ?? '')
 const chatRequests = () => fake.requests.filter((r) => r.path === '/api/chat' && !isTitleRequest(r.body) && !isSummaryRequest(r.body))
 const lastChat = () => chatRequests().at(-1)?.body
 

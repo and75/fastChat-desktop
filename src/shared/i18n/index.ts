@@ -1,19 +1,20 @@
 // Lingue dell'interfaccia. Dizionari tipizzati: `it` è il riferimento, le altre lingue devono avere le stesse
 // chiavi (lo controlla TypeScript). Lo stesso modulo serve main (errori, prompt) e renderer (interfaccia).
 import { en } from './en'
+import { fr } from './fr'
 import { it, type Key } from './it'
 
 export type { Key }
-export type Locale = 'it' | 'en'
+export type Locale = 'it' | 'en' | 'fr'
 /** Scelta dell'utente: automatica (lingua del sistema) o una lingua precisa. */
 export type LanguageSetting = 'auto' | Locale
 
-export const LOCALES: Locale[] = ['it', 'en']
-export const LANGUAGE_SETTINGS: LanguageSetting[] = ['auto', 'it', 'en']
+export const LOCALES: Locale[] = ['it', 'en', 'fr']
+export const LANGUAGE_SETTINGS: LanguageSetting[] = ['auto', 'it', 'en', 'fr']
 
-const DICTS: Record<Locale, Record<Key, string>> = { it, en }
+const DICTS: Record<Locale, Record<Key, string>> = { it, en, fr }
 /** Tag BCP 47 per Intl (numeri, date, plurali). */
-const TAGS: Record<Locale, string> = { it: 'it-IT', en: 'en-US' }
+const TAGS: Record<Locale, string> = { it: 'it-IT', en: 'en-US', fr: 'fr-FR' }
 
 let current: Locale = 'it'
 const listeners = new Set<() => void>()
@@ -35,10 +36,13 @@ export function subscribeLocale(fn: () => void): () => void {
   }
 }
 
-/** Lingua effettiva: quella scelta, o dalla lingua del sistema (italiano se è italiano, altrimenti inglese). */
+/** Lingua effettiva: quella scelta, o dalla lingua del sistema (italiano, francese; altrimenti inglese). */
 export function resolveLocale(setting: LanguageSetting | null | undefined, systemLocale: string | null | undefined): Locale {
   if (setting && setting !== 'auto') return setting
-  return (systemLocale ?? '').toLowerCase().startsWith('it') ? 'it' : 'en'
+  const sys = (systemLocale ?? '').toLowerCase()
+  if (sys.startsWith('it')) return 'it'
+  if (sys.startsWith('fr')) return 'fr'
+  return 'en'
 }
 
 type Params = Record<string, string | number>

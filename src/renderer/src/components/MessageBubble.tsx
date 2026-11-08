@@ -111,9 +111,9 @@ export function MessageBubble({
 
 /** Testo dell'estratto senza i prefissi «Domanda/Risposta/Utente» (in entrambe le lingue: i pezzi restano nella lingua in cui sono stati indicizzati). */
 function excerptBody(excerpt: string): string {
-  const m = excerpt.match(/\n(Risposta|Answer): ([\s\S]*)$/)
+  const m = excerpt.match(/\n(Risposta|Answer|Réponse) ?: ([\s\S]*)$/)
   if (m) return m[2]
-  return excerpt.replace(/^(Utente|User|Risposta|Answer): /, '')
+  return excerpt.replace(/^(Utente|User|Utilisateur|Risposta|Answer|Réponse) ?: /, '')
 }
 
 /** Estratti della conversazione usati per la risposta: chiusi di default, ognuno salta al messaggio originale. */

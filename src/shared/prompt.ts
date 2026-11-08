@@ -270,7 +270,7 @@ export function buildSummaryRequest(previous: string | null, newMessages: string
 export function cleanSummary(raw: string): string {
   return raw
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/^\s*#+\s*(riassunto|summary)[^\n]*\n/i, '')
+    .replace(/^\s*#+\s*(riassunto|summary|résumé)[^\n]*\n/i, '')
     .trim()
 }
 

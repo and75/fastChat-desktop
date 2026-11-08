@@ -564,5 +564,6 @@ export const en: Record<Key, string> = {
   'memory.who.user': 'user',
   'memory.who.assistant': 'assistant',
   'settings.modelSection': 'Model settings',
+  'settings.language.fr': 'Français',
   // --- fine
 }

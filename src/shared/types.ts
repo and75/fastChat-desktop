@@ -323,7 +323,7 @@ export interface AppSettings {
   /** Modello di Ollama per gli embedding della memoria delle conversazioni (multilingue). */
   embeddingModel: string
   /** Lingua dell'interfaccia e dei prompt al modello: automatica (sistema), italiano o inglese. */
-  language: 'auto' | 'it' | 'en'
+  language: 'auto' | 'it' | 'en' | 'fr'
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
