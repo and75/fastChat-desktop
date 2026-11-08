@@ -71,6 +71,8 @@ export interface Api {
     remove(conversationId: string, documentId: string): Promise<Result<KnowledgeStatus>>
     /** Rifà l'indice di un documento (dopo un errore o un cambio di modello). */
     reindex(conversationId: string, documentId: string): Promise<Result<KnowledgeDocument>>
+    /** «Intero»: il documento va al modello per intero a ogni domanda. */
+    pin(conversationId: string, documentId: string, pinned: boolean): Promise<Result<KnowledgeDocument>>
     /** Collega una sorgente (plugin `connected`) con la sua configurazione e la sincronizza. */
     connect(conversationId: string, sourceId: string, config: Record<string, string>): Promise<Result<KnowledgeConnection>>
     /** Richiede alla sorgente l'elenco aggiornato: nuovi, cambiati e spariti. */

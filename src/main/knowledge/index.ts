@@ -4,10 +4,12 @@ import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { t } from '@shared/i18n'
-import { buildDocumentChunks, buildKnowledgeSection, KNOWLEDGE, pickDocumentChunks, toKnowledgeRefs } from '@shared/knowledge'
+import { buildDocumentChunks, buildKnowledgeSection, ftsQuery, KNOWLEDGE, pickDocumentChunks, toKnowledgeRefs, totalChars, wholeDocuments, type SectionItem } from '@shared/knowledge'
 import { fromBuffer, toBuffer } from '@shared/memory'
 import type { Conversation, DocumentRef, KnowledgeConnection, KnowledgeDocument, KnowledgeProgress, KnowledgeRef, KnowledgeStatus } from '@shared/types'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { Db } from '../db/client'
+import { knowledgeChunks } from '../db/schema'
 import {
   addConnection,
   addDocument,
@@ -19,6 +21,7 @@ import {
   listConnections,
   listDocuments,
   listKnowledgeChunks,
+  searchKnowledgeChunks,
   removeConnection,
   removeDocument,
   removeKnowledgeChunks,
@@ -193,17 +196,21 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
   }
 
   /**
-   * Estratti dei documenti pertinenti alla domanda, entro `maxTokens`. `query` è l'embedding della domanda
-   * (lo stesso usato dalla memoria), già calcolato da chi chiama. Vuoto se non c'è nulla di pronto o pertinente.
+   * Documenti per la risposta, entro `maxTokens`:
+   * 1. se tutti i documenti pronti stanno nel budget, vanno al modello per intero (può contare e sommare);
+   * 2. altrimenti prima i documenti «fissati» per intero (finché stanno), poi gli estratti scelti con il
+   *    punteggio ibrido (somiglianza semantica + parole esatte) nello spazio che resta.
+   * `question` è la domanda: il vettore (lo stesso usato dalla memoria) e il testo per la ricerca a parole.
    */
-  async function recall(conv: Conversation, query: ArrayLike<number>, maxTokens: number, cpt: number): Promise<KnowledgeRecall> {
+  async function recall(conv: Conversation, question: { vector: ArrayLike<number>; text: string }, maxTokens: number, cpt: number): Promise<KnowledgeRecall> {
     const empty: KnowledgeRecall = { section: '', refs: [] }
     if (maxTokens < 64) return empty
     const model = await embedder.model()
     const docs = await readyDocuments(conv.id, model)
     if (docs.length === 0) return empty
     const titles = new Map(docs.map((d) => [d.id, d.title]))
-    const chunks = (await listKnowledgeChunks(db, docs.map((d) => d.id), model)).map((c) => ({
+    const ids = docs.map((d) => d.id)
+    const chunks = (await listKnowledgeChunks(db, ids, model)).map((c) => ({
       id: c.id,
       documentId: c.documentId,
       title: titles.get(c.documentId) ?? '',
@@ -212,9 +219,29 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
       text: c.text,
       embedding: fromBuffer(c.embedding)
     }))
-    const picked = pickDocumentChunks(query, chunks, maxTokens * cpt)
-    if (picked.length === 0) return empty
-    return { section: buildKnowledgeSection(picked), refs: toKnowledgeRefs(picked) }
+    const maxChars = maxTokens * cpt
+    // 1. tutto per intero
+    if (totalChars(chunks) <= maxChars) {
+      const items: SectionItem[] = chunks.map((c) => ({ ...c, whole: true }))
+      return { section: buildKnowledgeSection(items), refs: toKnowledgeRefs(items, []) }
+    }
+    // 2. i fissati per intero, poi gli estratti
+    const pinnedIds = new Set(docs.filter((d) => d.pinned).map((d) => d.id))
+    const { picked: whole } = wholeDocuments(chunks, pinnedIds, maxChars)
+    const wholeItems: SectionItem[] = whole.map((c) => ({ ...c, whole: true }))
+    const rest = chunks.filter((c) => !pinnedIds.has(c.documentId))
+    const room = maxChars - totalChars(whole)
+    const bm25 = await searchKnowledgeChunks(db, ids, model, ftsQuery(question.text)).catch(() => new Map<string, number>())
+    const picked = room > 0 ? pickDocumentChunks(question.vector, rest, room, { bm25 }) : []
+    if (wholeItems.length === 0 && picked.length === 0) return empty
+    return { section: buildKnowledgeSection([...wholeItems, ...picked]), refs: toKnowledgeRefs(wholeItems, picked) }
+  }
+
+  /** «Intero» sì/no per un documento. */
+  async function setPinned(conv: Conversation, documentId: string, pinned: boolean): Promise<KnowledgeDocument> {
+    const doc = await getDocument(db, documentId)
+    if (!doc || doc.conversationId !== conv.id) throw new Error(t('err.knowledge.docNotFound'))
+    return (await updateDocument(db, documentId, { pinned }))!
   }
 
   // ---- sorgenti collegate
@@ -292,7 +319,16 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
       chunks += n
       if (d.status === 'pending' || d.status === 'indexing' || (d.status === 'ready' && n === 0)) pending++
     }
-    return { documents, connections: (await listConnections(db, conv.id)).map(masked), chunks, pending, model, modelInstalled: await embedder.installed(model) }
+    const ready = documents.filter((d) => d.status === 'ready' && counts.get(d.id))
+    const sizes = await db
+      .select({ documentId: knowledgeChunks.documentId, chars: sql<number>`sum(length(${knowledgeChunks.text}))` })
+      .from(knowledgeChunks)
+      .where(and(inArray(knowledgeChunks.documentId, ready.length ? ready.map((d) => d.id) : ['']), eq(knowledgeChunks.model, model)))
+      .groupBy(knowledgeChunks.documentId)
+    const total = sizes.reduce((n, r) => n + Number(r.chars), 0)
+    const pinnedIds = new Set(ready.filter((d) => d.pinned).map((d) => d.id))
+    const pinned = sizes.filter((r) => pinnedIds.has(r.documentId)).reduce((n, r) => n + Number(r.chars), 0)
+    return { documents, connections: (await listConnections(db, conv.id)).map(masked), chunks, pending, totalChars: total, pinnedChars: pinned, model, modelInstalled: await embedder.installed(model) }
   }
 
   /** Per i test: attende la fine delle indicizzazioni in corso della conversazione. */
@@ -304,7 +340,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     }
   }
 
-  return { embedder, addFiles, reindex, remove, connect, refresh, disconnect, ensureModel, hasReady, recall, status, wait, isMissingModel: (err: unknown) => err instanceof OllamaError && err.code === 'model' }
+  return { embedder, addFiles, reindex, remove, setPinned, connect, refresh, disconnect, ensureModel, hasReady, recall, status, wait, isMissingModel: (err: unknown) => err instanceof OllamaError && err.code === 'model' }
 }
 
 export type Knowledge = ReturnType<typeof createKnowledge>

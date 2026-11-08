@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import { fmtInt, t, tn } from '@shared/i18n'
+import { KNOWLEDGE } from '@shared/knowledge'
+import { DEFAULT_CHARS_PER_TOKEN } from '@shared/prompt'
+import { resolveSettings } from '@shared/settings'
 import type { Conversation, KnowledgeDocument } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { useKnowledge } from '../store/useKnowledge'
 import { useModels } from '../store/useModels'
-import { BookOpenIcon, FileTextIcon, PlusIcon, RegenerateIcon, TrashIcon } from './icons'
+import { BookOpenIcon, FileTextIcon, PinIcon, PlusIcon, RegenerateIcon, TrashIcon } from './icons'
 import { ConnectForm, ConnectionRow } from './KnowledgeConnections'
 
 /** Pill «Usa la base di conoscenza»: impostazione della conversazione, valida per ogni domanda salvo il bottone libro. */
@@ -40,6 +43,7 @@ function DocumentRow({ conversation, doc }: { conversation: Conversation; doc: K
   const progress = useKnowledge((s) => s.progress[doc.id])
   const remove = useKnowledge((s) => s.remove)
   const reindex = useKnowledge((s) => s.reindex)
+  const pin = useKnowledge((s) => s.pin)
   const sources = useKnowledge((s) => s.sources)
   const busy = useChat((s) => !!s.streams[conversation.id])
   // Per i documenti di una sorgente collegata conta il tipo di file (PDF, Word…), non la connessione.
@@ -49,7 +53,7 @@ function DocumentRow({ conversation, doc }: { conversation: Conversation; doc: K
   const sourceLabel = reader?.label ?? doc.source
   const detail =
     doc.status === 'ready'
-      ? [sourceLabel, fmtBytes(doc.bytes), tn('knowledge.doc.chunks', doc.chunkCount)].filter(Boolean).join(' · ')
+      ? [sourceLabel, fmtBytes(doc.bytes), tn('knowledge.doc.chunks', doc.chunkCount), doc.pinned ? t('knowledge.doc.pinned') : ''].filter(Boolean).join(' · ')
       : doc.status === 'indexing'
         ? progress?.total
           ? t('knowledge.doc.indexing.progress', { done: fmtInt(progress.done), total: fmtInt(progress.total) })
@@ -69,6 +73,22 @@ function DocumentRow({ conversation, doc }: { conversation: Conversation; doc: K
           {detail}
         </div>
       </div>
+      {doc.status === 'ready' && (
+        <button
+          type="button"
+          aria-pressed={doc.pinned}
+          className={
+            'shrink-0 rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 ' +
+            (doc.pinned ? 'text-brand-700 dark:text-brand-300' : 'text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200')
+          }
+          aria-label={t('knowledge.doc.pin')}
+          title={t('knowledge.doc.pin.title')}
+          onClick={() => void pin(conversation.id, doc.id, !doc.pinned)}
+          data-testid="knowledge-doc-pin"
+        >
+          <PinIcon size={14} />
+        </button>
+      )}
       {doc.status === 'error' && (
         <button
           type="button"
@@ -111,6 +131,7 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
   const settings = useModels((s) => s.settings)
   const pull = useModels((s) => s.pull)
   const pulling = useModels((s) => (settings ? s.pulls[settings.embeddingModel] : undefined))
+  const caps = useModels((s) => s.capabilities[conversation.model])
   const [over, setOver] = useState(false)
   const [pullError, setPullError] = useState<string | null>(null)
   /** Sorgente collegata in configurazione (form aperto). */
@@ -134,6 +155,18 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
       .filter(Boolean)
     void addFiles(conversation.id, paths)
   }
+
+  // Stanno nella memoria? Il quarto di num_ctx riservato ai documenti contro i token stimati dei pezzi pronti.
+  const numCtx = resolveSettings(conversation, caps ?? null).numCtx
+  const budgetTokens = Math.floor(numCtx * KNOWLEDGE.budgetShare)
+  const docTokens = status ? Math.ceil(status.totalChars / DEFAULT_CHARS_PER_TOKEN) : 0
+  const pinnedTokens = status ? Math.ceil(status.pinnedChars / DEFAULT_CHARS_PER_TOKEN) : 0
+  const fitText = !status || docTokens === 0
+    ? null
+    : docTokens <= budgetTokens
+      ? t('knowledge.fit.whole', { tokens: fmtInt(docTokens), budget: fmtInt(budgetTokens) })
+      : t('knowledge.fit.excerpts', { tokens: fmtInt(docTokens), budget: fmtInt(budgetTokens), needed: fmtInt(Math.ceil(docTokens / KNOWLEDGE.budgetShare / 1024) * 1024) })
+  const pinnedOver = !!status && pinnedTokens > budgetTokens
 
   const statusText = !status
     ? t('knowledge.status.reading')
@@ -232,6 +265,16 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
       <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400" data-testid="knowledge-status">
         {statusText}
       </span>
+      {fitText && (
+        <span className={'text-xs leading-snug ' + (docTokens <= budgetTokens ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400')} data-testid="knowledge-fit" data-whole={docTokens <= budgetTokens}>
+          {fitText}
+        </span>
+      )}
+      {pinnedOver && (
+        <span className="text-xs leading-snug text-amber-700 dark:text-amber-400" data-testid="knowledge-pinned-over">
+          {t('knowledge.fit.pinnedOver', { tokens: fmtInt(pinnedTokens) })}
+        </span>
+      )}
       {status && docs.length > 0 && !status.modelInstalled && (
         <button
           type="button"

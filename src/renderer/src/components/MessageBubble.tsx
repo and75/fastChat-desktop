@@ -181,7 +181,7 @@ function KnowledgeRefs({ refs }: { refs: KnowledgeRef[] }): React.JSX.Element {
         {refs.map((r, i) => (
           <li key={`${r.documentId}-${i}`}>
             <span className="font-medium text-zinc-700 dark:text-zinc-300">{sourceLabel(r.title, r.locator)}</span>{' '}
-            <span className="tabular-nums text-zinc-400">({Math.round(r.score * 100)}%)</span>
+            <span className="tabular-nums text-zinc-400">{r.whole ? `(${t('message.source.whole')})` : `(${Math.round(r.score * 100)}%)`}</span>
             <span className="block truncate text-zinc-500" title={r.excerpt}>
               {r.excerpt}
             </span>

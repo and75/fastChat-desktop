@@ -10,7 +10,7 @@ temperatura, ragionamento on/off e plan mode. Lo storico resta in locale.
 - **Template**: «Salva come template» nel pannello del brief; «▾» accanto a «Nuova conversazione» per partire da un template.
 - **Modello**: temperatura 0–2, `top_p`, `num_ctx`, `seed`; ragionamento on/off (disabilitato se il modello non ha la capability `thinking`), mostrato in un blocco separato e richiudibile.
 - **Plan mode**: il modello propone un piano (JSON vincolato da schema); lo modifichi, riordini, approvi; poi risponde seguendolo.
-- **Base di conoscenza** (RAG sui documenti, per conversazione): scheda «Conoscenza» nel pannello, documenti PDF, Word, testo e Markdown o una cartella collegata del computer; prima di ogni risposta il modello riceve gli estratti pertinenti alla domanda con la fonte («[Relazione, p. 3]»), mostrati anche sotto la risposta. La pill «Usa la base di conoscenza» vale per la conversazione, il bottone libro accanto a «Invia» per la singola domanda. Tutto in locale: embedding con Ollama, vettori in SQLite.
+- **Base di conoscenza** (RAG sui documenti, per conversazione): scheda «Conoscenza» nel pannello, documenti PDF, Word, testo e Markdown o una cartella collegata del computer. Se i documenti stanno nel quarto di memoria riservato il modello li legge **per intero** a ogni domanda (può contare e sommare); altrimenti riceve i documenti segnati «Intero» e poi gli estratti più pertinenti, scelti con un punteggio ibrido (somiglianza semantica + parole esatte con FTS5: numeri, nomi) fino a riempire il budget. Le fonti («[Relazione, p. 3]») compaiono nel prompt e sotto la risposta. La pill «Usa la base di conoscenza» vale per la conversazione, il bottone libro accanto a «Invia» per la singola domanda. Tutto in locale: embedding con Ollama, vettori e indice FTS in SQLite.
 - **Storico**: ricerca (titolo e messaggi), rinomina, archivio, eliminazione; titolo generato dopo il primo scambio; export in Markdown o JSON (con documenti e fonti).
 - **Robustezza**: banner con «Riprova» se Ollama non risponde, interruzione con salvataggio del parziale, rigenerazione dell'ultima risposta, storico tagliato al contesto disponibile.
 
@@ -47,9 +47,10 @@ Variabili utili: `OLLAMA_URL` sovrascrive l'URL salvato; `FASTCHAT_USER_DATA` ca
 
 **Base di conoscenza e plugin.** Un plugin (`src/main/knowledge/source.ts`) sa leggere un tipo di
 sorgente e restituisce testo a sezioni con un locatore (pagina, titolo); il nucleo fa il resto: pezzi,
-embedding (stesso modello della memoria a lungo termine, per modello di embedding), ricerca a coseno,
-budget (al massimo un quarto di `num_ctx`, prima della memoria della conversazione), sezione «Base di
-conoscenza» nel system prompt, fonti sulla risposta, monitor del contesto. Due famiglie: `file` (l'utente
+embedding (stesso modello della memoria a lungo termine, per modello di embedding), indice FTS5 per le parole
+esatte, budget (al massimo un quarto di `num_ctx`, prima della memoria della conversazione), scelta tra
+documenti interi ed estratti (punteggio ibrido 0,6 coseno + 0,4 BM25, soglie, tetto per documento che cresce
+con il budget), sezione «Base di conoscenza» nel system prompt, fonti sulla risposta, monitor del contesto. Due famiglie: `file` (l'utente
 aggiunge file; il plugin dichiara le estensioni) e `connected` (il plugin elenca lui i documenti da una
 sorgente configurata: `list()`, versione per documento, «Aggiorna»; il form di configurazione lo disegna il
 nucleo dai campi dichiarati, i campi `secret` sono cifrati con `safeStorage`). Integrati: `text`, `pdf`

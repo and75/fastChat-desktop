@@ -187,6 +187,8 @@ export const knowledgeDocuments = sqliteTable(
     status: text('status', { enum: ['pending', 'indexing', 'ready', 'error'] }).$type<KnowledgeDocumentStatus>().notNull().default('pending'),
     error: text('error'),
     chunkCount: integer('chunk_count').notNull().default(0),
+    /** «Intero»: il documento va al modello per intero a ogni domanda, senza passare dalla ricerca. */
+    pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     createdAt: integer('created_at').notNull().default(now),
     indexedAt: integer('indexed_at')
   },

@@ -95,6 +95,8 @@ export interface KnowledgeDocument {
   status: KnowledgeDocumentStatus
   error: string | null
   chunkCount: number
+  /** «Intero»: va al modello per intero a ogni domanda, prima degli estratti scelti per somiglianza. */
+  pinned: boolean
   createdAt: number
   indexedAt: number | null
 }
@@ -120,6 +122,8 @@ export interface KnowledgeRef {
   locator: string | null
   score: number
   excerpt: string
+  /** Il documento è stato fornito per intero (fissato, o tutti i documenti stavano nella memoria). */
+  whole?: boolean
 }
 
 /** Stato della base di conoscenza di una conversazione. */
@@ -130,6 +134,9 @@ export interface KnowledgeStatus {
   chunks: number
   /** Documenti ancora da indicizzare (in attesa, in corso, o indicizzati con un altro modello). */
   pending: number
+  /** Caratteri dei pezzi pronti, in tutto e dei soli documenti fissati: per dire se stanno nella memoria. */
+  totalChars: number
+  pinnedChars: number
   model: string
   modelInstalled: boolean
 }
@@ -469,6 +476,7 @@ export const IPC = {
   knowledgePickFiles: 'knowledge:pick-files',
   knowledgeRemove: 'knowledge:remove',
   knowledgeReindex: 'knowledge:reindex',
+  knowledgePin: 'knowledge:pin',
   knowledgeConnect: 'knowledge:connect',
   knowledgeRefresh: 'knowledge:refresh',
   knowledgeDisconnect: 'knowledge:disconnect',

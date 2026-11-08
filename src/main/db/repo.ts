@@ -461,6 +461,7 @@ export async function addDocument(db: Db, doc: NewDocument): Promise<KnowledgeDo
     status: 'pending' as const,
     error: null,
     chunkCount: 0,
+    pinned: false,
     createdAt: Date.now(),
     indexedAt: null
   }
@@ -468,7 +469,7 @@ export async function addDocument(db: Db, doc: NewDocument): Promise<KnowledgeDo
   return row
 }
 
-export type DocumentPatch = Partial<Pick<KnowledgeDocument, 'title' | 'version' | 'chars' | 'status' | 'error' | 'chunkCount' | 'indexedAt'>> & {
+export type DocumentPatch = Partial<Pick<KnowledgeDocument, 'title' | 'version' | 'chars' | 'status' | 'error' | 'chunkCount' | 'indexedAt' | 'pinned'>> & {
   status?: KnowledgeDocumentStatus
 }
 
@@ -510,6 +511,27 @@ export async function countKnowledgeChunks(db: Db, documentIds: string[], model:
     .where(and(inArray(knowledgeChunks.documentId, documentIds), eq(knowledgeChunks.model, model)))
     .groupBy(knowledgeChunks.documentId)
   for (const r of rows) out.set(r.documentId, Number(r.n))
+  return out
+}
+
+/**
+ * Ricerca a parole esatte (FTS5, BM25) tra i pezzi dei documenti indicati: punteggio positivo per pezzo (più alto =
+ * più pertinente). `match` è una query FTS5 già preparata (vedi ftsQuery). Vuoto se la query è vuota.
+ */
+export async function searchKnowledgeChunks(db: Db, documentIds: string[], model: string, match: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  if (documentIds.length === 0 || !match.trim()) return out
+  const ids = sql.join(documentIds.map((id) => sql`${id}`), sql`, `)
+  // Righe come array di valori (driver sqlite-proxy) o come oggetti: si accettano entrambe.
+  const rows = (await db.all<unknown>(
+    sql`SELECT c.id AS id, -bm25(knowledge_fts) AS rank FROM knowledge_fts
+        JOIN knowledge_chunks c ON c.rowid = knowledge_fts.rowid
+        WHERE knowledge_fts MATCH ${match} AND c.model = ${model} AND c.document_id IN (${ids})`
+  )) as Array<[string, number] | { id: string; rank: number }>
+  for (const r of rows) {
+    const [id, rank] = Array.isArray(r) ? r : [r.id, r.rank]
+    out.set(id, Number(rank))
+  }
   return out
 }
 

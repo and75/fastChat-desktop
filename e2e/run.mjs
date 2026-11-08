@@ -750,6 +750,16 @@ try {
     await page.waitForFunction(() => document.querySelector('[data-testid="knowledge-button"]')?.getAttribute('aria-pressed') === 'false')
     await page.getByTestId('knowledge-pill').click()
     await waitUntil(async () => (await latestConversation()).knowledge === true)
+    // i due documenti stanno nel quarto di memoria: il modello li ha letti per intero (fonti «documento intero»)
+    await panel.getByTestId('knowledge-fit').filter({ hasText: 'li legge per intero' }).waitFor()
+    // la prima risposta: le fonti dicono «documento intero» (textContent legge anche i dettagli chiusi)
+    assert.match(await page.getByTestId('knowledge-refs').first().textContent(), /documento intero/)
+    // «Intero» su un documento: resta segnato anche dopo il ricaricamento dello stato
+    await panel.getByTestId('knowledge-doc-pin').first().click()
+    await panel.getByTestId('knowledge-doc').first().filter({ hasText: /· intero/ }).waitFor()
+    assert.equal(await panel.getByTestId('knowledge-doc-pin').first().getAttribute('aria-pressed'), 'true')
+    await panel.getByTestId('knowledge-doc-pin').first().click()
+    await panel.getByTestId('knowledge-doc').first().filter({ hasNotText: /· intero/ }).waitFor()
     // rimozione di un documento
     await panel.getByTestId('knowledge-doc-remove').first().click()
     await waitUntil(async () => (await panel.getByTestId('knowledge-doc').count()) === 1)

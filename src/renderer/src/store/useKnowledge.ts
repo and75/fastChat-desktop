@@ -17,6 +17,8 @@ interface KnowledgeState {
   addFiles(conversationId: string, paths: string[]): Promise<void>
   remove(conversationId: string, documentId: string): Promise<void>
   reindex(conversationId: string, documentId: string): Promise<void>
+  /** «Intero» sì/no per un documento. */
+  pin(conversationId: string, documentId: string, pinned: boolean): Promise<void>
   /** Sorgenti collegate: collega con la configurazione, aggiorna, scollega. Restituiscono false se fallisce. */
   connect(conversationId: string, sourceId: string, config: Record<string, string>): Promise<boolean>
   refresh(conversationId: string, connectionId: string): Promise<void>
@@ -72,6 +74,12 @@ export const useKnowledge = create<KnowledgeState>((set, get) => {
     async reindex(conversationId, documentId) {
       set({ error: null })
       const res = await window.api.knowledge.reindex(conversationId, documentId)
+      if (!res.ok) return set({ error: res.error })
+      await get().load(conversationId)
+    },
+
+    async pin(conversationId, documentId, pinned) {
+      const res = await window.api.knowledge.pin(conversationId, documentId, pinned)
       if (!res.ok) return set({ error: res.error })
       await get().load(conversationId)
     },

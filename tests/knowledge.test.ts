@@ -14,7 +14,7 @@ import { SourceError, type KnowledgeSource } from '../src/main/knowledge/source'
 import { BUILTIN_SOURCES } from '../src/main/knowledge/sources'
 import { textSource } from '../src/main/knowledge/sources/text'
 import { createOllamaClient } from '../src/main/ollama'
-import { buildDocumentChunks, buildKnowledgeSection, knowledgeBudget, normalizeText, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs } from '../src/shared/knowledge'
+import { buildDocumentChunks, buildKnowledgeSection, ftsQuery, hybridScores, knowledgeBudget, normalizeText, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs, wholeDocuments } from '../src/shared/knowledge'
 import { fromBuffer } from '../src/shared/memory'
 import type { Conversation, KnowledgeProgress, StreamEvent } from '../src/shared/types'
 import { fakeEmbedding, startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
@@ -50,13 +50,44 @@ describe('base di conoscenza: funzioni pure', () => {
     ])
   })
 
-  it('pickDocumentChunks: soglie, al massimo due per documento, budget in caratteri', () => {
-    const c = (id: string, documentId: string, embedding: number[]) => ({ id, documentId, title: documentId, locator: null, text: id.repeat(10), embedding })
+  it('pickDocumentChunks: soglie, tetto per documento che cresce con il budget, budget in caratteri', () => {
+    const c = (id: string, documentId: string, embedding: number[]) => ({ id, documentId, title: documentId, locator: null, part: 0, text: id.repeat(10), embedding })
     const q = [1, 0, 0]
     const chunks = [c('a', 'd1', [0.95, 0.05, 0]), c('b', 'd1', [0.9, 0.1, 0]), c('c', 'd1', [0.85, 0.15, 0]), c('d', 'd2', [0.8, 0.2, 0]), c('z', 'd3', [0, 0, 1])]
+    // budget piccolo: due per documento
     expect(pickDocumentChunks(q, chunks, 1000).map((p) => p.id)).toEqual(['a', 'b', 'd'])
+    // budget grande (3 documenti, ~6 pezzi): tre per documento, tutto ciò che è pertinente
+    expect(pickDocumentChunks(q, chunks, 10_000).map((p) => p.id)).toEqual(['a', 'b', 'c', 'd'])
     expect(pickDocumentChunks(q, chunks, 15).map((p) => p.id)).toEqual(['a'])
     expect(pickDocumentChunks([0, 1, 0], chunks, 1000)).toEqual([])
+  })
+
+  it('punteggio ibrido: le parole esatte (BM25) fanno salire un pezzo con somiglianza semantica bassa', () => {
+    const c = (id: string, embedding: number[], text: string) => ({ id, documentId: 'd', title: 'd', locator: null, part: 0, text, embedding })
+    const q = [1, 0, 0]
+    const chunks = [c('sem', [0.9, 0.1, 0], 'testo semanticamente vicino'), c('lex', [0.1, 0.9, 0], 'Fattura 2026/017 Rossi')]
+    // senza BM25: solo il coseno
+    expect(pickDocumentChunks(q, chunks, 1000).map((p) => p.id)).toEqual(['sem'])
+    // con BM25 che premia 'lex': entra, e il punteggio è pesato 0,6 coseno + 0,4 parole
+    const bm25 = new Map([['lex', 5]])
+    const scores = hybridScores(q, chunks, bm25)
+    expect(scores.get('lex')).toBeCloseTo(0.6 * (0.1 / Math.hypot(0.1, 0.9)) + 0.4, 5)
+    expect(scores.get('sem')).toBeCloseTo(0.6 * (0.9 / Math.hypot(0.9, 0.1)), 5)
+    expect(pickDocumentChunks(q, chunks, 1000, { bm25 }).map((p) => p.id)).toEqual(['sem', 'lex'])
+  })
+
+  it('ftsQuery: parole di almeno tre lettere e numeri, senza doppioni, tra virgolette, unite con OR', () => {
+    expect(ftsQuery('La fattura n. 17 di Rossi, la fattura (Rossi) del 2026!')).toBe('"fattura" OR "17" OR "rossi" OR "del" OR "2026"')
+    expect(ftsQuery('a e')).toBe('')
+  })
+
+  it('wholeDocuments: i documenti indicati per intero e in ordine, finché stanno nel budget', () => {
+    const c = (id: string, documentId: string, part: number) => ({ id, documentId, title: documentId, locator: null, part, text: 'x'.repeat(10), embedding: [] })
+    const chunks = [c('b1', 'b', 1), c('a0', 'a', 0), c('b0', 'b', 0), c('a1', 'a', 1), c('z0', 'z', 0)]
+    expect(wholeDocuments(chunks, new Set(['a', 'b']), 1000).picked.map((p) => p.id)).toEqual(['a0', 'a1', 'b0', 'b1'])
+    const cut = wholeDocuments(chunks, new Set(['a', 'b']), 25)
+    expect(cut.picked.map((p) => p.id)).toEqual(['a0', 'a1'])
+    expect(cut.truncated).toBe(true)
   })
 
   it('buildKnowledgeSection e toKnowledgeRefs: fonte con locatore, ordine per documento e posizione, refs per punteggio', () => {
@@ -66,17 +97,27 @@ describe('base di conoscenza: funzioni pure', () => {
       { id: '0', documentId: 'd1', title: 'Manuale', locator: 'Uso', part: 2, text: 'Zero.', embedding: [], score: 0.7 }
     ]
     const s = buildKnowledgeSection(picked)
-    expect(s.startsWith('# Base di conoscenza\n\n')).toBe(true)
+    expect(s.startsWith('# Base di conoscenza\n\nEstratti dei documenti')).toBe(true)
     expect(s).toContain('[Manuale, Uso]\nZero.')
     expect(s).toContain('[Rapporto, p. 3]\nSecondo.')
     expect(s.indexOf('[Manuale, Uso]')).toBeLessThan(s.indexOf('[Manuale]\nPrimo.'))
     expect(s.indexOf('[Manuale]\nPrimo.')).toBeLessThan(s.indexOf('[Rapporto, p. 3]'))
     expect(buildKnowledgeSection([])).toBe('')
-    expect(toKnowledgeRefs(picked).map((r) => [r.documentId, r.score, r.locator])).toEqual([
+    expect(toKnowledgeRefs([], picked).map((r) => [r.documentId, r.score, r.locator])).toEqual([
       ['d2', 0.9, 'p. 3'],
       ['d1', 0.7, 'Uso'],
       ['d1', 0.5, null]
     ])
+    // documenti interi: introduzione diversa, prima gli interi poi gli estratti; un riferimento per documento intero
+    const whole = [
+      { documentId: 'w', title: 'Fattura 1', locator: 'p. 1', part: 0, text: 'Intera.', whole: true },
+      { documentId: 'w', title: 'Fattura 1', locator: 'p. 2', part: 1, text: 'Seconda pagina.', whole: true }
+    ]
+    const mixed = buildKnowledgeSection([...picked, ...whole])
+    expect(mixed).toMatch(/^# Base di conoscenza\n\nDocumenti forniti dall'utente, riportati per intero \(1 in tutto\)/)
+    expect(mixed.indexOf('[Fattura 1, p. 2]')).toBeLessThan(mixed.indexOf('Seguono estratti di altri documenti'))
+    expect(mixed.indexOf('Seguono estratti')).toBeLessThan(mixed.indexOf('[Manuale, Uso]'))
+    expect(toKnowledgeRefs(whole, picked).slice(0, 2)).toMatchObject([{ documentId: 'w', whole: true, score: 1, locator: null }, { documentId: 'd2' }])
   })
 
   it('knowledgeBudget: al massimo il 25% e solo lo spazio rimasto', () => {
@@ -217,17 +258,22 @@ describe('base di conoscenza: servizio', () => {
     await k.addFiles(conv, [join(fixtures, 'relazione.txt'), join(fixtures, 'manuale.md')])
     await k.wait(conv.id)
     const query = fakeEmbedding('Quante persone ha assunto la sede di Torino?')
-    const found = await k.recall(conv, query, 800, 4)
+    // budget da 100 token (400 caratteri): i due documenti insieme non ci stanno → estratti
+    const found = await k.recall(conv, { vector: query, text: 'Quante persone ha assunto la sede di Torino?' }, 100, 4)
     expect(found.refs.length).toBeGreaterThan(0)
     expect(found.refs[0]).toMatchObject({ title: 'relazione', locator: null })
     expect(found.refs[0].excerpt).toContain('Torino')
     expect(found.section).toContain('# Base di conoscenza')
     expect(found.section).toContain('[relazione]\n')
-    const install = await k.recall(conv, fakeEmbedding('Come usare il programma di installazione su Windows?'), 800, 4)
+    const install = await k.recall(conv, { vector: fakeEmbedding('Come usare il programma di installazione su Windows?'), text: 'Come usare il programma di installazione su Windows?' }, 100, 4)
     expect(install.refs[0]).toMatchObject({ title: 'manuale', locator: 'Manuale › Installazione › Windows' })
     expect(install.section).toContain('[manuale, Manuale › Installazione › Windows]')
-    expect(await k.recall(conv, fakeEmbedding('zzzz qqqq'), 800, 4)).toEqual({ section: '', refs: [] })
-    expect(await k.recall(conv, query, 10, 4)).toEqual({ section: '', refs: [] })
+    expect(await k.recall(conv, { vector: fakeEmbedding('zzzz qqqq'), text: 'zzzz qqqq' }, 100, 4)).toEqual({ section: '', refs: [] })
+    // budget largo: i documenti stanno nella memoria → tutti per intero, un riferimento per documento
+    const whole = await k.recall(conv, { vector: fakeEmbedding('zzzz qqqq'), text: 'zzzz qqqq' }, 800, 4)
+    expect(whole.section).toContain('riportati per intero (2 in tutto)')
+    expect(whole.refs.map((r) => [r.title, r.whole])).toEqual([['manuale', true], ['relazione', true]])
+    expect(await k.recall(conv, { vector: query, text: 'x' }, 10, 4)).toEqual({ section: '', refs: [] })
   })
 
   it('stato: documenti, pezzi, da indicizzare, modello installato; rimozione a cascata dei pezzi', async () => {
@@ -236,7 +282,8 @@ describe('base di conoscenza: servizio', () => {
     const [doc] = await k.addFiles(conv, [join(fixtures, 'manuale.md')])
     await k.wait(conv.id)
     const s = await k.status(conv)
-    expect(s).toMatchObject({ chunks: 4, pending: 0, model: 'embeddinggemma', modelInstalled: true })
+    expect(s).toMatchObject({ chunks: 4, pending: 0, pinnedChars: 0, model: 'embeddinggemma', modelInstalled: true })
+    expect(s.totalChars).toBeGreaterThan(100)
     expect(s.documents).toHaveLength(1)
     expect(s.connections).toEqual([])
     await k.remove(conv, doc.id)
@@ -337,17 +384,19 @@ describe('base di conoscenza: nella chat', () => {
     expect(system).toContain('# Base di conoscenza')
     expect(system).toContain('[relazione]\n')
     expect(system).toContain('Torino')
-    expect(system).not.toContain('Windows')
+    // i due documenti stanno nel quarto di memoria: vanno per intero (anche il manuale)
+    expect(system).toContain('riportati per intero (2 in tutto)')
+    expect(system).toContain('Windows')
     // un solo embedding (la domanda); i documenti erano già indicizzati
     expect(embedQueries(before)).toBe(1)
     const calls = (await listContextCalls(h.db, conv.id)).filter((c) => c.kind !== 'title')
     expect(calls[0].kind).toBe('chat')
-    expect(calls[0].parts.find((p) => p.key === 'knowledge')).toMatchObject({ label: 'knowledge', count: 1 })
+    expect(calls[0].parts.find((p) => p.key === 'knowledge')).toMatchObject({ label: 'knowledge', count: 2 })
     expect(calls[1].kind).toBe('embed-query')
     const answer = (await listMessages(h.db, conv.id)).at(-1)!
     expect(answer.role).toBe('assistant')
-    expect(answer.knowledgeRefs?.[0]).toMatchObject({ title: 'relazione', locator: null })
-    expect(answer.knowledgeRefs?.[0].excerpt).toContain('Torino')
+    expect(answer.knowledgeRefs?.map((r) => [r.title, r.whole])).toEqual([['manuale', true], ['relazione', true]])
+    expect(answer.knowledgeRefs?.[1].excerpt).toContain('Relazione annuale')
     expect(answer.memoryRefs).toBeNull()
   })
 
@@ -558,8 +607,8 @@ describe('base di conoscenza: sorgente collegata (cartella)', () => {
     ])
     expect(docs[1].ref).toMatchObject({ kind: 'remote', sourceId: 'folder' })
     expect(await k.hasReady(conv.id)).toBe(true)
-    const found = await k.recall(conv, fakeEmbedding('documento parla gatti'), 800, 4)
-    expect(found.refs[0]).toMatchObject({ title: 'uno' })
+    const found = await k.recall(conv, { vector: fakeEmbedding('documento parla gatti'), text: 'documento parla gatti' }, 64, 4)
+    expect(found.refs.map((r) => r.title).sort()).toEqual(['due', 'uno'])
 
     // nuovo file, file cambiato (contenuto diverso → versione diversa), file sparito
     const firstVersion = docs[1].version
@@ -595,5 +644,121 @@ describe('base di conoscenza: sorgente collegata (cartella)', () => {
     const conn = await k.connect(conv, 'folder', { path: join(dir, 'manca') })
     expect(conn.status).toBe('error')
     expect(conn.error).toMatch(/non è una cartella/)
+  })
+})
+
+describe('base di conoscenza: parole esatte, documenti interi e «fissa»', () => {
+  let fake: FakeOllama
+  let h: DbHandle
+  beforeAll(async () => {
+    fake = await startFakeOllama([
+      { name: 'chat', capabilities: ['completion'], contextLength: 8192, parameters: 'num_ctx 4096', chunks: [{ content: 'Ok.' }] },
+      { name: 'embeddinggemma:latest', capabilities: ['embedding'] }
+    ])
+  })
+  afterAll(() => fake.close())
+  beforeEach(async () => {
+    h = openDatabase(':memory:')
+    await runMigrations(h, resolve(__dirname, '../drizzle'))
+  })
+  afterEach(() => h.close())
+
+  async function withInvoices(n: number, numCtx = 4096) {
+    const dir = mkdtempSync(join(tmpdir(), 'fastchat-inv-'))
+    const paths: string[] = []
+    for (let i = 1; i <= n; i++) {
+      const p = join(dir, `fattura-${String(i).padStart(2, '0')}.txt`)
+      writeFileSync(p, `Fattura numero 2026/${String(i).padStart(3, '0')} emessa dal fornitore ${['Rossi', 'Bianchi', 'Verdi'][i % 3]} Srl per lavori edili.\n\nImporto totale ${i * 100} euro, scadenza il ${i} giugno.`)
+      paths.push(p)
+    }
+    const ollama = createOllamaClient(() => fake.url)
+    const embedder = createEmbedder({ db: h.db, ollama })
+    const k = createKnowledge({ db: h.db, embedder, registry: createRegistry(BUILTIN_SOURCES) })
+    const conv = await createConversation(h.db, { model: 'chat', numCtx })
+    await k.addFiles(conv, paths)
+    await k.wait(conv.id)
+    return { k, conv, dir }
+  }
+
+  it('la tabella FTS5 segue i pezzi: ricerca per numero di fattura e nome, con accenti ignorati; cancellando il documento sparisce', async () => {
+    const { k, conv, dir } = await withInvoices(5)
+    try {
+      const docs = await listDocuments(h.db, conv.id)
+      const ids = docs.map((d) => d.id)
+      const { searchKnowledgeChunks } = await import('../src/main/db/repo')
+      const hits = await searchKnowledgeChunks(h.db, ids, 'embeddinggemma', ftsQuery('fattura 2026/003'))
+      // tutte contengono «fattura»; quella con 003 ha il punteggio più alto
+      const best = [...hits.entries()].sort((a, b) => b[1] - a[1])[0]
+      const chunks = await listKnowledgeChunks(h.db, ids, 'embeddinggemma')
+      expect(chunks.find((c) => c.id === best[0])!.text).toContain('2026/003')
+      expect((await searchKnowledgeChunks(h.db, ids, 'embeddinggemma', '"edilì"')).size).toBe(5)
+      expect((await searchKnowledgeChunks(h.db, ids, 'embeddinggemma', '')).size).toBe(0)
+      await k.remove(conv, docs[0].id)
+      expect((await searchKnowledgeChunks(h.db, ids, 'embeddinggemma', '"fattura"')).size).toBe(4)
+      expect(h.raw.prepare("select count(*) n from knowledge_fts where knowledge_fts match 'fattura'").get()).toEqual({ n: 4 })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('con il budget stretto la ricerca ibrida trova la fattura per numero anche se la somiglianza semantica è bassa', async () => {
+    const { k, conv, dir } = await withInvoices(12)
+    try {
+      // la domanda condivide poche parole con le fatture (il coseno finto è basso), ma il numero è esatto
+      const q = 'Dimmi il totale della 2026/007'
+      const found = await k.recall(conv, { vector: fakeEmbedding(q), text: q }, 120, 4)
+      expect(found.refs.length).toBeGreaterThan(0)
+      expect(found.refs[0].excerpt).toContain('2026/007')
+      expect(found.refs.every((r) => !r.whole)).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('quaranta fatture che stanno nella memoria: tutte per intero, una fonte per documento; la chat le riceve tutte', async () => {
+    // memoria da 8k: il quarto riservato ai documenti (2k token) basta per 40 fatture brevi (~1.500 token)
+    const { k, conv, dir } = await withInvoices(40, 8192)
+    try {
+      const s = await k.status(conv)
+      expect(s.documents).toHaveLength(40)
+      expect(s.totalChars).toBeGreaterThan(40 * 100)
+      const budgetTokens = Math.ceil(s.totalChars / 4) + 10
+      const found = await k.recall(conv, { vector: fakeEmbedding('quante fatture'), text: 'quante fatture' }, budgetTokens, 4)
+      expect(found.refs).toHaveLength(40)
+      expect(found.refs.every((r) => r.whole)).toBe(true)
+      expect(found.section).toContain('(40 in tutto)')
+      expect((found.section.match(/\[fattura-\d\d\]/g) ?? []).length).toBe(40)
+      // nella chat: il quarto della memoria basta → il modello le legge tutte
+      const ollama = createOllamaClient(() => fake.url)
+      const chat = createChatService({ db: h.db, ollama, knowledge: k, embedder: k.embedder, emit: () => undefined })
+      const sent = await chat.send({}, conv.id, 'Quante fatture ci sono e qual è il totale?')
+      await chat.wait(sent.streamId)
+      const body = fake.requests.filter((q) => q.path === '/api/chat').map((q) => q.body as { messages: Array<{ role: string; content: string }> }).findLast((b) => b.messages.at(-1)?.content.startsWith('Quante fatture'))!
+      expect((body.messages[0].content.match(/\[fattura-\d\d\]/g) ?? []).length).toBe(40)
+      const answer = (await listMessages(h.db, conv.id)).at(-1)!
+      expect(answer.knowledgeRefs).toHaveLength(40)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('documento «intero» (fissato): va per intero prima degli estratti anche quando non ci sta tutto; lo stato ne riporta i caratteri', async () => {
+    const { k, conv, dir } = await withInvoices(12)
+    try {
+      const docs = await listDocuments(h.db, conv.id)
+      const pinned = await k.setPinned(conv, docs[11].id, true)
+      expect(pinned.pinned).toBe(true)
+      const s = await k.status(conv)
+      expect(s.pinnedChars).toBeGreaterThan(50)
+      expect(s.pinnedChars).toBeLessThan(s.totalChars)
+      const q = 'Dimmi il totale della 2026/007'
+      const found = await k.recall(conv, { vector: fakeEmbedding(q), text: q }, 120, 4)
+      expect(found.refs[0]).toMatchObject({ title: 'fattura-12', whole: true })
+      expect(found.refs.slice(1).some((r) => r.excerpt.includes('2026/007'))).toBe(true)
+      expect(found.section.indexOf('[fattura-12]')).toBeLessThan(found.section.indexOf('Seguono estratti'))
+      await expect(k.setPinned(conv, 'nope', true)).rejects.toThrow(/Documento non trovato/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

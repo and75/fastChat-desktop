@@ -86,8 +86,8 @@ Metà.
     const md = toMarkdown({
       ...data,
       documents: [
-        { id: 'd1', conversationId: 'c1', connectionId: null, source: 'text', title: 'Relazione', ref: { kind: 'file', path: '/doc/relazione.txt' }, version: null, hash: null, bytes: 10, chars: 10, status: 'ready', error: null, chunkCount: 1, createdAt: 0, indexedAt: 0 },
-        { id: 'd2', conversationId: 'c1', connectionId: null, source: 'text', title: 'Vuoto', ref: { kind: 'file', path: '/doc/vuoto.txt' }, version: null, hash: null, bytes: 0, chars: 0, status: 'error', error: 'x', chunkCount: 0, createdAt: 0, indexedAt: null }
+        { id: 'd1', conversationId: 'c1', connectionId: null, source: 'text', title: 'Relazione', ref: { kind: 'file', path: '/doc/relazione.txt' }, version: null, hash: null, bytes: 10, chars: 10, status: 'ready', error: null, chunkCount: 1, pinned: false, createdAt: 0, indexedAt: 0 },
+        { id: 'd2', conversationId: 'c1', connectionId: null, source: 'text', title: 'Vuoto', ref: { kind: 'file', path: '/doc/vuoto.txt' }, version: null, hash: null, bytes: 0, chars: 0, status: 'error', error: 'x', chunkCount: 0, pinned: false, createdAt: 0, indexedAt: null }
       ],
       messages: [
         { ...data.messages[0], knowledge: true },

@@ -394,6 +394,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     return knowledge.status(conv)
   })
   handle(IPC.knowledgeReindex, async (_e, id: string, documentId: string) => knowledge.reindex(await convOrThrow(id), requireId(documentId)))
+  handle(IPC.knowledgePin, async (_e, id: string, documentId: string, pinned: unknown) => knowledge.setPinned(await convOrThrow(id), requireId(documentId), pinned === true))
   /** Sorgenti collegate: collega (con la configurazione dei campi del plugin), aggiorna, scollega. */
   handle(IPC.knowledgeConnect, async (_e, id: string, sourceId: string, config: unknown) => {
     const conv = await convOrThrow(id)
