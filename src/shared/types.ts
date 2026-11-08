@@ -469,6 +469,10 @@ export const IPC = {
   knowledgePickFiles: 'knowledge:pick-files',
   knowledgeRemove: 'knowledge:remove',
   knowledgeReindex: 'knowledge:reindex',
+  knowledgeConnect: 'knowledge:connect',
+  knowledgeRefresh: 'knowledge:refresh',
+  knowledgeDisconnect: 'knowledge:disconnect',
+  knowledgePickFolder: 'knowledge:pick-folder',
   /** Evento main → renderer: avanzamento dell'indicizzazione di un documento. */
   knowledgeProgress: 'knowledge:progress',
   contextCalls: 'context:calls',

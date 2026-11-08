@@ -6,6 +6,7 @@ import { useConversations } from '../store/useConversations'
 import { useKnowledge } from '../store/useKnowledge'
 import { useModels } from '../store/useModels'
 import { BookOpenIcon, FileTextIcon, PlusIcon, RegenerateIcon, TrashIcon } from './icons'
+import { ConnectForm, ConnectionRow } from './KnowledgeConnections'
 
 /** Pill «Usa la base di conoscenza»: impostazione della conversazione, valida per ogni domanda salvo il bottone libro. */
 export function KnowledgePill({ conversation }: { conversation: Conversation }): React.JSX.Element {
@@ -41,7 +42,11 @@ function DocumentRow({ conversation, doc }: { conversation: Conversation; doc: K
   const reindex = useKnowledge((s) => s.reindex)
   const sources = useKnowledge((s) => s.sources)
   const busy = useChat((s) => !!s.streams[conversation.id])
-  const sourceLabel = sources.find((s) => s.id === doc.source)?.label ?? doc.source
+  // Per i documenti di una sorgente collegata conta il tipo di file (PDF, Word…), non la connessione.
+  const path = doc.ref.kind === 'file' ? doc.ref.path : doc.ref.uri
+  const ext = path.split(/[\\/]/).pop()?.split('.').pop()?.toLowerCase() ?? ''
+  const reader = sources.find((s) => s.kind === 'file' && s.extensions.includes(ext)) ?? sources.find((s) => s.id === doc.source)
+  const sourceLabel = reader?.label ?? doc.source
   const detail =
     doc.status === 'ready'
       ? [sourceLabel, fmtBytes(doc.bytes), tn('knowledge.doc.chunks', doc.chunkCount)].filter(Boolean).join(' · ')
@@ -108,12 +113,17 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
   const pulling = useModels((s) => (settings ? s.pulls[settings.embeddingModel] : undefined))
   const [over, setOver] = useState(false)
   const [pullError, setPullError] = useState<string | null>(null)
+  /** Sorgente collegata in configurazione (form aperto). */
+  const [connecting, setConnecting] = useState<string | null>(null)
+  const connected = sources.filter((s) => s.kind === 'connected')
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => void load(conversation.id), [conversation.id, settings?.embeddingModel, pulling])
 
   const model = status?.model ?? settings?.embeddingModel ?? 'embeddinggemma'
   const docs = status?.documents ?? []
+  const connections = status?.connections ?? []
+  const loose = docs.filter((d) => !d.connectionId)
   const extensions = [...new Set(sources.flatMap((s) => s.extensions))]
 
   const onDrop = (e: React.DragEvent): void => {
@@ -163,7 +173,27 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
         </button>
         <span className="text-xs text-zinc-500">{t('knowledge.drop')}</span>
         {extensions.length > 0 && <span className="text-[11px] text-zinc-400">{extensions.map((e) => `.${e}`).join(' ')}</span>}
+        {connected.length > 0 && (
+          <div className="mt-1 flex flex-wrap justify-center gap-1.5">
+            {connected.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                disabled={busy}
+                onClick={() => setConnecting(s.id)}
+                className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                data-testid={`knowledge-connect-${s.id}`}
+              >
+                {t('knowledge.connect.button', { source: s.label })}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      {connecting && sources.find((s) => s.id === connecting) && (
+        <ConnectForm conversation={conversation} source={sources.find((s) => s.id === connecting)!} onDone={() => setConnecting(null)} />
+      )}
 
       {error && (
         <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
@@ -174,11 +204,28 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
         </div>
       )}
 
-      {docs.length > 0 && (
+      {docs.length + connections.length > 0 && (
         <ul className="flex flex-col gap-1.5" aria-label={t('knowledge.documents')} data-testid="knowledge-docs">
-          {docs.map((d) => (
+          {loose.map((d) => (
             <DocumentRow key={d.id} conversation={conversation} doc={d} />
           ))}
+          {connections.map((c) => {
+            const own = docs.filter((d) => d.connectionId === c.id)
+            return (
+              <li key={c.id} className="flex flex-col gap-1.5">
+                <ul className="contents">
+                  <ConnectionRow conversation={conversation} connection={c} documents={own.length} />
+                </ul>
+                {own.length > 0 && (
+                  <ul className="ml-3 flex flex-col gap-1.5 border-l-2 border-brand-100 pl-2 dark:border-brand-900">
+                    {own.map((d) => (
+                      <DocumentRow key={d.id} conversation={conversation} doc={d} />
+                    ))}
+                  </ul>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
 

@@ -428,3 +428,172 @@ describe('base di conoscenza: nella chat', () => {
     expect(call.parts.map((p) => p.key)).toEqual(['summary', 'memory', 'knowledge', 'question'])
   })
 })
+
+describe('base di conoscenza: plugin PDF, Word, cartella e segreti', () => {
+  const signal = new AbortController().signal
+
+  it('PDF: una sezione per pagina con «p. N», titolo dal nome del file; scansione senza testo → nessuna sezione', async () => {
+    const { pdfSource, pageText } = await import('../src/main/knowledge/sources/pdf')
+    expect(pageText([{ str: 'Ciao', hasEOL: false }, { str: 'mondo', hasEOL: true }, { str: 'fine' }])).toBe('Ciao mondo\nfine')
+    const doc = await pdfSource.extract({ kind: 'file', path: join(fixtures, 'bilancio.pdf') }, {}, signal)
+    expect(doc.title).toBe('bilancio')
+    expect(doc.sections.map((s) => s.locator)).toEqual(['p. 1', 'p. 2'])
+    expect(doc.sections[0].text).toContain('Genova')
+    expect(doc.sections[1].text).toMatch(/^Nota integrativa\n/)
+    expect(doc.meta).toEqual({ pages: '2' })
+    const scan = await pdfSource.extract({ kind: 'file', path: join(fixtures, 'scansione.pdf') }, {}, signal)
+    expect(scan.sections).toEqual([])
+    await expect(pdfSource.extract({ kind: 'file', path: join(fixtures, 'relazione.txt') }, {}, signal)).rejects.toBeInstanceOf(SourceError)
+  })
+
+  it('Word: diviso ai titoli con la catena come locatore, entità decodificate', async () => {
+    const { docxSource, htmlToMarkdown } = await import('../src/main/knowledge/sources/docx')
+    expect(htmlToMarkdown('<h1>A &amp; B</h1><p>x</p><ul><li>uno</li><li>due</li></ul><table><tr><td>a</td><td>b</td></tr></table>')).toBe('# A & B\n\nx\n\n- uno\n- due\n\na\tb')
+    const doc = await docxSource.extract({ kind: 'file', path: join(fixtures, 'contratto.docx') }, {}, signal)
+    expect(doc.title).toBe('contratto')
+    expect(doc.sections.map((s) => s.locator)).toEqual(['Contratto di fornitura', 'Contratto di fornitura › Durata', 'Contratto di fornitura › Penali'])
+    expect(doc.sections[1].text).toBe('Il contratto dura ventiquattro mesi dalla firma & si rinnova tacitamente.')
+    expect(doc.sections[2].text).toContain('Primo punto')
+  })
+
+  it('registro integrato: pdf, docx e cartella; la cartella elenca solo i file leggibili, salta nascosti e node_modules', async () => {
+    const { createBuiltinRegistry } = await import('../src/main/knowledge/sources')
+    const { listFolder } = await import('../src/main/knowledge/sources/folder')
+    const reg = createBuiltinRegistry()
+    expect(reg.all().map((s) => s.id)).toEqual(['text', 'pdf', 'docx', 'folder'])
+    expect(reg.sourceFor({ kind: 'file', path: '/x/a.PDF' }).id).toBe('pdf')
+    expect(reg.sourceFor({ kind: 'file', path: '/x/a.docx' }).id).toBe('docx')
+    expect(reg.sourceFor({ kind: 'remote', sourceId: 'folder', uri: '/x/a.txt' }).id).toBe('folder')
+    const folderInfo = reg.describe().find((s) => s.id === 'folder')!
+    expect(folderInfo).toMatchObject({ kind: 'connected', label: 'Cartella del computer', configFields: [{ key: 'path', type: 'folder', required: true, label: 'Cartella' }] })
+    const dir = mkdtempSync(join(tmpdir(), 'fastchat-folder-'))
+    try {
+      writeFileSync(join(dir, 'b.txt'), 'testo b')
+      writeFileSync(join(dir, 'a.md'), '# a\n\ntesto a')
+      writeFileSync(join(dir, 'foto.png'), 'x')
+      writeFileSync(join(dir, '.nascosto.txt'), 'x')
+      const { mkdirSync } = await import('node:fs')
+      mkdirSync(join(dir, 'node_modules'))
+      writeFileSync(join(dir, 'node_modules', 'c.txt'), 'x')
+      mkdirSync(join(dir, 'sub'))
+      writeFileSync(join(dir, 'sub', 'd.txt'), 'testo d')
+      const listed = await listFolder(dir, reg.extensions())
+      expect(listed.map((l) => l.title)).toEqual(['a', 'b', 'd'])
+      expect(listed[0].ref).toMatchObject({ kind: 'remote', sourceId: 'folder', uri: join(dir, 'a.md') })
+      expect(listed[0].version).toMatch(/^\d+(\.\d+)?:\d+$/)
+      await expect(listFolder(join(dir, 'manca'), reg.extensions())).rejects.toThrow(/non è una cartella/)
+      // extract delega al plugin del file e riporta la versione
+      const folder = reg.get('folder')!
+      const doc = await folder.extract({ kind: 'remote', sourceId: 'folder', uri: join(dir, 'a.md') }, { path: dir }, signal)
+      expect(doc.sections[0].locator).toBe('a')
+      expect(doc.version).toBe(listed[0].version)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('segreti: i campi secret si cifrano al salvataggio, si aprono per il plugin, si mascherano per il renderer; i campi obbligatori si controllano', async () => {
+    const { sealConfig, openConfig, maskConfig } = await import('../src/main/knowledge/secrets')
+    const source: KnowledgeSource = {
+      id: 'site',
+      labelKey: 'knowledge.source.text',
+      kind: 'connected',
+      configFields: [
+        { key: 'url', labelKey: 'common.save', type: 'text', required: true },
+        { key: 'token', labelKey: 'common.save', type: 'secret', required: false }
+      ],
+      canHandle: () => false,
+      extract: async () => ({ title: '', sections: [] })
+    }
+    const cipher = { encrypt: (s: string) => `E(${s})`, decrypt: (s: string) => s.slice(2, -1) }
+    const sealed = sealConfig(source, { url: ' https://x ', token: 'abc', extra: 'no' }, cipher)
+    expect(sealed).toEqual({ url: 'https://x', token: 'E(abc)' })
+    expect(openConfig(source, sealed, cipher)).toEqual({ url: 'https://x', token: 'abc' })
+    expect(maskConfig(source, sealed)).toEqual({ url: 'https://x', token: '••••••' })
+    expect(() => sealConfig(source, { token: 'abc' }, cipher)).toThrow(/obbligatorio/)
+  })
+})
+
+describe('base di conoscenza: sorgente collegata (cartella)', () => {
+  let fake: FakeOllama
+  let h: DbHandle
+  let dir: string
+  beforeAll(async () => {
+    fake = await startFakeOllama([
+      { name: 'chat', capabilities: ['completion'], contextLength: 8192 },
+      { name: 'embeddinggemma:latest', capabilities: ['embedding'] }
+    ])
+  })
+  afterAll(() => fake.close())
+  beforeEach(async () => {
+    h = openDatabase(':memory:')
+    await runMigrations(h, resolve(__dirname, '../drizzle'))
+    dir = mkdtempSync(join(tmpdir(), 'fastchat-conn-'))
+    writeFileSync(join(dir, 'uno.txt'), 'Il primo documento parla di gatti.')
+    writeFileSync(join(dir, 'due.md'), '# Due\n\nIl secondo documento parla di cani.')
+  })
+  afterEach(() => {
+    h.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  async function service() {
+    const { createBuiltinRegistry } = await import('../src/main/knowledge/sources')
+    const ollama = createOllamaClient(() => fake.url)
+    const embedder = createEmbedder({ db: h.db, ollama })
+    return createKnowledge({ db: h.db, embedder, registry: createBuiltinRegistry() })
+  }
+
+  it('collega una cartella: i file vengono indicizzati; «Aggiorna» prende i nuovi, rifà i cambiati, toglie gli spariti; scollega rimuove tutto', async () => {
+    const k = await service()
+    const conv = await createConversation(h.db, { model: 'chat' })
+    const conn = await k.connect(conv, 'folder', { path: dir })
+    expect(conn).toMatchObject({ source: 'folder', status: 'ready', config: { path: dir } })
+    expect(conn.lastSyncAt).not.toBeNull()
+    await k.wait(conv.id)
+    let docs = await listDocuments(h.db, conv.id)
+    expect(docs.map((d) => [d.title, d.status, d.connectionId === conn.id])).toEqual([
+      ['due', 'ready', true],
+      ['uno', 'ready', true]
+    ])
+    expect(docs[1].ref).toMatchObject({ kind: 'remote', sourceId: 'folder' })
+    expect(await k.hasReady(conv.id)).toBe(true)
+    const found = await k.recall(conv, fakeEmbedding('documento parla gatti'), 800, 4)
+    expect(found.refs[0]).toMatchObject({ title: 'uno' })
+
+    // nuovo file, file cambiato (contenuto diverso → versione diversa), file sparito
+    const firstVersion = docs[1].version
+    await new Promise((r) => setTimeout(r, 20))
+    writeFileSync(join(dir, 'uno.txt'), 'Il primo documento ora parla di conigli, ed è più lungo.')
+    writeFileSync(join(dir, 'tre.txt'), 'Il terzo documento parla di pesci.')
+    rmSync(join(dir, 'due.md'))
+    const again = await k.refresh(conv, conn.id)
+    expect(again.status).toBe('ready')
+    await k.wait(conv.id)
+    docs = await listDocuments(h.db, conv.id)
+    expect(docs.map((d) => [d.title, d.status])).toEqual([
+      ['uno', 'ready'],
+      ['tre', 'ready']
+    ])
+    expect(docs[0].version).not.toBe(firstVersion)
+    const chunks = await listKnowledgeChunks(h.db, [docs[0].id], 'embeddinggemma')
+    expect(chunks[0].text).toContain('conigli')
+
+    const s = await k.status(conv)
+    expect(s.connections).toHaveLength(1)
+    await k.disconnect(conv, conn.id)
+    expect(await listDocuments(h.db, conv.id)).toEqual([])
+    expect((await k.status(conv)).connections).toEqual([])
+    await expect(k.refresh(conv, conn.id)).rejects.toThrow(/Connessione non trovata/)
+  })
+
+  it('cartella inesistente o campo mancante: la connessione finisce in errore o non si crea', async () => {
+    const k = await service()
+    const conv = await createConversation(h.db, { model: 'chat' })
+    await expect(k.connect(conv, 'folder', {})).rejects.toThrow(/obbligatorio/)
+    await expect(k.connect(conv, 'nope', { path: dir })).rejects.toThrow(/Sorgente non disponibile/)
+    const conn = await k.connect(conv, 'folder', { path: join(dir, 'manca') })
+    expect(conn.status).toBe('error')
+    expect(conn.error).toMatch(/non è una cartella/)
+  })
+})

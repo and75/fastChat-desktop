@@ -17,6 +17,10 @@ interface KnowledgeState {
   addFiles(conversationId: string, paths: string[]): Promise<void>
   remove(conversationId: string, documentId: string): Promise<void>
   reindex(conversationId: string, documentId: string): Promise<void>
+  /** Sorgenti collegate: collega con la configurazione, aggiorna, scollega. Restituiscono false se fallisce. */
+  connect(conversationId: string, sourceId: string, config: Record<string, string>): Promise<boolean>
+  refresh(conversationId: string, connectionId: string): Promise<void>
+  disconnect(conversationId: string, connectionId: string): Promise<void>
   handleProgress(p: KnowledgeProgress): void
   clearError(): void
 }
@@ -70,6 +74,31 @@ export const useKnowledge = create<KnowledgeState>((set, get) => {
       const res = await window.api.knowledge.reindex(conversationId, documentId)
       if (!res.ok) return set({ error: res.error })
       await get().load(conversationId)
+    },
+
+    async connect(conversationId, sourceId, config) {
+      set({ busy: true, error: null })
+      const res = await window.api.knowledge.connect(conversationId, sourceId, config)
+      set({ busy: false })
+      if (!res.ok) {
+        set({ error: res.error })
+        return false
+      }
+      await get().load(conversationId)
+      return true
+    },
+
+    async refresh(conversationId, connectionId) {
+      set({ error: null })
+      const res = await window.api.knowledge.refresh(conversationId, connectionId)
+      if (!res.ok) set({ error: res.error })
+      await get().load(conversationId)
+    },
+
+    async disconnect(conversationId, connectionId) {
+      const res = await window.api.knowledge.disconnect(conversationId, connectionId)
+      if (!res.ok) return set({ error: res.error })
+      apply(conversationId, res.data)
     },
 
     handleProgress(p) {

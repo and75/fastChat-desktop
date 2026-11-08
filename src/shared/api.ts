@@ -3,6 +3,7 @@ import type {
   BenchmarkProgress,
   MemoryStatus,
   ContextCall,
+  KnowledgeConnection,
   KnowledgeDocument,
   KnowledgeProgress,
   KnowledgeSourceInfo,
@@ -70,6 +71,13 @@ export interface Api {
     remove(conversationId: string, documentId: string): Promise<Result<KnowledgeStatus>>
     /** Rifà l'indice di un documento (dopo un errore o un cambio di modello). */
     reindex(conversationId: string, documentId: string): Promise<Result<KnowledgeDocument>>
+    /** Collega una sorgente (plugin `connected`) con la sua configurazione e la sincronizza. */
+    connect(conversationId: string, sourceId: string, config: Record<string, string>): Promise<Result<KnowledgeConnection>>
+    /** Richiede alla sorgente l'elenco aggiornato: nuovi, cambiati e spariti. */
+    refresh(conversationId: string, connectionId: string): Promise<Result<KnowledgeConnection>>
+    disconnect(conversationId: string, connectionId: string): Promise<Result<KnowledgeStatus>>
+    /** Dialog di scelta di una cartella; null se annullato. */
+    pickFolder(): Promise<Result<string | null>>
     /** Avanzamento dell'indicizzazione dei documenti. */
     onProgress(cb: (p: KnowledgeProgress) => void): () => void
     /** Percorso di un file trascinato nella finestra ('' se non è un file su disco). */

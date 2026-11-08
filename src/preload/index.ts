@@ -39,6 +39,10 @@ const api: Api = {
     pickFiles: (id) => invoke(IPC.knowledgePickFiles, id),
     remove: (id, documentId) => invoke(IPC.knowledgeRemove, id, documentId),
     reindex: (id, documentId) => invoke(IPC.knowledgeReindex, id, documentId),
+    connect: (id, sourceId, config) => invoke(IPC.knowledgeConnect, id, sourceId, config),
+    refresh: (id, connectionId) => invoke(IPC.knowledgeRefresh, id, connectionId),
+    disconnect: (id, connectionId) => invoke(IPC.knowledgeDisconnect, id, connectionId),
+    pickFolder: () => invoke(IPC.knowledgePickFolder),
     onProgress: (cb) => subscribe<KnowledgeProgress>(IPC.knowledgeProgress, cb),
     pathForFile: (file) => {
       try {

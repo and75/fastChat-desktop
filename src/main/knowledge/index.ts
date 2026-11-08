@@ -6,30 +6,37 @@ import { createReadStream } from 'node:fs'
 import { t } from '@shared/i18n'
 import { buildDocumentChunks, buildKnowledgeSection, KNOWLEDGE, pickDocumentChunks, toKnowledgeRefs } from '@shared/knowledge'
 import { fromBuffer, toBuffer } from '@shared/memory'
-import type { Conversation, DocumentRef, KnowledgeDocument, KnowledgeProgress, KnowledgeRef, KnowledgeStatus } from '@shared/types'
+import type { Conversation, DocumentRef, KnowledgeConnection, KnowledgeDocument, KnowledgeProgress, KnowledgeRef, KnowledgeStatus } from '@shared/types'
 import type { Db } from '../db/client'
 import {
+  addConnection,
   addDocument,
   addKnowledgeChunks,
   countKnowledgeChunks,
   findDocumentByHash,
+  getConnection,
   getDocument,
   listConnections,
   listDocuments,
   listKnowledgeChunks,
+  removeConnection,
   removeDocument,
   removeKnowledgeChunks,
+  updateConnection,
   updateDocument
 } from '../db/repo'
 import type { Embedder } from '../embedder'
 import { OllamaError } from '../ollama'
 import type { SourceRegistry } from './registry'
+import { maskConfig, openConfig, plainCipher, sealConfig, type Cipher } from './secrets'
 import { SourceError } from './source'
 
 export interface KnowledgeDeps {
   db: Db
   embedder: Embedder
   registry: SourceRegistry
+  /** Cifrario per i campi segreti delle connessioni (safeStorage in produzione). */
+  cipher?: Cipher
   /** Avanzamento dell'indicizzazione, per l'interfaccia. */
   onProgress?(p: KnowledgeProgress): void
 }
@@ -51,7 +58,7 @@ export function hashFile(path: string): Promise<string> {
   })
 }
 
-export function createKnowledge({ db, embedder, registry, onProgress }: KnowledgeDeps) {
+export function createKnowledge({ db, embedder, registry, cipher = plainCipher, onProgress }: KnowledgeDeps) {
   /** Indicizzazioni in corso, per documento. */
   const indexing = new Map<string, Promise<void>>()
   /** Coda per conversazione: un documento alla volta, così Ollama non riceve richieste in parallelo. */
@@ -71,7 +78,8 @@ export function createKnowledge({ db, embedder, registry, onProgress }: Knowledg
     progress(current)
     try {
       const source = registry.get(current.source) ?? registry.sourceFor(current.ref)
-      const config = current.connectionId ? ((await listConnections(db, current.conversationId)).find((c) => c.id === current.connectionId)?.config ?? {}) : {}
+      const connection = current.connectionId ? await getConnection(db, current.connectionId) : null
+      const config = connection ? openConfig(source, connection.config, cipher) : {}
       const extracted = await source.extract(current.ref, config, signal)
       const chars = extracted.sections.reduce((n, s) => n + s.text.length, 0)
       if (chars > KNOWLEDGE.maxChars) throw new SourceError('tooLong', t('err.knowledge.tooLong', { name: current.title, max: Math.round(KNOWLEDGE.maxChars / 1000) }))
@@ -209,6 +217,70 @@ export function createKnowledge({ db, embedder, registry, onProgress }: Knowledg
     return { section: buildKnowledgeSection(picked), refs: toKnowledgeRefs(picked) }
   }
 
+  // ---- sorgenti collegate
+
+  const sourceOf = (connection: KnowledgeConnection) => {
+    const source = registry.get(connection.source)
+    if (!source || source.kind !== 'connected' || !source.list) throw new Error(t('err.knowledge.sourceMissing', { id: connection.source }))
+    return source
+  }
+
+  /** La connessione come la vede il renderer: segreti mascherati. */
+  const masked = (c: KnowledgeConnection): KnowledgeConnection => {
+    const source = registry.get(c.source)
+    return source ? { ...c, config: maskConfig(source, c.config) } : c
+  }
+
+  /** Collega una sorgente alla conversazione e la sincronizza subito. */
+  async function connect(conv: Conversation, sourceId: string, config: Record<string, unknown>): Promise<KnowledgeConnection> {
+    const source = registry.get(sourceId)
+    if (!source || source.kind !== 'connected') throw new Error(t('err.knowledge.sourceMissing', { id: sourceId }))
+    const sealed = sealConfig(source, config, cipher)
+    const connection = await addConnection(db, { conversationId: conv.id, source: sourceId, config: sealed })
+    return masked(await refresh(conv, connection.id))
+  }
+
+  /**
+   * «Aggiorna»: chiede alla sorgente l'elenco dei documenti e lo confronta con quelli salvati: nuovi indicizzati,
+   * cambiati (versione diversa) reindicizzati, spariti rimossi. Nessuna sincronizzazione automatica: la lancia l'utente.
+   */
+  async function refresh(conv: Conversation, connectionId: string): Promise<KnowledgeConnection> {
+    const connection = await getConnection(db, connectionId)
+    if (!connection || connection.conversationId !== conv.id) throw new Error(t('err.knowledge.connectionNotFound'))
+    const source = sourceOf(connection)
+    await updateConnection(db, connectionId, { status: 'syncing', error: null })
+    try {
+      const listed = await source.list!(openConfig(source, connection.config, cipher), new AbortController().signal)
+      const existing = (await listDocuments(db, conv.id)).filter((d) => d.connectionId === connectionId)
+      const byUri = new Map(existing.map((d) => [d.ref.kind === 'remote' ? d.ref.uri : '', d]))
+      const seen = new Set<string>()
+      for (const item of listed) {
+        if (item.ref.kind !== 'remote') continue
+        seen.add(item.ref.uri)
+        const current = byUri.get(item.ref.uri)
+        if (!current) {
+          const doc = await addDocument(db, { conversationId: conv.id, connectionId, source: source.id, title: item.title, ref: item.ref, version: item.version ?? null, bytes: item.bytes ?? null })
+          void enqueue(doc, conv)
+        } else if ((item.version ?? null) !== current.version || current.status === 'error') {
+          const doc = (await updateDocument(db, current.id, { version: item.version ?? null })) ?? current
+          void enqueue(doc, conv)
+        }
+      }
+      for (const d of existing) if (d.ref.kind === 'remote' && !seen.has(d.ref.uri)) await removeDocument(db, d.id)
+      return (await updateConnection(db, connectionId, { status: 'ready', error: null, lastSyncAt: Date.now() }))!
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return (await updateConnection(db, connectionId, { status: 'error', error: message.slice(0, 500) }))!
+    }
+  }
+
+  /** Scollega la sorgente: i suoi documenti e pezzi spariscono con lei. */
+  async function disconnect(conv: Conversation, connectionId: string): Promise<void> {
+    const connection = await getConnection(db, connectionId)
+    if (!connection || connection.conversationId !== conv.id) throw new Error(t('err.knowledge.connectionNotFound'))
+    await removeConnection(db, connectionId)
+  }
+
   async function status(conv: Conversation): Promise<KnowledgeStatus> {
     const model = await embedder.model()
     const documents = await listDocuments(db, conv.id)
@@ -220,7 +292,7 @@ export function createKnowledge({ db, embedder, registry, onProgress }: Knowledg
       chunks += n
       if (d.status === 'pending' || d.status === 'indexing' || (d.status === 'ready' && n === 0)) pending++
     }
-    return { documents, connections: await listConnections(db, conv.id), chunks, pending, model, modelInstalled: await embedder.installed(model) }
+    return { documents, connections: (await listConnections(db, conv.id)).map(masked), chunks, pending, model, modelInstalled: await embedder.installed(model) }
   }
 
   /** Per i test: attende la fine delle indicizzazioni in corso della conversazione. */
@@ -232,7 +304,7 @@ export function createKnowledge({ db, embedder, registry, onProgress }: Knowledg
     }
   }
 
-  return { embedder, addFiles, reindex, remove, ensureModel, hasReady, recall, status, wait, isMissingModel: (err: unknown) => err instanceof OllamaError && err.code === 'model' }
+  return { embedder, addFiles, reindex, remove, connect, refresh, disconnect, ensureModel, hasReady, recall, status, wait, isMissingModel: (err: unknown) => err instanceof OllamaError && err.code === 'model' }
 }
 
 export type Knowledge = ReturnType<typeof createKnowledge>

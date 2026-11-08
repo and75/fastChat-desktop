@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import {
   IPC,
   KV_CACHE_TYPES,
@@ -49,8 +49,8 @@ import { createOllamaClient, OllamaError, type OllamaClient } from './ollama'
 import { createMemory } from './memory'
 import { createEmbedder } from './embedder'
 import { createKnowledge } from './knowledge'
-import { createRegistry } from './knowledge/registry'
-import { BUILTIN_SOURCES } from './knowledge/sources'
+import { createBuiltinRegistry } from './knowledge/sources'
+import { electronCipher } from './knowledge/secrets'
 import { createContextLog } from './contextLog'
 import { createSummarizer } from './summary'
 import { isLocalOllama, systemInfo } from './system'
@@ -115,11 +115,12 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   const summarizer = createSummarizer({ db, ollama, contextLog })
   const embedder = createEmbedder({ db, ollama, contextLog })
   const memory = createMemory({ db, ollama, contextLog, embedder })
-  const registry = createRegistry(BUILTIN_SOURCES)
+  const registry = createBuiltinRegistry()
   const knowledge = createKnowledge({
     db,
     embedder,
     registry,
+    cipher: electronCipher(safeStorage),
     onProgress: (p) => {
       for (const w of BrowserWindow.getAllWindows()) if (!w.webContents.isDestroyed()) w.webContents.send(IPC.knowledgeProgress, p)
     }
@@ -393,6 +394,27 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     return knowledge.status(conv)
   })
   handle(IPC.knowledgeReindex, async (_e, id: string, documentId: string) => knowledge.reindex(await convOrThrow(id), requireId(documentId)))
+  /** Sorgenti collegate: collega (con la configurazione dei campi del plugin), aggiorna, scollega. */
+  handle(IPC.knowledgeConnect, async (_e, id: string, sourceId: string, config: unknown) => {
+    const conv = await convOrThrow(id)
+    const clean = config && typeof config === 'object' ? (config as Record<string, unknown>) : {}
+    return knowledge.connect(conv, requireId(sourceId), clean)
+  })
+  handle(IPC.knowledgeRefresh, async (_e, id: string, connectionId: string) => knowledge.refresh(await convOrThrow(id), requireId(connectionId)))
+  handle(IPC.knowledgeDisconnect, async (_e, id: string, connectionId: string) => {
+    const conv = await convOrThrow(id)
+    await knowledge.disconnect(conv, requireId(connectionId))
+    return knowledge.status(conv)
+  })
+  /** Dialog di scelta di una cartella (campo `folder` di una sorgente collegata). Null se annullato. */
+  handle(IPC.knowledgePickFolder, async (e) => {
+    const forced = process.env.FASTCHAT_KNOWLEDGE_FOLDER
+    if (forced) return forced
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const options: Electron.OpenDialogOptions = { title: t('knowledge.pickFolderTitle'), properties: ['openDirectory'] }
+    const { canceled, filePaths } = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+    return canceled || !filePaths[0] ? null : filePaths[0]
+  })
 
   /** Riporta temperatura, top_p e num_ctx ai valori suggeriti per il modello e la macchina. */
   handle(IPC.conversationsCalibrate, async (_e, id: string) => {
