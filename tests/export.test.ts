@@ -82,6 +82,23 @@ Metà.
 `)
   })
 
+  it('Markdown: documenti della base di conoscenza, scelta sulla domanda e fonti della risposta', () => {
+    const md = toMarkdown({
+      ...data,
+      documents: [
+        { id: 'd1', conversationId: 'c1', connectionId: null, source: 'text', title: 'Relazione', ref: { kind: 'file', path: '/doc/relazione.txt' }, version: null, hash: null, bytes: 10, chars: 10, status: 'ready', error: null, chunkCount: 1, createdAt: 0, indexedAt: 0 },
+        { id: 'd2', conversationId: 'c1', connectionId: null, source: 'text', title: 'Vuoto', ref: { kind: 'file', path: '/doc/vuoto.txt' }, version: null, hash: null, bytes: 0, chars: 0, status: 'error', error: 'x', chunkCount: 0, createdAt: 0, indexedAt: null }
+      ],
+      messages: [
+        { ...data.messages[0], knowledge: true },
+        { ...data.messages[1], knowledgeRefs: [{ documentId: 'd1', title: 'Relazione', locator: 'p. 2', score: 0.8, excerpt: '…' }] }
+      ]
+    })
+    expect(md).toContain('## Base di conoscenza\n\n- Relazione (/doc/relazione.txt)\n- Vuoto (/doc/vuoto.txt) — error\n')
+    expect(md).toContain('### Utente · 2026-01-01T10:00:00.000Z · Base di conoscenza: sì')
+    expect(md).toContain('Metà.\n\nFonti:\n- Relazione, p. 2\n')
+  })
+
   it('JSON: dati completi e reimportabili', () => {
     const parsed = JSON.parse(toJson(data))
     expect(parsed).toMatchObject({ format: 'fastchat-conversation', version: 1, conversation: { id: 'c1' } })

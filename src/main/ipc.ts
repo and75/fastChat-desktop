@@ -31,6 +31,7 @@ import {
   getSettings,
   listConversations,
   listContextCalls,
+  listDocuments,
   listModelSettings,
   removeModelSetting,
   saveModelSetting,
@@ -409,7 +410,8 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     const data = {
       conversation,
       messages: await listMessages(db, conversation.id),
-      plans: await listPlans(db, conversation.id)
+      plans: await listPlans(db, conversation.id),
+      documents: await listDocuments(db, conversation.id)
     }
     const options = {
       title: t('export.dialogTitle'),

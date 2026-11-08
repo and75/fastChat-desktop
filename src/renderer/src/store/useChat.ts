@@ -13,6 +13,8 @@ export interface LiveStream {
   summarizing: boolean
   /** Si cercano estratti pertinenti nei messaggi riassunti, prima della risposta. */
   remembering: boolean
+  /** Si cercano estratti pertinenti nei documenti della base di conoscenza, prima della risposta. */
+  searching: boolean
 }
 
 interface ChatState {
@@ -25,6 +27,12 @@ interface ChatState {
   /** Tipo dello stream fallito: decide cosa fa "Riprova". */
   errorKind: StreamKind | null
   loading: boolean
+  /**
+   * Bottone libro: scelta per la prossima domanda, se diversa dall'impostazione della conversazione
+   * (null = come la conversazione). Si azzera dopo l'invio.
+   */
+  knowledgeNext: boolean | null
+  setKnowledgeNext(value: boolean | null): void
 
   load(id: string | null): Promise<void>
   replaceConversation(conv: Conversation): void
@@ -49,7 +57,7 @@ const replacePlan = (plans: Plan[], plan: Plan): Plan[] => plans.map((p) => (p.i
 export const useChat = create<ChatState>((set, get) => {
   /** Registra un nuovo stream e applica gli eventi eventualmente già arrivati. */
   const startStream = (conversationId: string, streamId: string, kind: StreamKind): void => {
-    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '', startedAt: Date.now(), summarizing: false, remembering: false } } }))
+    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '', startedAt: Date.now(), summarizing: false, remembering: false, searching: false } } }))
     const early = pending.get(streamId) ?? []
     pending.delete(streamId)
     early.forEach((e) => get().handleStream(e))
@@ -92,10 +100,12 @@ export const useChat = create<ChatState>((set, get) => {
     error: null,
     errorKind: null,
     loading: false,
+    knowledgeNext: null,
+    setKnowledgeNext: (value) => set({ knowledgeNext: value }),
 
     async load(id) {
-      if (!id) return set({ conversation: null, messages: [], plans: [], error: null, errorKind: null })
-      set({ loading: true, error: null, errorKind: null })
+      if (!id) return set({ conversation: null, messages: [], plans: [], error: null, errorKind: null, knowledgeNext: null })
+      set({ loading: true, error: null, errorKind: null, knowledgeNext: null })
       const res = await window.api.conversations.get(id)
       if (res.ok) {
         set({ conversation: res.data.conversation, messages: res.data.messages, plans: res.data.plans, loading: false })
@@ -110,9 +120,14 @@ export const useChat = create<ChatState>((set, get) => {
 
     async send(text) {
       if (!text.trim()) return false
-      return get().conversation?.planMode
-        ? run('plan', (c) => window.api.plans.propose(c.id, text))
-        : run('chat', (c) => window.api.chat.send(c.id, text))
+      const next = get().knowledgeNext
+      const options = next == null ? undefined : { knowledge: next }
+      const ok = await (get().conversation?.planMode
+        ? run('plan', (c) => window.api.plans.propose(c.id, text, options))
+        : run('chat', (c) => window.api.chat.send(c.id, text, options)))
+      // La scelta del bottone libro vale per una domanda sola.
+      if (ok) set({ knowledgeNext: null })
+      return ok
     },
 
     async regenerate() {
@@ -168,16 +183,19 @@ export const useChat = create<ChatState>((set, get) => {
 
       switch (event.type) {
         case 'summarizing':
-          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: true, remembering: false } } }))
+          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: true, remembering: false, searching: false } } }))
           return
         case 'remembering':
-          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: true } } }))
+          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: true, searching: false } } }))
+          return
+        case 'searching':
+          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: false, searching: true } } }))
           return
         case 'thinking':
         case 'content': {
           const key = event.type === 'thinking' ? 'thinking' : 'content'
           set((s) => ({
-            streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: false, [key]: live[key] + (event.delta ?? '') } }
+            streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: false, searching: false, [key]: live[key] + (event.delta ?? '') } }
           }))
           return
         }

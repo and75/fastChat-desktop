@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { Api } from '@shared/api'
 import { IPC, type BenchmarkProgress, type ContextCall, type Conversation, type KnowledgeProgress, type PullProgress, type Result, type StreamEvent } from '@shared/types'
 
@@ -39,7 +39,14 @@ const api: Api = {
     pickFiles: (id) => invoke(IPC.knowledgePickFiles, id),
     remove: (id, documentId) => invoke(IPC.knowledgeRemove, id, documentId),
     reindex: (id, documentId) => invoke(IPC.knowledgeReindex, id, documentId),
-    onProgress: (cb) => subscribe<KnowledgeProgress>(IPC.knowledgeProgress, cb)
+    onProgress: (cb) => subscribe<KnowledgeProgress>(IPC.knowledgeProgress, cb),
+    pathForFile: (file) => {
+      try {
+        return webUtils.getPathForFile(file)
+      } catch {
+        return ''
+      }
+    }
   },
   context: {
     calls: (id) => invoke(IPC.contextCalls, id),

@@ -1,6 +1,8 @@
 import { formatFullDate, formatMessageDate } from '@shared/format'
 import { t, tn } from '@shared/i18n'
-import type { MemoryRef, Message } from '@shared/types'
+import { sourceLabel } from '@shared/knowledge'
+import type { KnowledgeRef, MemoryRef, Message } from '@shared/types'
+import { BookOpenIcon } from './icons'
 import { Markdown } from './Markdown'
 import { WaitingIndicator } from './Loader'
 import { ThinkingBlock } from './ThinkingBlock'
@@ -16,8 +18,14 @@ interface Props {
   summarizing?: boolean
   /** Durante lo streaming: si cercano estratti nella conversazione prima della risposta. */
   remembering?: boolean
+  /** Durante lo streaming: si cercano estratti nei documenti prima della risposta. */
+  searching?: boolean
   /** Estratti della conversazione forniti al modello per questa risposta. */
   memoryRefs?: MemoryRef[] | null
+  /** Estratti dei documenti (fonti) forniti al modello per questa risposta. */
+  knowledgeRefs?: KnowledgeRef[] | null
+  /** Sulla domanda: la scelta del bottone libro (true/false), o null se valeva l'impostazione della conversazione. */
+  knowledge?: boolean | null
   /** Data del messaggio (mostrata sotto i messaggi dell'utente). */
   createdAt?: number
   /** Inizio della richiesta in corso (solo durante lo streaming). */
@@ -46,7 +54,10 @@ export function MessageBubble({
   streaming,
   summarizing = false,
   remembering = false,
+  searching = false,
   memoryRefs = null,
+  knowledgeRefs = null,
+  knowledge = null,
   startedAt,
   createdAt,
   actions,
@@ -59,15 +70,28 @@ export function MessageBubble({
         <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand-600 px-4 py-2 text-white">
           {content}
         </div>
-        {createdAt != null && (
-          <time
-            dateTime={new Date(createdAt).toISOString()}
-            title={formatFullDate(createdAt)}
-            className="px-1 text-xs text-zinc-400"
-            data-testid="message-date"
-          >
-            {formatMessageDate(createdAt)}
-          </time>
+        {(createdAt != null || knowledge != null) && (
+          <span className="flex items-center gap-1.5 px-1 text-xs text-zinc-400">
+            {knowledge != null && (
+              <span
+                className={'inline-flex items-center gap-0.5 ' + (knowledge ? 'text-brand-600 dark:text-brand-400' : 'line-through')}
+                title={knowledge ? t('message.knowledge.on') : t('message.knowledge.off')}
+                data-testid="message-knowledge"
+                data-on={knowledge}
+              >
+                <BookOpenIcon size={12} />
+              </span>
+            )}
+            {createdAt != null && (
+              <time
+                dateTime={new Date(createdAt).toISOString()}
+                title={formatFullDate(createdAt)}
+                data-testid="message-date"
+              >
+                {formatMessageDate(createdAt)}
+              </time>
+            )}
+          </span>
         )}
       </div>
     )
@@ -85,10 +109,11 @@ export function MessageBubble({
         {content ? (
           <Markdown text={content} />
         ) : streaming && !thinking ? (
-          <WaitingIndicator since={startedAt} label={summarizing ? t('message.summarizing') : remembering ? t('message.remembering') : undefined} />
+          <WaitingIndicator since={startedAt} label={summarizing ? t('message.summarizing') : searching ? t('message.searching') : remembering ? t('message.remembering') : undefined} />
         ) : null}
         {streaming && content && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-zinc-400 align-middle" />}
       </div>
+      {!streaming && knowledgeRefs && knowledgeRefs.length > 0 && <KnowledgeRefs refs={knowledgeRefs} />}
       {!streaming && memoryRefs && memoryRefs.length > 0 && <MemoryRefs refs={memoryRefs} />}
       {!streaming && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400">
@@ -134,6 +159,31 @@ function MemoryRefs({ refs }: { refs: MemoryRef[] }): React.JSX.Element {
             <span className="tabular-nums text-zinc-400">({Math.round(r.score * 100)}%)</span>
             <span className="block truncate text-zinc-500" title={r.excerpt}>
               {excerptBody(r.excerpt)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
+}
+
+/** Fonti: estratti dei documenti usati per la risposta, con titolo e posizione nel documento. */
+function KnowledgeRefs({ refs }: { refs: KnowledgeRef[] }): React.JSX.Element {
+  return (
+    <details className="text-xs text-zinc-500" data-testid="knowledge-refs">
+      <summary className="cursor-pointer select-none">
+        <span className="inline-flex items-center gap-1 align-middle">
+          <BookOpenIcon size={12} />
+          {tn('message.sources', refs.length)}
+        </span>
+      </summary>
+      <ul className="mt-1 flex flex-col gap-1.5 border-l-2 border-emerald-200 pl-3 dark:border-emerald-900">
+        {refs.map((r, i) => (
+          <li key={`${r.documentId}-${i}`}>
+            <span className="font-medium text-zinc-700 dark:text-zinc-300">{sourceLabel(r.title, r.locator)}</span>{' '}
+            <span className="tabular-nums text-zinc-400">({Math.round(r.score * 100)}%)</span>
+            <span className="block truncate text-zinc-500" title={r.excerpt}>
+              {r.excerpt}
             </span>
           </li>
         ))}

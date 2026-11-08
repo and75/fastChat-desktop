@@ -7,6 +7,7 @@ import { useChat } from '../store/useChat'
 import { ContextMonitor } from './ContextMonitor'
 import { BenchmarkButton, describeNumGpu, needsBenchmark, NumGpuSelect } from './ModelManager'
 import { useConversations } from '../store/useConversations'
+import { useKnowledge } from '../store/useKnowledge'
 import { useModels } from '../store/useModels'
 import { registerPendingSave } from '../store/pendingSaves'
 
@@ -706,6 +707,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
     think: !caps ? '…' : !thinkSupported ? t('state.unavailable') : conversation.think ? t('state.on') : t('state.off'),
     style: styleLabel(conversation.style)
   })
+  const knowledgeDocs = useKnowledge((s) => s.status[conversation.id]?.documents.length ?? 0)
   const memorySummary = t('group.memory.summary', {
     tokens: fmt(effective.numCtx),
     summary: conversation.summary
@@ -713,7 +715,8 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
       : conversation.autoSummary
         ? t('group.memory.auto')
         : t('state.off'),
-    memory: conversation.longMemory ? t('state.onF') : t('state.offF')
+    memory: conversation.longMemory ? t('state.onF') : t('state.offF'),
+    knowledge: conversation.knowledge ? (knowledgeDocs > 0 ? tn('group.memory.docs', knowledgeDocs) : t('state.onF')) : t('state.offF')
   })
 
   return (
@@ -807,6 +810,19 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
         />
         <SummaryPanel conversation={conversation} />
         <MemoryPanel conversation={conversation} />
+        <div className="flex flex-col gap-1" data-testid="knowledge-summary">
+          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('knowledge.group.label')}</span>
+          <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
+            {conversation.knowledge ? (knowledgeDocs > 0 ? t('knowledge.group.active', { docs: tn('group.memory.docs', knowledgeDocs) }) : t('knowledge.group.noDocs')) : t('knowledge.group.off')}{' '}
+            <button
+              type="button"
+              className="text-brand-700 hover:underline dark:text-brand-300"
+              onClick={() => document.getElementById('panel-tab-knowledge')?.click()}
+            >
+              {t('knowledge.group.goto')}
+            </button>
+          </span>
+        </div>
       </Group>
 
       <ContextMonitor conversation={conversation} />

@@ -2,10 +2,54 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { t } from '@shared/i18n'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
+import { readyDocuments, useKnowledge } from '../store/useKnowledge'
 import { ContextMeter } from './ContextMeter'
 import { ConversationTimeline, type TimelineItem } from './ConversationTimeline'
 import { CopyAction } from './CopyButton'
-import { RegenerateIcon } from './icons'
+import { BookOpenIcon, RegenerateIcon } from './icons'
+
+/**
+ * Bottone libro: la prossima domanda usa la base di conoscenza? Mostra lo stato effettivo (la pill della
+ * conversazione, o la scelta fatta qui) e un clic lo inverte per questa domanda sola.
+ */
+function KnowledgeButton({ conversation, disabled }: { conversation: { id: string; knowledge: boolean }; disabled: boolean }): React.JSX.Element {
+  const next = useChat((s) => s.knowledgeNext)
+  const setNext = useChat((s) => s.setKnowledgeNext)
+  const ready = useKnowledge((s) => readyDocuments(s.status[conversation.id]).length)
+  const effective = next ?? conversation.knowledge
+  const usable = ready > 0 && !disabled
+  const title = !usable
+    ? t('chat.knowledge.noDocs')
+    : effective
+      ? next == null
+        ? t('chat.knowledge.on')
+        : t('chat.knowledge.onOnce')
+      : next == null
+        ? t('chat.knowledge.off')
+        : t('chat.knowledge.offOnce')
+  return (
+    <button
+      type="button"
+      disabled={!usable}
+      aria-pressed={usable && effective}
+      aria-label={t('chat.knowledge.label')}
+      title={title}
+      onClick={() => {
+        const flipped = !effective
+        setNext(flipped === conversation.knowledge ? null : flipped)
+      }}
+      className={
+        'rounded-lg p-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-30 ' +
+        (usable && effective
+          ? 'bg-brand-100 text-brand-700 hover:bg-brand-200 dark:bg-brand-900/50 dark:text-brand-300 dark:hover:bg-brand-900'
+          : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200')
+      }
+      data-testid="knowledge-button"
+    >
+      <BookOpenIcon size={18} />
+    </button>
+  )
+}
 import { MessageBubble } from './MessageBubble'
 import { PlanModeToggle, ThinkToggle, StyleControl } from './ModelSettings'
 import { PlanChecklist, PlanLoading, PlanSummary } from './PlanChecklist'
@@ -94,6 +138,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
             }
           }}
         />
+        {conversation && <KnowledgeButton conversation={conversation} disabled={disabled || streaming} />}
         {streaming ? (
           <button
             type="button"
@@ -213,6 +258,8 @@ export function ChatView(): React.JSX.Element {
                   createdAt={m.createdAt}
                   meta={m.role === 'assistant' ? m : undefined}
                   memoryRefs={m.role === 'assistant' ? m.memoryRefs : null}
+                  knowledgeRefs={m.role === 'assistant' ? m.knowledgeRefs : null}
+                  knowledge={m.role === 'user' ? m.knowledge : null}
                   truncated={m.doneReason === 'length'}
                   actions={
                     m.role === 'assistant' ? (
@@ -267,6 +314,7 @@ export function ChatView(): React.JSX.Element {
                 thinking={live.thinking}
                 summarizing={live.summarizing}
                 remembering={live.remembering}
+                searching={live.searching}
                 streaming
                 startedAt={live.startedAt}
               />

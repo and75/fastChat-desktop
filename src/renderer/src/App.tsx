@@ -11,6 +11,7 @@ import { WindowControls } from './components/WindowControls'
 import { Sidebar } from './components/Sidebar'
 import { useChat } from './store/useChat'
 import { useConversations } from './store/useConversations'
+import { useKnowledge } from './store/useKnowledge'
 import { useModels } from './store/useModels'
 
 /** Esporta la conversazione aperta: icona download con menu a tendina Markdown / JSON. */
@@ -117,9 +118,13 @@ export default function App(): React.JSX.Element {
       useConversations.getState().upsertLocal(conv)
       useChat.getState().replaceConversation(conv)
     })
+    // Base di conoscenza: plugin disponibili e avanzamento dell'indicizzazione dei documenti.
+    void useKnowledge.getState().init()
+    const offKnowledge = window.api.knowledge.onProgress((p) => useKnowledge.getState().handleProgress(p))
     return () => {
       offStream()
       offUpdated()
+      offKnowledge()
     }
   }, [initModels])
 

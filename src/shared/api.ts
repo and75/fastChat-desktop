@@ -72,6 +72,8 @@ export interface Api {
     reindex(conversationId: string, documentId: string): Promise<Result<KnowledgeDocument>>
     /** Avanzamento dell'indicizzazione dei documenti. */
     onProgress(cb: (p: KnowledgeProgress) => void): () => void
+    /** Percorso di un file trascinato nella finestra ('' se non è un file su disco). */
+    pathForFile(file: File): string
   }
   context: {
     /** Ultime chiamate a Ollama della conversazione, dalla più recente. */

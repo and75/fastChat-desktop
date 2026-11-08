@@ -5,7 +5,9 @@ import { DEFAULT_TITLE, type Brief, type Conversation } from '@shared/types'
 import { useConversations } from '../store/useConversations'
 import { useTemplates } from '../store/useTemplates'
 import { registerPendingSave } from '../store/pendingSaves'
-import { BrainIcon, IdCardIcon } from './icons'
+import { useKnowledge } from '../store/useKnowledge'
+import { BookOpenIcon, BrainIcon, IdCardIcon } from './icons'
+import { KnowledgePanel } from './KnowledgePanel'
 import { ModelSettings, PlanModeToggle } from './ModelSettings'
 
 const FIELDS: Array<{ key: keyof Brief; rows: number }> = [
@@ -73,8 +75,8 @@ function SaveAsTemplate({ conversation, beforeSave }: { conversation: Conversati
   )
 }
 
-type PanelTab = 'model' | 'brief'
-const PANEL_TABS: PanelTab[] = ['model', 'brief']
+type PanelTab = 'model' | 'brief' | 'knowledge'
+const PANEL_TABS: PanelTab[] = ['model', 'brief', 'knowledge']
 const TAB_KEY = 'fastchat.panelTab'
 
 /** Scheda del pannello, ricordata tra una conversazione e l'altra e dopo il riavvio. */
@@ -148,10 +150,12 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
 
   const preview = buildSystemPrompt(draft, conversation.style)
   const [tab, setTab] = usePanelTab()
+  const documents = useKnowledge((s) => s.status[conversation.id]?.documents.length ?? 0)
 
   const tabs: Array<{ id: PanelTab; label: string; icon: React.ReactNode; filled?: boolean }> = [
     { id: 'model', label: t('brief.tab.model'), icon: <BrainIcon /> },
-    { id: 'brief', label: t('brief.tab.brief'), icon: <IdCardIcon />, filled: preview !== '' }
+    { id: 'brief', label: t('brief.tab.brief'), icon: <IdCardIcon />, filled: preview !== '' },
+    { id: 'knowledge', label: t('brief.tab.knowledge'), icon: <BookOpenIcon />, filled: documents > 0 }
   ]
 
   return (
@@ -187,21 +191,21 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
               tabIndex={active ? 0 : -1}
               onClick={() => setTab(tab_.id)}
               className={
-                '-mb-px flex flex-1 items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ' +
+                '-mb-px flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2.5 text-sm font-medium transition-colors ' +
                 (active
                   ? 'border-brand-600 text-brand-700 dark:border-brand-400 dark:text-brand-300'
                   : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200')
               }
             >
               {tab_.icon}
-              <span>{tab_.label}</span>
+              <span className="truncate">{tab_.label}</span>
               {tab_.filled && <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-brand-500" data-testid="brief-filled" />}
             </button>
           )
         })}
       </div>
 
-      {/* Entrambe le schede restano montate: salvataggi in sospeso e stato locale non si perdono. */}
+      {/* Tutte le schede restano montate: salvataggi in sospeso e stato locale non si perdono. */}
       <div
         role="tabpanel"
         id="panel-model"
@@ -253,6 +257,16 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
             {preview || t('brief.preview.empty')}
           </pre>
         </details>
+      </div>
+
+      <div
+        role="tabpanel"
+        id="panel-knowledge"
+        aria-labelledby="panel-tab-knowledge"
+        hidden={tab !== 'knowledge'}
+        className="relative min-h-0 flex-1 overflow-y-auto p-4"
+      >
+        <KnowledgePanel conversation={conversation} />
       </div>
     </aside>
   )
