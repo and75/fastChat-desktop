@@ -37,6 +37,8 @@ export interface Conversation extends Brief, ConversationSettings {
   summaryUpdatedAt: number | null
   /** Memoria della conversazione (RAG): dopo il primo riassunto, estratti pertinenti dei messaggi riassunti. */
   longMemory: boolean
+  /** Base di conoscenza: di norma ogni domanda usa i documenti della conversazione (il bottone libro lo cambia per una domanda). */
+  knowledge: boolean
   createdAt: number
   updatedAt: number
 }
@@ -58,7 +60,106 @@ export interface Message {
   doneReason: DoneReason | null
   /** Estratti della conversazione forniti al modello per questa risposta (memoria della conversazione). */
   memoryRefs: MemoryRef[] | null
+  /** Sulla domanda: la risposta deve usare la base di conoscenza (null = come la conversazione). */
+  knowledge: boolean | null
+  /** Sulla risposta: estratti dei documenti forniti al modello (fonti). */
+  knowledgeRefs: KnowledgeRef[] | null
   createdAt: number
+}
+
+// ---------------------------------------------------------------- base di conoscenza
+
+/** Riferimento a un documento di una sorgente: un file locale, o un elemento di una sorgente collegata. */
+export type DocumentRef =
+  | { kind: 'file'; path: string }
+  | { kind: 'remote'; sourceId: string; uri: string; version?: string }
+
+export type KnowledgeDocumentStatus = 'pending' | 'indexing' | 'ready' | 'error'
+
+/** Un documento della base di conoscenza di una conversazione. Si salva il testo estratto, non il file. */
+export interface KnowledgeDocument {
+  id: string
+  conversationId: string
+  /** Connessione (sorgente collegata) da cui viene; null se aggiunto a mano. */
+  connectionId: string | null
+  /** Plugin che l'ha letto. */
+  source: string
+  title: string
+  ref: DocumentRef
+  /** Versione della sorgente (etag, data, hash): se cambia al refresh, si reindicizza. */
+  version: string | null
+  /** Impronta del contenuto (SHA-256): lo stesso file non si aggiunge due volte alla stessa conversazione. */
+  hash: string | null
+  bytes: number | null
+  chars: number
+  status: KnowledgeDocumentStatus
+  error: string | null
+  chunkCount: number
+  createdAt: number
+  indexedAt: number | null
+}
+
+/** Una sorgente collegata alla conversazione (plugin `connected`), con la sua configurazione. */
+export interface KnowledgeConnection {
+  id: string
+  conversationId: string
+  source: string
+  /** Valori dei campi di configurazione del plugin (le credenziali sono cifrate a parte). */
+  config: Record<string, string>
+  status: 'ready' | 'syncing' | 'error'
+  error: string | null
+  lastSyncAt: number | null
+  createdAt: number
+}
+
+/** Un estratto di documento usato per una risposta. */
+export interface KnowledgeRef {
+  documentId: string
+  title: string
+  /** Dove nel documento ("p. 12", "§ Introduzione"), se noto. */
+  locator: string | null
+  score: number
+  excerpt: string
+}
+
+/** Stato della base di conoscenza di una conversazione. */
+export interface KnowledgeStatus {
+  documents: KnowledgeDocument[]
+  connections: KnowledgeConnection[]
+  /** Pezzi indicizzati con il modello di embedding attuale. */
+  chunks: number
+  /** Documenti ancora da indicizzare (in attesa, in corso, o indicizzati con un altro modello). */
+  pending: number
+  model: string
+  modelInstalled: boolean
+}
+
+/** Avanzamento dell'indicizzazione di un documento (main → renderer). */
+export interface KnowledgeProgress {
+  conversationId: string
+  documentId: string
+  status: KnowledgeDocumentStatus
+  /** Pezzi fatti e totali, durante 'indexing'. */
+  done: number
+  total: number
+}
+
+/** Un plugin, come lo vede il renderer. */
+export interface KnowledgeSourceInfo {
+  id: string
+  label: string
+  kind: 'file' | 'connected'
+  extensions: string[]
+  configFields: ConfigField[]
+}
+
+/** Campo di configurazione di una sorgente collegata, reso dal nucleo. */
+export interface ConfigField {
+  key: string
+  label: string
+  type: 'text' | 'folder' | 'secret'
+  required: boolean
+  placeholder?: string
 }
 
 /** Un estratto della conversazione usato per una risposta. */
@@ -75,11 +176,11 @@ export interface MemoryRef {
 
 /** Stato dell'indice della memoria di una conversazione. */
 /** Tipo di chiamata a Ollama registrata dal monitor del contesto. */
-export type ContextCallKind = 'chat' | 'plan' | 'execute' | 'summary' | 'condense' | 'title' | 'embed-index' | 'embed-query'
+export type ContextCallKind = 'chat' | 'plan' | 'execute' | 'summary' | 'condense' | 'title' | 'embed-index' | 'embed-query' | 'embed-doc'
 
 /** Voce di ciò che è stato inviato, con i token stimati dall'app. */
 export interface ContextPart {
-  key: 'instructions' | 'style' | 'summary' | 'memory' | 'history' | 'question' | 'transcript' | 'texts'
+  key: 'instructions' | 'style' | 'summary' | 'memory' | 'knowledge' | 'history' | 'question' | 'transcript' | 'texts'
   label: string
   tokens: number
   /** Quanti elementi (messaggi, estratti, pezzi), se ha senso. */
@@ -259,6 +360,7 @@ export type ConversationPatch = Partial<
     | 'summaryUpTo'
     | 'summaryUpdatedAt'
     | 'longMemory'
+    | 'knowledge'
   >
 >
 

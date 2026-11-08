@@ -13,6 +13,7 @@ const PART_LABEL_KEYS: Record<string, Key> = {
   style: 'part.style',
   summary: 'part.summary',
   memory: 'part.memory',
+  knowledge: 'part.knowledge',
   history: 'part.history',
   question: 'part.question',
   'transcript.qa': 'part.transcript.qa',
@@ -21,6 +22,7 @@ const PART_LABEL_KEYS: Record<string, Key> = {
   'summary.condense': 'part.summary.condense',
   'texts.index': 'part.texts.index',
   'texts.query': 'part.texts.query',
+  'texts.doc': 'part.texts.doc',
   answer: 'part.answer',
   ollama: 'part.ollamaDelta',
   // testi delle chiamate registrate prima della traduzione

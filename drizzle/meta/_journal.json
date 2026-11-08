@@ -57,6 +57,13 @@
       "when": 1794060717102,
       "tag": "0007_context_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794150995588,
+      "tag": "0008_knowledge",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,7 @@ const COLORS: Record<ContextPart['key'], string> = {
   style: 'bg-brand-500',
   summary: 'bg-fuchsia-400',
   memory: 'bg-sky-500',
+  knowledge: 'bg-emerald-500',
   history: 'bg-brand-200 dark:bg-brand-400',
   question: 'bg-amber-500',
   transcript: 'bg-brand-200 dark:bg-brand-400',

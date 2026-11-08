@@ -14,6 +14,10 @@ import {
   type ResponseStyle,
   type Message,
   type MemoryRef,
+  type KnowledgeConnection,
+  type KnowledgeDocument,
+  type KnowledgeDocumentStatus,
+  type KnowledgeRef,
   type MessageRole,
   type ModelSetting,
   type Plan,
@@ -21,7 +25,19 @@ import {
   type PlanStep
 } from '@shared/types'
 import type { Db } from './client'
-import { briefTemplates, contextCalls, conversations, messageChunks, messages, modelSettings, plans, settings } from './schema'
+import {
+  briefTemplates,
+  contextCalls,
+  conversations,
+  knowledgeChunks,
+  knowledgeConnections,
+  knowledgeDocuments,
+  messageChunks,
+  messages,
+  modelSettings,
+  plans,
+  settings
+} from './schema'
 
 // ---------------------------------------------------------------- impostazioni
 
@@ -70,7 +86,8 @@ const PATCHABLE: (keyof ConversationPatch)[] = [
   'summary',
   'summaryUpTo',
   'summaryUpdatedAt',
-  'longMemory'
+  'longMemory',
+  'knowledge'
 ]
 
 /** Tiene solo i campi ammessi: il patch arriva dal renderer e non va preso alla lettera. */
@@ -85,7 +102,7 @@ export function sanitizePatch(patch: ConversationPatch): ConversationPatch {
   if ('numCtx' in out) out.numCtx = toInt(out.numCtx, 256, 1_048_576)
   if ('style' in out && !RESPONSE_STYLES.includes(out.style as ResponseStyle)) out.style = 'normal'
   if ('seed' in out) out.seed = toInt(out.seed, -2_147_483_648, 2_147_483_647)
-  for (const key of ['think', 'planMode', 'archived', 'autoSummary', 'longMemory'] as const) {
+  for (const key of ['think', 'planMode', 'archived', 'autoSummary', 'longMemory', 'knowledge'] as const) {
     if (key in out) out[key] = out[key] === true
   }
   if ('summary' in out) {
@@ -185,6 +202,8 @@ export interface NewMessage {
   durationMs?: number | null
   doneReason?: DoneReason | null
   memoryRefs?: MemoryRef[] | null
+  knowledge?: boolean | null
+  knowledgeRefs?: KnowledgeRef[] | null
 }
 
 export async function addMessage(db: Db, msg: NewMessage): Promise<Message> {
@@ -200,6 +219,8 @@ export async function addMessage(db: Db, msg: NewMessage): Promise<Message> {
     durationMs: msg.durationMs ?? null,
     doneReason: msg.doneReason ?? null,
     memoryRefs: msg.memoryRefs?.length ? msg.memoryRefs : null,
+    knowledge: typeof msg.knowledge === 'boolean' ? msg.knowledge : null,
+    knowledgeRefs: msg.knowledgeRefs?.length ? msg.knowledgeRefs : null,
     createdAt: Date.now()
   }
   await db.insert(messages).values(row)
@@ -396,6 +417,141 @@ export async function removeChunks(db: Db, conversationId: string, keepModel?: s
     ? and(eq(messageChunks.conversationId, conversationId), sql`${messageChunks.model} <> ${keepModel}`)
     : eq(messageChunks.conversationId, conversationId)
   await db.delete(messageChunks).where(where)
+}
+
+// ---------------------------------------------------------------- base di conoscenza
+
+export async function listDocuments(db: Db, conversationId: string): Promise<KnowledgeDocument[]> {
+  return db
+    .select()
+    .from(knowledgeDocuments)
+    .where(eq(knowledgeDocuments.conversationId, conversationId))
+    .orderBy(asc(knowledgeDocuments.createdAt), asc(sql`rowid`))
+}
+
+export async function getDocument(db: Db, id: string): Promise<KnowledgeDocument | null> {
+  const [row] = await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, id))
+  return row ?? null
+}
+
+/** Documento della conversazione con la stessa impronta (lo stesso file non si aggiunge due volte). */
+export async function findDocumentByHash(db: Db, conversationId: string, hash: string): Promise<KnowledgeDocument | null> {
+  const [row] = await db
+    .select()
+    .from(knowledgeDocuments)
+    .where(and(eq(knowledgeDocuments.conversationId, conversationId), eq(knowledgeDocuments.hash, hash)))
+  return row ?? null
+}
+
+export type NewDocument = Pick<KnowledgeDocument, 'conversationId' | 'source' | 'title' | 'ref'> &
+  Partial<Pick<KnowledgeDocument, 'connectionId' | 'version' | 'bytes'>> & { hash?: string | null }
+
+export async function addDocument(db: Db, doc: NewDocument): Promise<KnowledgeDocument> {
+  const row = {
+    id: randomUUID(),
+    conversationId: doc.conversationId,
+    connectionId: doc.connectionId ?? null,
+    source: doc.source,
+    title: doc.title.trim().slice(0, 200) || 'Documento',
+    ref: doc.ref,
+    version: doc.version ?? null,
+    hash: doc.hash ?? null,
+    bytes: doc.bytes ?? null,
+    chars: 0,
+    status: 'pending' as const,
+    error: null,
+    chunkCount: 0,
+    createdAt: Date.now(),
+    indexedAt: null
+  }
+  await db.insert(knowledgeDocuments).values(row)
+  return row
+}
+
+export type DocumentPatch = Partial<Pick<KnowledgeDocument, 'title' | 'version' | 'chars' | 'status' | 'error' | 'chunkCount' | 'indexedAt'>> & {
+  status?: KnowledgeDocumentStatus
+}
+
+export async function updateDocument(db: Db, id: string, patch: DocumentPatch): Promise<KnowledgeDocument | null> {
+  if (Object.keys(patch).length) await db.update(knowledgeDocuments).set(patch).where(eq(knowledgeDocuments.id, id))
+  return getDocument(db, id)
+}
+
+export async function removeDocument(db: Db, id: string): Promise<void> {
+  await db.delete(knowledgeDocuments).where(eq(knowledgeDocuments.id, id))
+}
+
+export interface KnowledgeChunkRow {
+  id: string
+  documentId: string
+  part: number
+  locator: string | null
+  text: string
+  model: string
+  embedding: Buffer
+}
+
+/** Pezzi di tutti i documenti indicati, per il modello di embedding dato. */
+export async function listKnowledgeChunks(db: Db, documentIds: string[], model: string): Promise<KnowledgeChunkRow[]> {
+  if (documentIds.length === 0) return []
+  return db
+    .select()
+    .from(knowledgeChunks)
+    .where(and(inArray(knowledgeChunks.documentId, documentIds), eq(knowledgeChunks.model, model)))
+}
+
+/** Quanti pezzi ha ogni documento con il modello dato. */
+export async function countKnowledgeChunks(db: Db, documentIds: string[], model: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  if (documentIds.length === 0) return out
+  const rows = await db
+    .select({ documentId: knowledgeChunks.documentId, n: sql<number>`count(*)` })
+    .from(knowledgeChunks)
+    .where(and(inArray(knowledgeChunks.documentId, documentIds), eq(knowledgeChunks.model, model)))
+    .groupBy(knowledgeChunks.documentId)
+  for (const r of rows) out.set(r.documentId, Number(r.n))
+  return out
+}
+
+export async function addKnowledgeChunks(db: Db, rows: Array<Omit<KnowledgeChunkRow, 'id'>>): Promise<void> {
+  if (rows.length === 0) return
+  await db.insert(knowledgeChunks).values(rows.map((r) => ({ ...r, id: randomUUID(), createdAt: Date.now() })))
+}
+
+export async function removeKnowledgeChunks(db: Db, documentId: string): Promise<void> {
+  await db.delete(knowledgeChunks).where(eq(knowledgeChunks.documentId, documentId))
+}
+
+export async function listConnections(db: Db, conversationId: string): Promise<KnowledgeConnection[]> {
+  return db
+    .select()
+    .from(knowledgeConnections)
+    .where(eq(knowledgeConnections.conversationId, conversationId))
+    .orderBy(asc(knowledgeConnections.createdAt), asc(sql`rowid`))
+}
+
+export async function getConnection(db: Db, id: string): Promise<KnowledgeConnection | null> {
+  const [row] = await db.select().from(knowledgeConnections).where(eq(knowledgeConnections.id, id))
+  return row ?? null
+}
+
+export async function addConnection(db: Db, init: Pick<KnowledgeConnection, 'conversationId' | 'source' | 'config'>): Promise<KnowledgeConnection> {
+  const row: KnowledgeConnection = { id: randomUUID(), ...init, status: 'ready', error: null, lastSyncAt: null, createdAt: Date.now() }
+  await db.insert(knowledgeConnections).values(row)
+  return row
+}
+
+export async function updateConnection(
+  db: Db,
+  id: string,
+  patch: Partial<Pick<KnowledgeConnection, 'config' | 'status' | 'error' | 'lastSyncAt'>>
+): Promise<KnowledgeConnection | null> {
+  if (Object.keys(patch).length) await db.update(knowledgeConnections).set(patch).where(eq(knowledgeConnections.id, id))
+  return getConnection(db, id)
+}
+
+export async function removeConnection(db: Db, id: string): Promise<void> {
+  await db.delete(knowledgeConnections).where(eq(knowledgeConnections.id, id))
 }
 
 // ---------------------------------------------------------------- monitor del contesto

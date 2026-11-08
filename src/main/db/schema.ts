@@ -1,6 +1,18 @@
 import { sql } from 'drizzle-orm'
 import { blob, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
-import type { BenchmarkRun, ContextCallKind, ContextPart, DoneReason, MemoryRef, PlanStatus, PlanStep, ResponseStyle } from '@shared/types'
+import type {
+  BenchmarkRun,
+  ContextCallKind,
+  ContextPart,
+  DocumentRef,
+  DoneReason,
+  KnowledgeDocumentStatus,
+  KnowledgeRef,
+  MemoryRef,
+  PlanStatus,
+  PlanStep,
+  ResponseStyle
+} from '@shared/types'
 
 const now = sql`(unixepoch('subsec') * 1000)`
 
@@ -30,6 +42,8 @@ export const conversations = sqliteTable(
     summaryUpTo: text('summary_up_to'),
     summaryUpdatedAt: integer('summary_updated_at'),
     longMemory: integer('long_memory', { mode: 'boolean' }).notNull().default(true),
+    /** Base di conoscenza: le domande usano i documenti della conversazione, salvo scelta sulla singola domanda. */
+    knowledge: integer('knowledge', { mode: 'boolean' }).notNull().default(true),
     createdAt: integer('created_at').notNull().default(now),
     updatedAt: integer('updated_at').notNull().default(now)
   },
@@ -54,6 +68,10 @@ export const messages = sqliteTable(
     /** Perché Ollama ha chiuso la risposta: 'stop' (finita) o 'length' (limite di token raggiunto). */
     doneReason: text('done_reason', { enum: ['stop', 'length'] }).$type<DoneReason>(),
     memoryRefs: text('memory_refs', { mode: 'json' }).$type<MemoryRef[]>(),
+    /** Sulla domanda: usare la base di conoscenza per la risposta (null = come la conversazione). */
+    knowledge: integer('knowledge', { mode: 'boolean' }),
+    /** Sulla risposta: estratti dei documenti forniti al modello. */
+    knowledgeRefs: text('knowledge_refs', { mode: 'json' }).$type<KnowledgeRef[]>(),
     createdAt: integer('created_at').notNull().default(now)
   },
   (t) => [index('messages_conversation_idx').on(t.conversationId, t.createdAt)]
@@ -132,6 +150,66 @@ export const messageChunks = sqliteTable(
     createdAt: integer('created_at').notNull().default(now)
   },
   (t) => [index('message_chunks_conversation_idx').on(t.conversationId, t.model)]
+)
+
+/** Base di conoscenza: sorgenti collegate a una conversazione (plugin `connected`), con la configurazione. */
+export const knowledgeConnections = sqliteTable('knowledge_connections', {
+  id: text('id').primaryKey(),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  source: text('source').notNull(),
+  config: text('config', { mode: 'json' }).$type<Record<string, string>>().notNull(),
+  status: text('status', { enum: ['ready', 'syncing', 'error'] }).$type<'ready' | 'syncing' | 'error'>().notNull().default('ready'),
+  error: text('error'),
+  lastSyncAt: integer('last_sync_at'),
+  createdAt: integer('created_at').notNull().default(now)
+})
+
+/** Base di conoscenza: documenti di una conversazione (testo estratto dal plugin, non il file). */
+export const knowledgeDocuments = sqliteTable(
+  'knowledge_documents',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    connectionId: text('connection_id').references(() => knowledgeConnections.id, { onDelete: 'cascade' }),
+    /** Plugin che ha letto il documento. */
+    source: text('source').notNull(),
+    title: text('title').notNull(),
+    ref: text('ref', { mode: 'json' }).$type<DocumentRef>().notNull(),
+    version: text('version'),
+    /** Impronta del contenuto: lo stesso file non si aggiunge due volte alla stessa conversazione. */
+    hash: text('hash'),
+    bytes: integer('bytes'),
+    chars: integer('chars').notNull().default(0),
+    status: text('status', { enum: ['pending', 'indexing', 'ready', 'error'] }).$type<KnowledgeDocumentStatus>().notNull().default('pending'),
+    error: text('error'),
+    chunkCount: integer('chunk_count').notNull().default(0),
+    createdAt: integer('created_at').notNull().default(now),
+    indexedAt: integer('indexed_at')
+  },
+  (t) => [index('knowledge_documents_conversation_idx').on(t.conversationId, t.createdAt)]
+)
+
+/** Base di conoscenza: pezzi dei documenti con il loro embedding, per modello di embedding. */
+export const knowledgeChunks = sqliteTable(
+  'knowledge_chunks',
+  {
+    id: text('id').primaryKey(),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => knowledgeDocuments.id, { onDelete: 'cascade' }),
+    part: integer('part').notNull().default(0),
+    /** Dove nel documento ("p. 12", titolo della sezione), se noto. */
+    locator: text('locator'),
+    text: text('text').notNull(),
+    model: text('model').notNull(),
+    embedding: blob('embedding', { mode: 'buffer' }).notNull(),
+    createdAt: integer('created_at').notNull().default(now)
+  },
+  (t) => [index('knowledge_chunks_document_idx').on(t.documentId, t.model)]
 )
 
 /** Monitor del contesto: le ultime chiamate a Ollama di ogni conversazione, con stime e conteggi reali. */

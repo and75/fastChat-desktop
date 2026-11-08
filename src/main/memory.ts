@@ -2,17 +2,20 @@
 // prima di ogni risposta, recupera gli estratti più pertinenti alla domanda. Attiva solo dopo il primo
 // riassunto: prima tutti i messaggi sono già nel prompt per intero.
 import { buildChunks, buildMemorySection, fromBuffer, MEMORY, memoryQuery, pickChunks, toBuffer } from '@shared/memory'
-import { charsPerToken, estimateTokens, historyAfter } from '@shared/prompt'
+import { charsPerToken, historyAfter } from '@shared/prompt'
 import type { Conversation, MemoryRef, MemoryStatus, Message } from '@shared/types'
 import type { Db } from './db/client'
-import { addChunks, getModelSetting, getSettings, listChunks, listMessages, removeChunks } from './db/repo'
-import { callInput, type ContextLog } from './contextLog'
-import { OllamaError, type EmbedStats, type OllamaClient } from './ollama'
+import { addChunks, listChunks, listMessages, removeChunks } from './db/repo'
+import { createEmbedder, type Embedder } from './embedder'
+import type { ContextLog } from './contextLog'
+import { OllamaError, type OllamaClient } from './ollama'
 
 export interface MemoryDeps {
   db: Db
   ollama: OllamaClient
   contextLog?: ContextLog
+  /** Embedder condiviso con la base di conoscenza; se manca se ne crea uno. */
+  embedder?: Embedder
 }
 
 /** Pezzi per richiesta di embedding. */
@@ -33,48 +36,8 @@ function coveredMessages(conv: Conversation, history: Message[]): Message[] | nu
   return history.slice(0, idx + 1)
 }
 
-export function createMemory({ db, ollama, contextLog }: MemoryDeps) {
-  /** Embedding registrato nel monitor del contesto (una voce: i testi inviati). */
-  async function embed(
-    conversationId: string,
-    kind: 'embed-index' | 'embed-query',
-    model: string,
-    texts: string[],
-    options: { num_gpu?: number } | undefined,
-    cpt: number
-  ): Promise<number[][]> {
-    let stats: EmbedStats | null = null
-    const start = {
-      conversationId,
-      kind,
-      model,
-      numCtx: null,
-      parts: [{ key: 'texts' as const, label: kind === 'embed-index' ? 'texts.index' : 'texts.query', tokens: texts.reduce((n, x) => n + estimateTokens(x, cpt), 0), count: texts.length }]
-    }
-    try {
-      const vectors = await ollama.embed(model, texts, options, (s) => (stats = s))
-      await contextLog?.record(callInput(start, stats))
-      return vectors
-    } catch (err) {
-      await contextLog?.record(callInput(start, null, err))
-      throw err
-    }
-  }
-
+export function createMemory({ db, ollama, contextLog, embedder = createEmbedder({ db, ollama, contextLog }) }: MemoryDeps) {
   const indexing = new Map<string, Promise<number>>()
-
-  const embeddingModel = async (): Promise<string> => (await getSettings(db)).embeddingModel
-
-  /** CPU o GPU come il modello principale: se la chat gira in CPU, anche gli embedding. */
-  async function embedOptions(chatModel: string): Promise<{ num_gpu?: number } | undefined> {
-    const numGpu = (await getModelSetting(db, chatModel))?.numGpu
-    return numGpu === 0 ? { num_gpu: 0 } : undefined
-  }
-
-  async function modelInstalled(model: string): Promise<boolean> {
-    const models = await ollama.listModels().catch(() => [])
-    return models.some((m) => m.name === model || m.name === `${model}:latest`)
-  }
 
   /**
    * Indicizza i messaggi coperti dal riassunto non ancora indicizzati con il modello attuale (quelli di un
@@ -87,17 +50,16 @@ export function createMemory({ db, ollama, contextLog }: MemoryDeps) {
       const history = await listMessages(db, conv.id)
       const covered = coveredMessages(conv, history)
       if (!covered) return 0
-      const model = await embeddingModel()
+      const model = await embedder.model()
       await removeChunks(db, conv.id, model)
       const done = new Set((await listChunks(db, conv.id, model)).map((c) => c.messageId))
       // Le domande vanno indicizzate insieme alla loro risposta: si passa la coppia intera, si tengono i nuovi.
       const drafts = buildChunks(covered).filter((d) => !done.has(d.messageId))
       if (drafts.length === 0) return 0
-      const options = await embedOptions(conv.model)
       let added = 0
       for (let i = 0; i < drafts.length; i += EMBED_BATCH) {
         const batch = drafts.slice(i, i + EMBED_BATCH)
-        const vectors = await embed(conv.id, 'embed-index', model, batch.map((d) => d.text), options, charsPerToken(history))
+        const vectors = await embedder.embed({ conversationId: conv.id, kind: 'embed-index', texts: batch.map((d) => d.text), chatModel: conv.model, cpt: charsPerToken(history) })
         await addChunks(
           db,
           batch.map((d, j) => ({ conversationId: conv.id, messageId: d.messageId, role: d.role, part: d.part, text: d.text, model, embedding: toBuffer(vectors[j]) }))
@@ -121,28 +83,40 @@ export function createMemory({ db, ollama, contextLog }: MemoryDeps) {
   }
 
   /**
+   * Embedding della domanda in attesa (più la fine della risposta precedente), condiviso tra memoria e base di
+   * conoscenza: una sola chiamata a Ollama per risposta. null se non c'è una domanda.
+   */
+  async function embedQuestion(conv: Conversation, history: Message[]): Promise<number[] | null> {
+    const question = history.findLast((m) => m.role === 'user')
+    if (!question) return null
+    const qIdx = history.indexOf(question)
+    const previous = history.slice(0, qIdx).findLast((m) => m.role === 'assistant')
+    const [vector] = await embedder.embed({ conversationId: conv.id, kind: 'embed-query', texts: [memoryQuery(question.content, previous?.content)], chatModel: conv.model, cpt: charsPerToken(history) })
+    return vector
+  }
+
+  /**
    * Estratti pertinenti all'ultima domanda, entro `maxTokens`. Vuoto se la memoria è spenta, se non c'è
    * ancora un riassunto, se il modello di embedding manca o se nulla supera la soglia.
+   * `query` è l'embedding della domanda già calcolato (vedi embedQuestion); se manca si calcola qui.
    */
-  async function recall(conv: Conversation, maxTokens: number): Promise<Recall> {
+  async function recall(conv: Conversation, maxTokens: number, query?: ArrayLike<number> | null): Promise<Recall> {
     const empty: Recall = { section: '', refs: [] }
     if (!conv.longMemory || maxTokens < 64) return empty
     const history = await listMessages(db, conv.id)
     const covered = coveredMessages(conv, history)
     if (!covered) return empty
-    const question = history.findLast((m) => m.role === 'user')
-    if (!question) return empty
-    const qIdx = history.indexOf(question)
-    const previous = history.slice(0, qIdx).findLast((m) => m.role === 'assistant')
-    const model = await embeddingModel()
+    if (!history.some((m) => m.role === 'user')) return empty
+    const model = await embedder.model()
     await index(conv)
     const coveredIds = new Set(covered.map((m) => m.id))
     const chunks = (await listChunks(db, conv.id, model))
       .filter((c) => coveredIds.has(c.messageId))
       .map((c) => ({ id: c.id, messageId: c.messageId, role: c.role, text: c.text, embedding: fromBuffer(c.embedding) }))
     if (chunks.length === 0) return empty
-    const [query] = await embed(conv.id, 'embed-query', model, [memoryQuery(question.content, previous?.content)], await embedOptions(conv.model), charsPerToken(history))
-    const picked = pickChunks(query, chunks, maxTokens * charsPerToken(history))
+    const vector = query ?? (await embedQuestion(conv, history))
+    if (!vector) return empty
+    const picked = pickChunks(vector, chunks, maxTokens * charsPerToken(history))
     const position = new Map(history.map((m, i) => [m.id, i + 1]))
     const items = picked.map((p) => ({ ...p, position: position.get(p.messageId) ?? 0 }))
     return {
@@ -153,14 +127,20 @@ export function createMemory({ db, ollama, contextLog }: MemoryDeps) {
     }
   }
 
+  /** Vero se la memoria ha qualcosa da cercare (accesa, riassunto allineato con messaggi coperti). */
+  async function canRecall(conv: Conversation): Promise<boolean> {
+    if (!conv.longMemory || !conv.summary) return false
+    return !!coveredMessages(conv, await listMessages(db, conv.id))
+  }
+
   async function status(conv: Conversation): Promise<MemoryStatus> {
-    const model = await embeddingModel()
+    const model = await embedder.model()
     const history = await listMessages(db, conv.id)
     const covered = coveredMessages(conv, history) ?? []
     const chunks = await listChunks(db, conv.id, model)
     const done = new Set(chunks.map((c) => c.messageId))
     const pending = buildChunks(covered).filter((d) => !done.has(d.messageId)).length
-    return { chunks: chunks.length, pending, model, modelInstalled: await modelInstalled(model) }
+    return { chunks: chunks.length, pending, model, modelInstalled: await embedder.installed(model) }
   }
 
   /** Rifà l'indice da zero (es. dopo aver cambiato il modello di embedding). */
@@ -169,7 +149,7 @@ export function createMemory({ db, ollama, contextLog }: MemoryDeps) {
     return index(conv)
   }
 
-  return { index, indexQuietly, recall, status, rebuild, isMissingModel: (err: unknown) => err instanceof OllamaError && err.code === 'model' }
+  return { index, indexQuietly, embedQuestion, recall, canRecall, status, rebuild, isMissingModel: (err: unknown) => err instanceof OllamaError && err.code === 'model' }
 }
 
 export type Memory = ReturnType<typeof createMemory>
