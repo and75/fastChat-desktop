@@ -58,6 +58,8 @@ nucleo dai campi dichiarati, i campi `secret` sono cifrati con `safeStorage`). I
 file in `src/main/knowledge/sources/`, una riga in `sources/index.ts`, l'etichetta nelle tre lingue, un test
 con una fixture.
 
+Il meccanismo completo è descritto in [`docs/base-di-conoscenza.md`](docs/base-di-conoscenza.md).
+
 **Database.** SQLite in `userData/chats.db` tramite il modulo integrato `node:sqlite` (Electron 45 / Node 24)
 e Drizzle ORM (driver `sqlite-proxy`). Nessun modulo nativo da ricompilare per Electron o da impacchettare.
 
