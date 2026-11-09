@@ -415,7 +415,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
           let used = draft.messages.reduce((n, m) => n + estimateTokens(m.content, cpt), 0)
           const query = await questionEmbedder?.embedQuestion(conv, history).catch(() => null)
           if (useKnowledge && query) {
-            found = await knowledge!.recall(conv, { vector: query, text: question?.content ?? '' }, knowledgeBudget(s.numCtx, s.reserveTokens, used), cpt).catch(() => found)
+            found = await knowledge!.recall(conv, { vector: query, text: question?.content ?? '' }, knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), cpt).catch(() => found)
             if (found.section) used += estimateTokens(found.section, cpt)
           }
           if (useMemory) {

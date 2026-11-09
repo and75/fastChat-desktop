@@ -120,8 +120,10 @@ describe('base di conoscenza: funzioni pure', () => {
     expect(toKnowledgeRefs(whole, picked).slice(0, 2)).toMatchObject([{ documentId: 'w', whole: true, score: 1, locator: null }, { documentId: 'd2' }])
   })
 
-  it('knowledgeBudget: al massimo il 25% e solo lo spazio rimasto', () => {
-    expect(knowledgeBudget(4096, 819, 1000)).toBe(1024)
+  it('knowledgeBudget: al massimo la quota (50% predefinito, 25/75 a scelta) e solo lo spazio rimasto', () => {
+    expect(knowledgeBudget(4096, 819, 1000)).toBe(2048)
+    expect(knowledgeBudget(4096, 819, 1000, 0.25)).toBe(1024)
+    expect(knowledgeBudget(4096, 819, 1000, 0.75)).toBe(2277)
     expect(knowledgeBudget(4096, 819, 3000)).toBe(277)
     expect(knowledgeBudget(4096, 819, 4000)).toBe(0)
   })

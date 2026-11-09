@@ -3,7 +3,7 @@ import { fmtInt, t, tn } from '@shared/i18n'
 import { KNOWLEDGE } from '@shared/knowledge'
 import { DEFAULT_CHARS_PER_TOKEN } from '@shared/prompt'
 import { resolveSettings } from '@shared/settings'
-import type { Conversation, KnowledgeDocument } from '@shared/types'
+import { KNOWLEDGE_SHARES, type Conversation, type KnowledgeDocument } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { useKnowledge } from '../store/useKnowledge'
@@ -34,6 +34,41 @@ export function KnowledgePill({ conversation }: { conversation: Conversation }):
       <span>{t('knowledge.pill')}</span>
       <span className={'text-xs ' + (on ? 'text-brand-100' : 'text-zinc-400')}>{on ? t('state.on') : t('state.off')}</span>
     </button>
+  )
+}
+
+/** Quota della memoria per i documenti: 25 / 50 / 75% di num_ctx. Il resto va a storico, riassunto e memoria. */
+function ShareControl({ conversation }: { conversation: Conversation }): React.JSX.Element {
+  const update = useConversations((s) => s.update)
+  const current = conversation.knowledgeShare ?? KNOWLEDGE.budgetShare
+  return (
+    <div className="flex flex-col gap-1" data-testid="knowledge-share">
+      <div className="flex items-center justify-between gap-2 text-sm">
+        <span className="font-medium text-zinc-700 dark:text-zinc-300" title={t('knowledge.share.title')}>
+          {t('knowledge.share.label')}
+        </span>
+        <div role="radiogroup" aria-label={t('knowledge.share.label')} className="flex rounded-lg border border-zinc-300 text-xs dark:border-zinc-700">
+          {KNOWLEDGE_SHARES.map((share, i) => (
+            <button
+              key={share}
+              type="button"
+              role="radio"
+              aria-checked={current === share}
+              onClick={() => void update(conversation.id, { knowledgeShare: share })}
+              className={
+                'px-2.5 py-1 ' +
+                (i > 0 ? 'border-l border-zinc-300 dark:border-zinc-700 ' : '') +
+                (current === share ? 'bg-brand-600 text-white' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800')
+              }
+              data-testid={`knowledge-share-${Math.round(share * 100)}`}
+            >
+              {Math.round(share * 100)}%
+            </button>
+          ))}
+        </div>
+      </div>
+      <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">{t(`knowledge.share.${Math.round(current * 100)}` as 'knowledge.share.25')}</span>
+    </div>
   )
 }
 
@@ -156,16 +191,17 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
     void addFiles(conversation.id, paths)
   }
 
-  // Stanno nella memoria? Il quarto di num_ctx riservato ai documenti contro i token stimati dei pezzi pronti.
+  // Stanno nella memoria? La quota di num_ctx riservata ai documenti contro i token stimati dei pezzi pronti.
   const numCtx = resolveSettings(conversation, caps ?? null).numCtx
-  const budgetTokens = Math.floor(numCtx * KNOWLEDGE.budgetShare)
+  const share = conversation.knowledgeShare ?? KNOWLEDGE.budgetShare
+  const budgetTokens = Math.floor(numCtx * share)
   const docTokens = status ? Math.ceil(status.totalChars / DEFAULT_CHARS_PER_TOKEN) : 0
   const pinnedTokens = status ? Math.ceil(status.pinnedChars / DEFAULT_CHARS_PER_TOKEN) : 0
   const fitText = !status || docTokens === 0
     ? null
     : docTokens <= budgetTokens
-      ? t('knowledge.fit.whole', { tokens: fmtInt(docTokens), budget: fmtInt(budgetTokens) })
-      : t('knowledge.fit.excerpts', { tokens: fmtInt(docTokens), budget: fmtInt(budgetTokens), needed: fmtInt(Math.ceil(docTokens / KNOWLEDGE.budgetShare / 1024) * 1024) })
+      ? t('knowledge.fit.whole', { tokens: fmtInt(docTokens), budget: fmtInt(budgetTokens), share: Math.round(share * 100) })
+      : t('knowledge.fit.excerpts', { tokens: fmtInt(docTokens), budget: fmtInt(budgetTokens), share: Math.round(share * 100), needed: fmtInt(Math.ceil(docTokens / share / 1024) * 1024) })
   const pinnedOver = !!status && pinnedTokens > budgetTokens
 
   const statusText = !status
@@ -180,6 +216,7 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
     <div className="flex flex-col gap-3" data-testid="knowledge-panel">
       <KnowledgePill conversation={conversation} />
       <p className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">{t('knowledge.intro')}</p>
+      <ShareControl conversation={conversation} />
 
       <div
         className={

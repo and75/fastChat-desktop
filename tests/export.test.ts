@@ -24,6 +24,7 @@ const conv: Conversation = {
   summaryUpdatedAt: null,
   longMemory: true,
   knowledge: true,
+  knowledgeShare: 0.5,
   createdAt: Date.UTC(2026, 0, 1),
   updatedAt: Date.UTC(2026, 0, 2)
 }

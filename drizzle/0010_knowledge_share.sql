@@ -1,0 +1,1 @@
+ALTER TABLE `conversations` ADD `knowledge_share` real DEFAULT 0.5 NOT NULL;

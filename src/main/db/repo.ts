@@ -18,6 +18,8 @@ import {
   type KnowledgeDocument,
   type KnowledgeDocumentStatus,
   type KnowledgeRef,
+  KNOWLEDGE_SHARES,
+  type KnowledgeShare,
   type MessageRole,
   type ModelSetting,
   type Plan,
@@ -87,7 +89,8 @@ const PATCHABLE: (keyof ConversationPatch)[] = [
   'summaryUpTo',
   'summaryUpdatedAt',
   'longMemory',
-  'knowledge'
+  'knowledge',
+  'knowledgeShare'
 ]
 
 /** Tiene solo i campi ammessi: il patch arriva dal renderer e non va preso alla lettera. */
@@ -105,6 +108,7 @@ export function sanitizePatch(patch: ConversationPatch): ConversationPatch {
   for (const key of ['think', 'planMode', 'archived', 'autoSummary', 'longMemory', 'knowledge'] as const) {
     if (key in out) out[key] = out[key] === true
   }
+  if ('knowledgeShare' in out && !KNOWLEDGE_SHARES.includes(out.knowledgeShare as KnowledgeShare)) out.knowledgeShare = 0.5
   if ('summary' in out) {
     out.summary = typeof out.summary === 'string' && out.summary.trim() ? out.summary.trim().slice(0, 20_000) : null
     // Senza riassunto non c'è nulla di coperto.

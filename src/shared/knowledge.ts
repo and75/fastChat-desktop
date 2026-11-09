@@ -14,8 +14,8 @@ export const KNOWLEDGE = {
   relativeScore: 0.5,
   /** Peso delle parole esatte (BM25) rispetto alla somiglianza semantica (coseno) nel punteggio ibrido. */
   bm25Weight: 0.4,
-  /** Quota massima della memoria (num_ctx) per i documenti. */
-  budgetShare: 0.25,
+  /** Quota massima predefinita della memoria (num_ctx) per i documenti (regolabile per conversazione). */
+  budgetShare: 0.5,
   /** Limiti di un documento: dimensione del file e caratteri estratti. */
   maxBytes: 25 * 1024 * 1024,
   maxChars: 2_000_000,
@@ -200,9 +200,9 @@ export function wholeDocuments<T extends StoredDocumentChunk>(chunks: ReadonlyAr
   return { picked, truncated }
 }
 
-/** Quota della memoria per i documenti: al massimo il 25%, e solo lo spazio che resta sotto la riserva. */
-export function knowledgeBudget(numCtx: number, reserveTokens: number, usedTokens: number): number {
-  return Math.max(0, Math.min(Math.floor(numCtx * KNOWLEDGE.budgetShare), numCtx - reserveTokens - usedTokens))
+/** Quota della memoria per i documenti: al massimo `share` (50% predefinito), e solo lo spazio che resta sotto la riserva. */
+export function knowledgeBudget(numCtx: number, reserveTokens: number, usedTokens: number, share: number = KNOWLEDGE.budgetShare): number {
+  return Math.max(0, Math.min(Math.floor(numCtx * share), numCtx - reserveTokens - usedTokens))
 }
 
 /** Etichetta di una fonte: «Titolo, p. 12» o solo «Titolo». */

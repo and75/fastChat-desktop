@@ -39,6 +39,8 @@ export interface Conversation extends Brief, ConversationSettings {
   longMemory: boolean
   /** Base di conoscenza: di norma ogni domanda usa i documenti della conversazione (il bottone libro lo cambia per una domanda). */
   knowledge: boolean
+  /** Quota massima della memoria (num_ctx) per i documenti: 0,25 / 0,5 / 0,75. */
+  knowledgeShare: KnowledgeShare
   createdAt: number
   updatedAt: number
 }
@@ -68,6 +70,9 @@ export interface Message {
 }
 
 // ---------------------------------------------------------------- base di conoscenza
+
+export type KnowledgeShare = 0.25 | 0.5 | 0.75
+export const KNOWLEDGE_SHARES: KnowledgeShare[] = [0.25, 0.5, 0.75]
 
 /** Riferimento a un documento di una sorgente: un file locale, o un elemento di una sorgente collegata. */
 export type DocumentRef =
@@ -368,6 +373,7 @@ export type ConversationPatch = Partial<
     | 'summaryUpdatedAt'
     | 'longMemory'
     | 'knowledge'
+    | 'knowledgeShare'
   >
 >
 

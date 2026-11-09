@@ -750,8 +750,15 @@ try {
     await page.waitForFunction(() => document.querySelector('[data-testid="knowledge-button"]')?.getAttribute('aria-pressed') === 'false')
     await page.getByTestId('knowledge-pill').click()
     await waitUntil(async () => (await latestConversation()).knowledge === true)
-    // i due documenti stanno nel quarto di memoria: il modello li ha letti per intero (fonti «documento intero»)
-    await panel.getByTestId('knowledge-fit').filter({ hasText: 'li legge per intero' }).waitFor()
+    // i due documenti stanno nello spazio riservato: il modello li ha letti per intero (fonti «documento intero»)
+    await panel.getByTestId('knowledge-fit').filter({ hasText: /il 50% della memoria\): il modello li legge per intero/ }).waitFor()
+    // spazio per i documenti: 25 / 50 / 75%, salvato sulla conversazione, la riga si aggiorna
+    assert.equal(await panel.getByTestId('knowledge-share-50').getAttribute('aria-checked'), 'true')
+    await panel.getByTestId('knowledge-share-75').click()
+    await waitUntil(async () => (await latestConversation()).knowledgeShare === 0.75)
+    await panel.getByTestId('knowledge-fit').filter({ hasText: 'il 75% della memoria' }).waitFor()
+    await panel.getByTestId('knowledge-share-50').click()
+    await waitUntil(async () => (await latestConversation()).knowledgeShare === 0.5)
     // la prima risposta: le fonti dicono «documento intero» (textContent legge anche i dettagli chiusi)
     assert.match(await page.getByTestId('knowledge-refs').first().textContent(), /documento intero/)
     // «Intero» su un documento: resta segnato anche dopo il ricaricamento dello stato

@@ -8,6 +8,7 @@ import type {
   DoneReason,
   KnowledgeDocumentStatus,
   KnowledgeRef,
+  KnowledgeShare,
   MemoryRef,
   PlanStatus,
   PlanStep,
@@ -44,6 +45,8 @@ export const conversations = sqliteTable(
     longMemory: integer('long_memory', { mode: 'boolean' }).notNull().default(true),
     /** Base di conoscenza: le domande usano i documenti della conversazione, salvo scelta sulla singola domanda. */
     knowledge: integer('knowledge', { mode: 'boolean' }).notNull().default(true),
+    /** Quota massima della memoria (num_ctx) per i documenti: 0,25 / 0,5 / 0,75. */
+    knowledgeShare: real('knowledge_share').$type<KnowledgeShare>().notNull().default(0.5),
     createdAt: integer('created_at').notNull().default(now),
     updatedAt: integer('updated_at').notNull().default(now)
   },
