@@ -149,6 +149,8 @@ describe('store: installazione', () => {
     await expect(store.install('it.fastchat.tutor-prompt')).rejects.toThrow(/non è ancora installabile/)
     await expect(store.install('nope.nope')).rejects.toThrow(/non trovata/)
     await expect(store.remove('app.fastchat.guida')).rejects.toThrow(/non trovata/)
+    // la Guida integrata non si elimina nemmeno dalla libreria; una base installata dallo store sì
+    await expect(knowledge.removeBase((await knowledge.installedPacks()).get('app.fastchat.guida')!.id)).rejects.toThrow(/non si elimina/)
     // rimozione: sparisce anche dalla conversazione
     view = await store.remove('it.fastchat.prompt')
     expect(state()['it.fastchat.prompt']).toBe('available')

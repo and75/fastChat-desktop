@@ -18,6 +18,9 @@ function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved():
   const [exported, setExported] = useState<string | null>(null)
   const fromPack = base.origin === 'package'
   const trust = base.meta?.trust
+  // La base integrata nell'app non si elimina (tornerebbe al prossimo avvio).
+  const builtin = trust === 'builtin' && !!base.packageId?.startsWith('app.')
+  const description = base.meta?.i18n?.[getLocale()]?.description ?? base.description
   useEffect(() => setName(shown), [base.id, shown])
   const commit = (): void => {
     const clean = name.trim()
@@ -56,7 +59,7 @@ function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved():
             {t('pack.export')}
           </button>
         )}
-        {!confirming && (
+        {!confirming && !builtin && (
           <button
             type="button"
             onClick={() => setConfirming(true)}
@@ -97,7 +100,7 @@ function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved():
           {base.meta?.author ? ` · ${base.meta.author}` : ''}
           {' · '}
           <span className={trust === 'verified' || trust === 'builtin' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}>{t(`pack.trust.${trust ?? 'unsigned'}`)}</span>
-          {base.description ? <span className="mt-1 block">{base.description}</span> : null}
+          {description ? <span className="mt-1 block">{description}</span> : null}
         </p>
       )}
       <p className="text-xs leading-snug text-zinc-500" data-testid="library-base-model">

@@ -912,8 +912,17 @@ try {
     // installa «Scrivere buoni prompt»: diventa installata, e il pacchetto che la contiene pure
     await item('Scrivere buoni prompt').getByTestId('store-item-install').click()
     await item('Scrivere buoni prompt').locator('[data-testid="store-item-state"][data-state="installed"]').first().waitFor()
-    await item('Scrivere buoni prompt').getByTestId('store-item-remove').waitFor()
-    await store.getByRole('button', { name: 'Chiudi' }).click()
+    // rimuovere chiede conferma (qui si annulla)
+    await item('Scrivere buoni prompt').getByTestId('store-item-remove').click()
+    await item('Scrivere buoni prompt').getByTestId('store-item-confirm').filter({ hasText: 'Rimuovere «Scrivere buoni prompt»?' }).waitFor()
+    await item('Scrivere buoni prompt').getByRole('button', { name: 'Annulla' }).click()
+    // finestra grande, in proporzione allo schermo, con la chiusura in alto a destra
+    const box = await store.boundingBox()
+    const win = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }))
+    assert.ok(box.width > win.w * 0.85 && box.height > win.h * 0.8, 'lo store occupa gran parte della finestra')
+    const close = await store.getByTestId('dialog-close').boundingBox()
+    assert.ok(close.x > box.x + box.width - 80 && close.y < box.y + 40, 'chiusura in alto a destra')
+    await store.getByTestId('dialog-close').click()
     await store.waitFor({ state: 'detached' })
     // la base installata si collega dalla scheda «Conoscenza»
     const panel = page.getByTestId('knowledge-panel')

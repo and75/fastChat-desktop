@@ -732,6 +732,8 @@ export const en: Record<Key, string> = {
   'settings.modelSection': 'Model settings',
   'settings.language.fr': 'Français',
   // --- store
+  'err.knowledge.builtin': 'The base bundled with the app cannot be deleted',
+  'store.remove.confirm': 'Remove “{name}”?',
   'store.title': 'Store',
   'store.category.identity': 'Identities',
   'store.category.knowledge': 'Knowledge bases',

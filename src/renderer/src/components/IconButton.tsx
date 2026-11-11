@@ -1,4 +1,6 @@
 import { forwardRef, useId } from 'react'
+import { t } from '@shared/i18n'
+import { CloseIcon } from './icons'
 
 interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   /** Testo del tooltip; è anche il nome accessibile del pulsante. */
@@ -58,3 +60,14 @@ export const IconButton = forwardRef<HTMLButtonElement, Props>(function IconButt
     </span>
   )
 })
+
+/** Chiusura di una finestra sopra l'app: sempre in alto a destra, nell'intestazione. */
+export function DialogClose({ onClose }: { onClose(): void }): React.JSX.Element {
+  return (
+    <span className="ml-auto shrink-0 self-start">
+      <IconButton tooltip={t('common.close')} onClick={onClose} data-testid="dialog-close">
+        <CloseIcon size={18} />
+      </IconButton>
+    </span>
+  )
+}

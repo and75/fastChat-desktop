@@ -732,6 +732,8 @@ export const fr: Record<Key, string> = {
   'knowledge.connection.disconnect.title': 'Déconnecte la source et retire ses documents de la conversation',
   'settings.modelSection': 'Paramètres du modèle',
   // --- store
+  'err.knowledge.builtin': 'La base incluse dans l\'application ne peut pas être supprimée',
+  'store.remove.confirm': 'Supprimer « {name} » ?',
   'store.title': 'Store',
   'store.category.identity': 'Identités',
   'store.category.knowledge': 'Bases de connaissances',

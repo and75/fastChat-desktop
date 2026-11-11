@@ -234,7 +234,9 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
 
   /** Elimina una base della libreria: sparisce da tutte le conversazioni che la collegano, con documenti e pezzi. */
   async function removeLibraryBase(id: string): Promise<void> {
-    await libraryBase(id)
+    const base = await libraryBase(id)
+    // Tornerebbe comunque al prossimo avvio: è ciò che l'app sa di suo.
+    if (base.meta?.trust === 'builtin' && base.packageId?.startsWith('app.')) throw new Error(t('err.knowledge.builtin'))
     await removeBase(db, id)
   }
 

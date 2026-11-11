@@ -731,6 +731,8 @@ export const it = {
   'settings.modelSection': 'Impostazioni del modello',
   'settings.language.fr': 'Français',
   // --- store
+  'err.knowledge.builtin': 'La base integrata nell\'app non si elimina',
+  'store.remove.confirm': 'Rimuovere «{name}»?',
   'store.title': 'Store',
   'store.category.identity': 'Identità',
   'store.category.knowledge': 'Basi di conoscenza',
