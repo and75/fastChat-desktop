@@ -1,8 +1,11 @@
 import { memo, useRef } from 'react'
 import { t } from '@shared/i18n'
 import ReactMarkdown, { type Components } from 'react-markdown'
+import { normalizeMath } from '@shared/math'
 import rehypeHighlight from 'rehype-highlight'
+import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import { useCopy } from './CopyButton'
 import { CheckIcon, CopyIcon } from './icons'
 
@@ -41,11 +44,14 @@ const components: Components = {
   )
 }
 
+// Formule LaTeX ($…$, $$…$$, \(…\), \[…\]): una formula sbagliata resta come testo, senza errori rossi.
+const KATEX: [typeof rehypeKatex, { throwOnError: boolean; strict: boolean; errorColor: string }] = [rehypeKatex, { throwOnError: false, strict: false, errorColor: 'currentColor' }]
+
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="markdown">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={components}>
-        {text}
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeHighlight, KATEX]} components={components}>
+        {normalizeMath(text)}
       </ReactMarkdown>
     </div>
   )

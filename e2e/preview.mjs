@@ -35,6 +35,14 @@ const respond = (messages) => {
   if (system.startsWith('Genera un titolo')) return /fondo rischi/.test(messages.at(-1)?.content ?? '') ? 'Bilancio e contratto' : 'Viaggio in Portogallo'
   const last = messages.at(-1)?.content ?? ''
   if (system.includes('# Base di conoscenza')) return 'Secondo la nota integrativa il **fondo rischi ammonta a trecentomila euro** [bilancio, p. 2]; il contratto prevede una penale dello 0,5% al giorno [contratto, Contratto di fornitura › Penali].'
+  if (/quinte/i.test(last)) return String.raw`Nel circolo delle quinte si sale di una quinta giusta a ogni passo.
+
+- Fa maggiore ($\text{F}$): $\text{F} \rightarrow \text{G} \rightarrow \text{C} \rightarrow \text{F}$
+- Rapporto di frequenza della quinta: \(\frac{3}{2}\); il biglietto del concerto costa $5 o $10.
+
+\[
+f_n = f_0 \cdot \left(\frac{3}{2}\right)^n \cdot 2^{-k}
+\]`.replaceAll('\\\\', '\\')
   if (last.includes('Riassumi il testo')) return 'La memoria è condivisa tra pesi e contesto.'
   const base = ANSWERS.find(([re]) => re.test(last))?.[1] ?? 'Va bene.'
   return last.startsWith('Ricordami') ? base : `${base}\n\nSe vuoi, preparo anche un itinerario giorno per giorno con orari e costi stimati per ogni tappa, così teniamo sotto controllo il budget complessivo.`
@@ -281,6 +289,17 @@ await page.screenshot({ path: out('21-store.png') })
 await storeDialog.getByTestId('store-tab-bundle').click()
 await page.waitForTimeout(300)
 await page.screenshot({ path: out('22-store-pacchetti.png') })
+
+// formule: LaTeX in linea e a blocco, prezzi lasciati come testo
+await storeDialog.getByTestId('dialog-close').click()
+await storeDialog.waitFor({ state: 'detached' })
+await page.getByTestId('new-conversation').click()
+await page.selectOption('#model-select', 'gemma3:27b')
+await send('Spiegami il circolo delle quinte')
+await page.locator('.katex').first().waitFor()
+console.log('katex:', await page.locator('.katex').count(), '| display:', await page.locator('.katex-display').count(), '| testo:', (await page.getByTestId('message-assistant').last().innerText()).includes('$5 o $10'))
+await page.waitForTimeout(400)
+await page.screenshot({ path: out('23-formule.png') })
 
 await app.close()
 await fake.close()
