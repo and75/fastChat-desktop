@@ -28,6 +28,7 @@ import type {
   StreamEvent
 } from './types'
 import type { SystemInfo } from './settings'
+import type { StoreView } from './store'
 
 /** Variabili d'ambiente di Ollama per la sezione delle impostazioni. */
 export interface OllamaEnvInfo {
@@ -105,6 +106,13 @@ export interface Api {
     onProgress(cb: (p: KnowledgeProgress) => void): () => void
     /** Percorso di un file trascinato nella finestra ('' se non è un file su disco). */
     pathForFile(file: File): string
+  }
+  /** Store: catalogo delle voci installabili e loro stato su questa installazione. */
+  store: {
+    catalog(): Promise<Result<StoreView>>
+    /** Installa o aggiorna una voce; restituisce il catalogo aggiornato. */
+    install(id: string): Promise<Result<StoreView>>
+    remove(id: string): Promise<Result<StoreView>>
   }
   context: {
     /** Ultime chiamate a Ollama della conversazione, dalla più recente. */

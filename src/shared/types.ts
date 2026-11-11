@@ -112,7 +112,12 @@ export interface KnowledgeBaseMeta {
   digest?: string | null
   /** Come è stata verificata l'origine: firma riconosciuta, integrata nell'app, o installata senza firma valida. */
   trust?: PackTrust | 'builtin'
+  /** Nome e descrizione nelle altre lingue dell'interfaccia (dal manifest del pacchetto). */
+  i18n?: PackI18n
 }
+
+/** Titoli di un pacchetto per lingua dell'interfaccia: il contenuto resta nella lingua del pacchetto. */
+export type PackI18n = Partial<Record<'it' | 'en' | 'fr', { name?: string; description?: string }>>
 
 /** Esito della verifica della firma di un pacchetto. */
 export type PackTrust = 'verified' | 'unsigned' | 'unknown'
@@ -140,6 +145,8 @@ export interface PackManifest {
   embedding?: { model: string; dimensions: number; digest?: string | null }
   /** Modello di chat per cui è pensata un'identità: consigliato (predefinito) o richiesto. */
   model?: { name: string; required?: boolean }
+  /** Nome e descrizione nelle altre lingue dell'interfaccia. */
+  i18n?: PackI18n
   documents?: number
   chunks?: number
   /** Impronta SHA-256 di ogni file del pacchetto: è ciò che la firma del manifest protegge. */
@@ -548,6 +555,8 @@ export interface AppSettings {
   embeddingModel: string
   /** Lingua dell'interfaccia e dei prompt al modello: automatica (sistema), italiano o inglese. */
   language: 'auto' | 'it' | 'en' | 'fr'
+  /** Indirizzo del repository dello store; vuoto = catalogo incluso nell'app. */
+  storeUrl: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -556,7 +565,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultModel: null,
   kvCacheType: 'f16',
   embeddingModel: 'embeddinggemma',
-  language: 'auto'
+  language: 'auto',
+  storeUrl: ''
 }
 
 /** Esito tipizzato delle chiamate IPC: gli errori arrivano al renderer come valori, non come eccezioni. */
@@ -593,6 +603,9 @@ export const IPC = {
   knowledgePackPick: 'knowledge:pack-pick',
   knowledgePackInstall: 'knowledge:pack-install',
   knowledgeBaseExport: 'knowledge:base-export',
+  storeCatalog: 'store:catalog',
+  storeInstall: 'store:install',
+  storeRemove: 'store:remove',
   knowledgeLink: 'knowledge:link',
   knowledgeUnlink: 'knowledge:unlink',
   knowledgeConnect: 'knowledge:connect',

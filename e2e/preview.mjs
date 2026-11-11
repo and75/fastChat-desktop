@@ -272,6 +272,16 @@ await page.getByTestId('knowledge-linked').scrollIntoViewIfNeeded()
 await page.waitForTimeout(400)
 await page.screenshot({ path: out('19-base-collegata.png') })
 
+// store: finestra sopra la chat, categorie, Guida già installata; un pacchetto con ciò che contiene
+await page.getByTestId('store-open').click()
+const storeDialog = page.getByTestId('store-dialog')
+await storeDialog.getByTestId('store-item').first().waitFor()
+await page.waitForTimeout(300)
+await page.screenshot({ path: out('21-store.png') })
+await storeDialog.getByTestId('store-tab-bundle').click()
+await page.waitForTimeout(300)
+await page.screenshot({ path: out('22-store-pacchetti.png') })
+
 await app.close()
 await fake.close()
 console.log('ok')

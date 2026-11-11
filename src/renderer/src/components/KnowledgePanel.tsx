@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fmtInt, t, tn } from '@shared/i18n'
+import { fmtInt, getLocale, t, tn } from '@shared/i18n'
 import { KNOWLEDGE } from '@shared/knowledge'
 import { DEFAULT_CHARS_PER_TOKEN } from '@shared/prompt'
 import { resolveSettings } from '@shared/settings'
@@ -330,6 +330,9 @@ export function ModelMissing({ model }: { model: string }): React.JSX.Element {
 }
 
 /** Numeri di una base: «3 documenti», con i pronti se non lo sono tutti. */
+/** Il titolo di una base nella lingua dell'interfaccia: i pacchetti portano i titoli tradotti, le basi dell'utente il loro nome. */
+export const baseTitle = (b: Pick<KnowledgeBaseInfo, 'name' | 'meta'>): string => b.meta?.i18n?.[getLocale()]?.name ?? b.name
+
 export const baseDetail = (b: KnowledgeBaseInfo): string =>
   tn('knowledge.status.docs', b.documents) + (b.ready < b.documents ? ` · ${t('knowledge.base.ready', { n: b.ready })}` : '')
 
@@ -353,7 +356,7 @@ function LinkedBases({ conversation }: { conversation: Conversation }): React.JS
             <li key={b.id} className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 px-2.5 py-2 text-sm dark:border-emerald-900 dark:bg-emerald-950/20" data-testid="knowledge-linked-base">
               <BookOpenIcon size={16} className="mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-400" />
               <div className="min-w-0 flex-1">
-                <div className="truncate font-medium text-zinc-800 dark:text-zinc-200">{b.name}</div>
+                <div className="truncate font-medium text-zinc-800 dark:text-zinc-200">{baseTitle(b)}</div>
                 <div className="truncate text-xs text-zinc-500">{baseDetail(b)}</div>
                 {!b.modelInstalled && <ModelMissing model={b.model} />}
               </div>
@@ -361,8 +364,8 @@ function LinkedBases({ conversation }: { conversation: Conversation }): React.JS
                 type="button"
                 disabled={busy}
                 className="shrink-0 rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                aria-label={t('knowledge.linked.unlink', { name: b.name })}
-                title={t('knowledge.linked.unlink', { name: b.name })}
+                aria-label={t('knowledge.linked.unlink', { name: baseTitle(b) })}
+                title={t('knowledge.linked.unlink', { name: baseTitle(b) })}
                 onClick={() => void unlink(conversation.id, b.id)}
                 data-testid="knowledge-unlink"
               >
@@ -384,7 +387,7 @@ function LinkedBases({ conversation }: { conversation: Conversation }): React.JS
           <option value="">{t('knowledge.linked.add')}</option>
           {available.map((b) => (
             <option key={b.id} value={b.id}>
-              {b.name} ({baseDetail(b)})
+              {baseTitle(b)} ({baseDetail(b)})
             </option>
           ))}
         </select>

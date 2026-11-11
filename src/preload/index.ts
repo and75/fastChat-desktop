@@ -62,6 +62,11 @@ const api: Api = {
       }
     }
   },
+  store: {
+    catalog: () => invoke(IPC.storeCatalog),
+    install: (id) => invoke(IPC.storeInstall, id),
+    remove: (id) => invoke(IPC.storeRemove, id)
+  },
   context: {
     calls: (id) => invoke(IPC.contextCalls, id),
     onCall: (cb) => subscribe<ContextCall>(IPC.contextCallAdded, cb)

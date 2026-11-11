@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { t, tn } from '@shared/i18n'
+import { getLocale, t, tn } from '@shared/i18n'
 import type { KnowledgeBaseInfo, PackInspection } from '@shared/types'
 import { useKnowledge } from '../store/useKnowledge'
 import { BookOpenIcon, TrashIcon } from './icons'
-import { baseDetail, KnowledgeDocuments, ModelMissing } from './KnowledgePanel'
+import { baseDetail, baseTitle, KnowledgeDocuments, ModelMissing } from './KnowledgePanel'
 
 /** Una base aperta: nome modificabile, eliminazione con conferma, documenti. */
 function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved(): void }): React.JSX.Element {
@@ -11,14 +11,17 @@ function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved():
   const removeBase = useKnowledge((s) => s.removeBase)
   const setAutoLink = useKnowledge((s) => s.setAutoLink)
   const exportBase = useKnowledge((s) => s.exportBase)
-  const [name, setName] = useState(base.name)
+  // Il nome di un pacchetto non si modifica: si mostra nella lingua dell'interfaccia.
+  const shown = base.origin === 'package' ? baseTitle(base) : base.name
+  const [name, setName] = useState(shown)
   const [confirming, setConfirming] = useState(false)
   const [exported, setExported] = useState<string | null>(null)
   const fromPack = base.origin === 'package'
   const trust = base.meta?.trust
-  useEffect(() => setName(base.name), [base.id, base.name])
+  useEffect(() => setName(shown), [base.id, shown])
   const commit = (): void => {
     const clean = name.trim()
+    if (fromPack) return
     if (clean && clean !== base.name) void renameBase(base.id, clean)
     else setName(base.name)
   }
@@ -122,9 +125,9 @@ function PackPreview({ pack, onDone }: { pack: PackInspection; onDone(installed:
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-brand-300 bg-brand-50/60 p-3 text-sm dark:border-brand-800 dark:bg-brand-950/20" data-testid="pack-preview">
       <div className="font-medium">
-        {m.name} <span className="font-normal text-zinc-500">v{m.version}</span>
+        {m.i18n?.[getLocale()]?.name ?? m.name} <span className="font-normal text-zinc-500">v{m.version}</span>
       </div>
-      {m.description && <p className="text-xs text-zinc-600 dark:text-zinc-300">{m.description}</p>}
+      {(m.i18n?.[getLocale()]?.description ?? m.description) && <p className="text-xs text-zinc-600 dark:text-zinc-300">{m.i18n?.[getLocale()]?.description ?? m.description}</p>}
       <ul className="flex flex-col gap-0.5 text-xs text-zinc-600 dark:text-zinc-300">
         <li>{t('pack.preview.content', { docs: m.documents ?? 0, chunks: m.chunks ?? 0 })}{m.author ? ` · ${m.author}` : ''}</li>
         <li>
@@ -237,7 +240,7 @@ export function KnowledgeLibrary(): React.JSX.Element {
                 data-testid="library-base"
               >
                 <BookOpenIcon size={16} className="shrink-0 text-zinc-400" />
-                <span className="min-w-0 flex-1 truncate font-medium">{b.name}</span>
+                <span className="min-w-0 flex-1 truncate font-medium">{baseTitle(b)}</span>
                 <span className="shrink-0 text-xs text-zinc-500">
                   {b.origin === 'package' ? `${t('knowledge.source.package')} · ` : ''}
                   {baseDetail(b)}

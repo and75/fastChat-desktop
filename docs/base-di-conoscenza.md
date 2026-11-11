@@ -64,6 +64,30 @@ Il formato con cui una base si esporta, si installa e si distribuirà dallo stor
 - Firmare: `node scripts/pack-keys.mjs <id>` genera la coppia di chiavi; la pubblica va in `trust.ts`, la
   privata resta a chi pubblica.
 
+## 0.3 Store
+
+Finestra sopra la chat, aperta dal bottone «Store» nella barra laterale (sopra la riga con le impostazioni).
+
+- **Categorie**, in ordine: Identità, Basi di conoscenza, Plugin, Pacchetti (riuniscono più voci).
+- **Stati**: Installato · Aggiornamento disponibile · Disponibile · Presto disponibile. La Guida integrata risulta installata all'apertura.
+- **Oggi si installano le basi di conoscenza**; identità e plugin sono in catalogo ma non installabili. Un pacchetto installa le basi che contiene.
+- **Titoli e descrizioni nella lingua dell'interfaccia** (it/en/fr): nel catalogo (`name`, `summary` per lingua) e nel manifest del pacchetto (`i18n`), così valgono anche in libreria, basi collegate e fonti. Il contenuto resta nella lingua del pacchetto.
+- **Catalogo**: se «Repository dello store» (Impostazioni → Generale) è vuoto si usa quello incluso nell'app (`store/catalog.json`, generato da `npm run packs:build`); altrimenti `GET {url}/catalog.json` e `GET {url}/{file}`. Se il repository non risponde si mostra il catalogo locale con il motivo.
+- **Sicurezza**: impronta SHA-256 del file confrontata con il catalogo; dal repository si installano solo pacchetti con firma riconosciuta; quelli del catalogo incluso nell'app sono fidati come la Guida.
+
+Voce del catalogo:
+
+```json
+{ "id": "it.fastchat.prompt", "type": "knowledge", "version": "1.0.0",
+  "name": { "it": "Scrivere buoni prompt", "en": "Writing good prompts", "fr": "Écrire de bons prompts" },
+  "summary": { "it": "…", "en": "…", "fr": "…" },
+  "author": "FastChat", "language": "it", "price": 0,
+  "embedding": { "model": "embeddinggemma", "dimensions": 768 },
+  "file": "items/it.fastchat.prompt/1.0.0.fcpack", "sha256": "…", "size": 2341 }
+```
+
+Altri campi: `builtin` (integrata), `model` (identità: modello consigliato o richiesto), `requires`, `contains` (pacchetti).
+
 ## 1. Ingresso: i plugin
 
 - Un plugin (`KnowledgeSource`, in `src/main/knowledge/source.ts`) sa leggere un tipo di sorgente e

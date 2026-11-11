@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { createReadStream } from 'node:fs'
-import { t } from '@shared/i18n'
+import { getLocale, t } from '@shared/i18n'
 import {
   buildDocumentChunks,
   buildKnowledgeSection,
@@ -422,7 +422,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     if (docs.length === 0) return empty
     const titles = new Map(docs.map((d) => [d.id, d.title]))
     // Le fonti dicono da quale base della libreria viene il documento.
-    const baseNames = new Map(linked.map((b) => [b.id, b.name]))
+    const baseNames = new Map(linked.map((b) => [b.id, b.meta?.i18n?.[getLocale()]?.name ?? b.name]))
     const baseOf = new Map(docs.map((d) => [d.id, baseNames.get(d.baseId)]))
     const withBase = (refs: KnowledgeRef[]): KnowledgeRef[] => refs.map((r) => (baseOf.get(r.documentId) ? { ...r, base: baseOf.get(r.documentId) } : r))
     // Pezzi per modello di embedding.
@@ -583,6 +583,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
       ...(manifest.language ? { language: manifest.language } : {}),
       ...(manifest.license ? { license: manifest.license } : {}),
       ...(manifest.embedding ? { dimensions: manifest.embedding.dimensions, digest: manifest.embedding.digest ?? null } : {}),
+      ...(manifest.i18n ? { i18n: manifest.i18n } : {}),
       trust: opts.builtin ? 'builtin' : trust
     }
     const fields = { name: manifest.name, description: manifest.description ?? '', version: manifest.version, embeddingModel: manifest.embedding?.model ?? null, packageId: manifest.id, meta }
@@ -624,6 +625,11 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     const models = await modelsOf(docs.map((d) => d.baseId))
     const installed = await embedder.installedAmong(new Set(models.values()))
     for (const d of docs) if (installed.has(models.get(d.baseId) ?? '')) void enqueue(d, null)
+  }
+
+  /** Pacchetti installati: id del pacchetto → base e versione (per lo store). */
+  async function installedPacks(): Promise<Map<string, KnowledgeBase>> {
+    return new Map((await listLibraryBases(db)).filter((b) => b.origin === 'package' && b.packageId).map((b) => [b.packageId!, b]))
   }
 
   /** Installa o aggiorna i pacchetti integrati nell'app (cartella `packs/`): è ciò che l'app sa di suo. */
@@ -744,6 +750,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     inspectPack,
     installPack,
     installBuiltin,
+    installedPacks,
     resumePending,
     exportBase,
     documentsOf,

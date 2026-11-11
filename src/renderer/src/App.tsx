@@ -7,6 +7,7 @@ import { DownloadIcon, PanelRightIcon } from './components/icons'
 import { ModelPicker } from './components/ModelPicker'
 import { OllamaBanner } from './components/OllamaBanner'
 import { SettingsDialog } from './components/SettingsDialog'
+import { StoreDialog } from './components/StoreDialog'
 import { WindowControls } from './components/WindowControls'
 import { Sidebar } from './components/Sidebar'
 import { useChat } from './store/useChat'
@@ -103,6 +104,7 @@ export default function App(): React.JSX.Element {
   const conversation = useChat((s) => s.conversation)
   const [briefOpen, setBriefOpen] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [storeOpen, setStoreOpen] = useState(false)
 
   useEffect(() => {
     void initModels()
@@ -148,7 +150,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <div className="flex h-full" key={locale}>
-      <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
+      <Sidebar onOpenSettings={() => setSettingsOpen(true)} onOpenStore={() => setStoreOpen(true)} />
       {/* overflow-hidden: con la finestra stretta la colonna si restringe (gli elementi della topbar vengono
           tagliati) invece di allargare il documento oltre la finestra. */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -182,6 +184,7 @@ export default function App(): React.JSX.Element {
         </div>
       </div>
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      {storeOpen && <StoreDialog onClose={() => setStoreOpen(false)} />}
     </div>
   )
 }

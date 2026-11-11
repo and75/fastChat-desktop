@@ -177,6 +177,19 @@ export function SettingsDialog({ onClose }: { onClose(): void }): React.JSX.Elem
           <span className="text-xs text-zinc-500">{t('settings.kvCache.hint')}</span>
         </label>
 
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium">{t('settings.storeUrl')}</span>
+          <input
+            type="url"
+            placeholder="https://"
+            className={field}
+            value={draft.storeUrl ?? ''}
+            onChange={(e) => setDraft({ ...draft, storeUrl: e.target.value })}
+            data-testid="settings-store-url"
+          />
+          <span className="text-xs text-zinc-500">{t('settings.storeUrl.hint')}</span>
+        </label>
+
         {error && (
           <p role="alert" className="text-sm text-red-700 dark:text-red-400">
             {error}

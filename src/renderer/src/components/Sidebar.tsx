@@ -5,7 +5,7 @@ import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { useTemplates } from '../store/useTemplates'
 import { IconButton } from './IconButton'
-import { AppLogo, ChevronDownIcon, PanelLeftIcon, PlusIcon, SettingsIcon } from './icons'
+import { AppLogo, ChevronDownIcon, PanelLeftIcon, PlusIcon, SettingsIcon, StoreIcon } from './icons'
 import { isMac } from './WindowControls'
 
 /** Elenco dei template: un clic crea una conversazione con quel brief e quelle impostazioni. */
@@ -229,7 +229,7 @@ function useCollapsed(): [boolean, (v: boolean) => void] {
 }
 
 /** Barra laterale chiusa: striscia con logo, pulsante per riaprire, nuova conversazione e impostazioni. */
-function CollapsedRail({ onExpand, onOpenSettings }: { onExpand(): void; onOpenSettings(): void }): React.JSX.Element {
+function CollapsedRail({ onExpand, onOpenSettings, onOpenStore }: { onExpand(): void; onOpenSettings(): void; onOpenStore(): void }): React.JSX.Element {
   const create = useConversations((s) => s.create)
   return (
     <aside
@@ -255,6 +255,9 @@ function CollapsedRail({ onExpand, onOpenSettings }: { onExpand(): void; onOpenS
         <PlusIcon size={18} />
       </IconButton>
       <div className="flex-1" />
+      <IconButton tooltip={t('store.title')} tooltipPlacement="right" data-testid="store-open-rail" onClick={onOpenStore}>
+        <StoreIcon size={18} />
+      </IconButton>
       <IconButton tooltip={t('settings.title')} tooltipPlacement="right" onClick={onOpenSettings}>
         <SettingsIcon size={18} />
       </IconButton>
@@ -262,13 +265,13 @@ function CollapsedRail({ onExpand, onOpenSettings }: { onExpand(): void; onOpenS
   )
 }
 
-export function Sidebar({ onOpenSettings }: { onOpenSettings(): void }): React.JSX.Element {
+export function Sidebar({ onOpenSettings, onOpenStore }: { onOpenSettings(): void; onOpenStore(): void }): React.JSX.Element {
   const [collapsed, setCollapsed] = useCollapsed()
-  if (collapsed) return <CollapsedRail onExpand={() => setCollapsed(false)} onOpenSettings={onOpenSettings} />
-  return <ExpandedSidebar onCollapse={() => setCollapsed(true)} onOpenSettings={onOpenSettings} />
+  if (collapsed) return <CollapsedRail onExpand={() => setCollapsed(false)} onOpenSettings={onOpenSettings} onOpenStore={onOpenStore} />
+  return <ExpandedSidebar onCollapse={() => setCollapsed(true)} onOpenSettings={onOpenSettings} onOpenStore={onOpenStore} />
 }
 
-function ExpandedSidebar({ onOpenSettings, onCollapse }: { onOpenSettings(): void; onCollapse(): void }): React.JSX.Element {
+function ExpandedSidebar({ onOpenSettings, onOpenStore, onCollapse }: { onOpenSettings(): void; onOpenStore(): void; onCollapse(): void }): React.JSX.Element {
   const { conversations, activeId, search, showArchived, setSearch, setShowArchived } = useConversations()
   const [query, setQuery] = useState(search)
 
@@ -329,6 +332,19 @@ function ExpandedSidebar({ onOpenSettings, onCollapse }: { onOpenSettings(): voi
           )}
         </ul>
       </section>
+
+      {/* Store: sopra la riga in fondo (archiviate, impostazioni). */}
+      <div className="border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
+        <button
+          type="button"
+          onClick={onOpenStore}
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          data-testid="store-open"
+        >
+          <StoreIcon size={16} />
+          {t('store.title')}
+        </button>
+      </div>
 
       <div className="flex items-center justify-between border-t border-zinc-200 px-3 py-2 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
         <label className="flex items-center gap-2 whitespace-nowrap">

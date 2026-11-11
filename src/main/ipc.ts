@@ -54,6 +54,7 @@ import { electronCipher } from './knowledge/secrets'
 import { PACK_EXTENSION } from './knowledge/pack'
 import { TRUSTED_KEYS } from './knowledge/trust'
 import { createContextLog } from './contextLog'
+import { createStore } from './store'
 import { createSummarizer } from './summary'
 import { isLocalOllama, systemInfo } from './system'
 import { runBenchmark } from './benchmark'
@@ -291,6 +292,11 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
       if (!/^[\w.\-/:]+$/.test(name)) throw new Error(t('err.badEmbeddingName'))
       patch.embeddingModel = name
     }
+    if (patch.storeUrl !== undefined) {
+      const url = String(patch.storeUrl).trim()
+      if (url && !/^https?:\/\/\S+$/i.test(url)) throw new Error(t('err.store.badUrl'))
+      patch.storeUrl = url.replace(/\/+$/, '')
+    }
     if (patch.kvCacheType !== undefined && !KV_CACHE_TYPES.includes(patch.kvCacheType)) throw new Error(t('err.badKv'))
     if (patch.language !== undefined && !LANGUAGE_SETTINGS.includes(patch.language)) throw new Error(t('err.badLanguage'))
     const next = await setSettings(db, patch)
@@ -457,6 +463,16 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     await writeFile(filePath, data)
     return filePath
   })
+  // Store: catalogo (dal repository o quello incluso nell'app), installazione e rimozione.
+  const store = createStore({
+    knowledge,
+    getUrl: async () => (await getSettings(db)).storeUrl,
+    localDir: join(app.getAppPath(), 'store'),
+    downloadsDir: join(app.getPath('userData'), 'downloads')
+  })
+  handle(IPC.storeCatalog, () => store.catalog())
+  handle(IPC.storeInstall, (_e, id: string) => store.install(requireId(id)))
+  handle(IPC.storeRemove, (_e, id: string) => store.remove(requireId(id)))
   handle(IPC.knowledgeLink, async (_e, id: string, baseId: string) => {
     const conv = await convOrThrow(id)
     await knowledge.link(conv, requireId(baseId))

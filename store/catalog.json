@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "updatedAt": "2026-11-11",
+  "items": [
+    {
+      "id": "app.fastchat.guida",
+      "type": "knowledge",
+      "builtin": true,
+      "version": "1.0.0+2c41f7d4",
+      "author": "FastChat",
+      "language": "it",
+      "price": 0,
+      "name": {
+        "it": "Guida di FastChat",
+        "en": "FastChat Guide",
+        "fr": "Guide de FastChat"
+      },
+      "summary": {
+        "it": "Come funziona l’app: basi di conoscenza, plugin, impostazioni.",
+        "en": "How the app works: knowledge bases, plugins, settings.",
+        "fr": "Comment fonctionne l’application : bases de connaissances, plugins, paramètres."
+      }
+    },
+    {
+      "id": "it.fastchat.prompt",
+      "type": "knowledge",
+      "version": "1.0.0+3320bf8e",
+      "author": "FastChat",
+      "language": "it",
+      "price": 0,
+      "size": 2341,
+      "file": "items/it.fastchat.prompt/1.0.0+3320bf8e.fcpack",
+      "sha256": "64e3c9385373dad9220ff69577a2951d0baf2781fa3369c7328015bbde4169f0",
+      "name": {
+        "it": "Scrivere buoni prompt",
+        "en": "Writing good prompts",
+        "fr": "Écrire de bons prompts"
+      },
+      "summary": {
+        "it": "Indicazioni pratiche per ottenere risposte migliori da un modello locale.",
+        "en": "Practical advice for getting better answers from a local model.",
+        "fr": "Conseils pratiques pour obtenir de meilleures réponses d’un modèle local."
+      }
+    },
+    {
+      "id": "it.fastchat.tutor-prompt",
+      "type": "identity",
+      "version": "1.0.0",
+      "author": "FastChat",
+      "language": "it",
+      "price": 0,
+      "model": {
+        "name": "gemma3:12b",
+        "required": false
+      },
+      "requires": [
+        "it.fastchat.prompt"
+      ],
+      "name": {
+        "it": "Tutor dei prompt",
+        "en": "Prompt tutor",
+        "fr": "Tuteur de prompts"
+      },
+      "summary": {
+        "it": "Rilegge i tuoi prompt e propone come migliorarli, con esempi.",
+        "en": "Reviews your prompts and suggests improvements, with examples.",
+        "fr": "Relit vos prompts et propose des améliorations, avec des exemples."
+      }
+    },
+    {
+      "id": "it.fastchat.sito-web",
+      "type": "plugin",
+      "version": "0.9.0",
+      "author": "FastChat",
+      "price": 0,
+      "name": {
+        "it": "Sito web",
+        "en": "Website",
+        "fr": "Site web"
+      },
+      "summary": {
+        "it": "Collega le pagine di un sito come base di conoscenza.",
+        "en": "Connects the pages of a website as a knowledge base.",
+        "fr": "Connecte les pages d’un site comme base de connaissances."
+      }
+    },
+    {
+      "id": "it.fastchat.kit-prompt",
+      "type": "bundle",
+      "version": "1.0.0",
+      "author": "FastChat",
+      "language": "it",
+      "price": 0,
+      "contains": [
+        "it.fastchat.tutor-prompt",
+        "it.fastchat.prompt"
+      ],
+      "name": {
+        "it": "Kit dei prompt",
+        "en": "Prompt kit",
+        "fr": "Kit de prompts"
+      },
+      "summary": {
+        "it": "L’identità «Tutor dei prompt» con la base «Scrivere buoni prompt».",
+        "en": "The “Prompt tutor” identity with the “Writing good prompts” base.",
+        "fr": "L’identité « Tuteur de prompts » avec la base « Écrire de bons prompts »."
+      }
+    }
+  ]
+}

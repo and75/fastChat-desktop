@@ -877,6 +877,49 @@ try {
     assert.equal(await panel.getByTestId('knowledge-doc').count(), 2, 'i documenti della conversazione restano')
   })
 
+  await step('store: finestra sopra la chat, quattro categorie, Guida già installata, installa una base e la collega', async () => {
+    await page.getByTestId('store-open').click()
+    const store = page.getByTestId('store-dialog')
+    await store.getByTestId('store-item').first().waitFor()
+    // categorie nell'ordine: Identità, Basi di conoscenza, Plugin, Pacchetti; si apre sulle basi
+    assert.deepEqual(await store.getByRole('tab').allTextContents(), ['Identità1', 'Basi di conoscenza2', 'Plugin1', 'Pacchetti1'])
+    assert.equal(await store.getByRole('tab', { name: /Basi di conoscenza/ }).getAttribute('aria-selected'), 'true')
+    const item = (name) => store.getByTestId('store-item').filter({ has: page.getByTestId('store-item-name').filter({ hasText: name }) })
+    // la Guida integrata: installata, senza azioni
+    const guide = item('Guida di FastChat')
+    await guide.locator('[data-testid="store-item-state"][data-state="installed"]').first().waitFor()
+    assert.equal(await guide.getByRole('button').count(), 0)
+    await store.getByTestId('store-source').filter({ hasText: 'Catalogo incluso nell’app' }).waitFor()
+    // identità e plugin: nel catalogo, non ancora installabili
+    await store.getByTestId('store-tab-identity').click()
+    await item('Tutor dei prompt').locator('[data-state="soon"]').first().waitFor()
+    await item('Tutor dei prompt').getByTestId('store-item-part').filter({ hasText: 'Scrivere buoni prompt' }).waitFor()
+    assert.equal(await store.getByTestId('store-item-install').count(), 0)
+    await store.getByTestId('store-tab-plugin').click()
+    await store.locator('[data-testid="store-item-state"][data-state="soon"]').first().waitFor()
+    // un pacchetto elenca ciò che contiene, ognuno con il suo stato
+    await store.getByTestId('store-tab-bundle').click()
+    const kit = store.getByTestId('store-item')
+    assert.equal(await kit.getByTestId('store-item-part').count(), 2)
+    await kit.locator(':scope > div [data-testid="store-item-state"][data-state="available"]').first().waitFor()
+    // ricerca
+    await store.getByTestId('store-tab-knowledge').click()
+    await store.getByTestId('store-search').fill('prompt')
+    assert.equal(await store.getByTestId('store-item').count(), 1)
+    await store.getByTestId('store-search').fill('zzz')
+    await store.getByTestId('store-empty').filter({ hasText: 'Nessun risultato per «zzz»' }).waitFor()
+    await store.getByTestId('store-search').fill('')
+    // installa «Scrivere buoni prompt»: diventa installata, e il pacchetto che la contiene pure
+    await item('Scrivere buoni prompt').getByTestId('store-item-install').click()
+    await item('Scrivere buoni prompt').locator('[data-testid="store-item-state"][data-state="installed"]').first().waitFor()
+    await item('Scrivere buoni prompt').getByTestId('store-item-remove').waitFor()
+    await store.getByRole('button', { name: 'Chiudi' }).click()
+    await store.waitFor({ state: 'detached' })
+    // la base installata si collega dalla scheda «Conoscenza»
+    const panel = page.getByTestId('knowledge-panel')
+    await waitUntil(async () => (await panel.getByTestId('knowledge-link-select').locator('option').allTextContents()).some((o) => o.startsWith('Scrivere buoni prompt')))
+  })
+
   // ------------------------------------------------------------------ fase 4
   const planRequests = () => fake.requests.filter((r) => r.path === '/api/chat' && r.body?.format)
 
@@ -1473,6 +1516,21 @@ try {
     await page.getByTestId('message-assistant').first().waitFor()
     const req = chatRequests()[before].body
     assert.match(req.messages[0].content, /^# Role\nTutor/)
+    // store e basi installate: i titoli seguono la lingua dell'interfaccia
+    await page.getByTestId('store-open').filter({ hasText: 'Store' }).click()
+    const store = page.getByTestId('store-dialog')
+    await store.getByTestId('store-item').first().waitFor()
+    assert.deepEqual(await store.getByRole('tab').allTextContents(), ['Identities1', 'Knowledge bases2', 'Plugins1', 'Bundles1'])
+    assert.deepEqual(await store.getByTestId('store-item-name').allTextContents(), ['FastChat Guide', 'Writing good prompts'])
+    await store.locator('[data-testid="store-item-state"][data-state="installed"]').first().filter({ hasText: 'Installed' }).waitFor()
+    await store.getByRole('button', { name: 'Close' }).click()
+    await store.waitFor({ state: 'detached' })
+    await page.getByRole('button', { name: 'Settings' }).click()
+    await dialog.getByRole('tab', { name: 'Knowledge' }).click()
+    await dialog.getByTestId('library-base').filter({ hasText: 'FastChat Guide' }).waitFor()
+    await dialog.getByTestId('library-base').filter({ hasText: 'Writing good prompts' }).waitFor()
+    await dialog.getByRole('button', { name: 'Close' }).click()
+    await dialog.waitFor({ state: 'detached' })
     // di nuovo in italiano
     await page.getByRole('button', { name: 'Settings' }).click()
     await dialog.getByTestId('settings-language').selectOption('it')
