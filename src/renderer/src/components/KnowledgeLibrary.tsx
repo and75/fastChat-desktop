@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { getLocale, t, tn } from '@shared/i18n'
+import { isStoreBase } from '@shared/store'
 import type { KnowledgeBaseInfo, PackInspection } from '@shared/types'
 import { useKnowledge } from '../store/useKnowledge'
 import { BookOpenIcon, TrashIcon } from './icons'
 import { baseDetail, baseTitle, KnowledgeDocuments, ModelMissing } from './KnowledgePanel'
 
 /** Una base aperta: nome modificabile, eliminazione con conferma, documenti. */
-function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved(): void }): React.JSX.Element {
+function BaseEditor({ base, onRemoved, onOpenStore }: { base: KnowledgeBaseInfo; onRemoved(): void; onOpenStore(): void }): React.JSX.Element {
   const renameBase = useKnowledge((s) => s.renameBase)
   const removeBase = useKnowledge((s) => s.removeBase)
   const setAutoLink = useKnowledge((s) => s.setAutoLink)
@@ -18,8 +19,8 @@ function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved():
   const [exported, setExported] = useState<string | null>(null)
   const fromPack = base.origin === 'package'
   const trust = base.meta?.trust
-  // La base integrata nell'app non si elimina (tornerebbe al prossimo avvio).
-  const builtin = trust === 'builtin' && !!base.packageId?.startsWith('app.')
+  // Le basi dello Store (e quella integrata nell'app) si aggiornano e si rimuovono dallo Store.
+  const managed = isStoreBase(base)
   const description = base.meta?.i18n?.[getLocale()]?.description ?? base.description
   useEffect(() => setName(shown), [base.id, shown])
   const commit = (): void => {
@@ -59,7 +60,17 @@ function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved():
             {t('pack.export')}
           </button>
         )}
-        {!confirming && !builtin && (
+        {managed && (
+          <button
+            type="button"
+            onClick={onOpenStore}
+            className="rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            data-testid="library-base-store"
+          >
+            {t('store.manage')}
+          </button>
+        )}
+        {!confirming && !managed && (
           <button
             type="button"
             onClick={() => setConfirming(true)}
@@ -119,7 +130,7 @@ function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved():
 const trustClass = (trust: PackInspection['trust']): string => (trust === 'verified' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400')
 
 /** Un pacchetto scelto ma non ancora installato: cosa contiene, con che modello è fatto, se la firma è riconosciuta. */
-function PackPreview({ pack, onDone }: { pack: PackInspection; onDone(installed: boolean): void }): React.JSX.Element {
+function PackPreview({ pack, onDone, onOpenStore }: { pack: PackInspection; onDone(installed: boolean): void; onOpenStore(): void }): React.JSX.Element {
   const installPack = useKnowledge((s) => s.installPack)
   const busy = useKnowledge((s) => s.busy)
   const m = pack.manifest
@@ -140,11 +151,18 @@ function PackPreview({ pack, onDone }: { pack: PackInspection; onDone(installed:
         <li className={trustClass(pack.trust)}>{t(`pack.trust.${pack.trust}`)}{trusted ? '' : ` ${t('pack.preview.untrusted')}`}</li>
         {pack.installedVersion && <li>{t('pack.preview.update', { version: pack.installedVersion })}</li>}
         {!supported && <li className="text-red-700 dark:text-red-300">{t('err.pack.unsupported', { type: m.type })}</li>}
+        {pack.inStore && <li className="text-amber-700 dark:text-amber-400" data-testid="pack-in-store">{t('err.pack.inStore')}</li>}
       </ul>
       <div className="flex gap-2">
+        {pack.inStore && (
+          <button type="button" className="rounded-lg bg-brand-600 px-3 py-1.5 font-medium text-white hover:bg-brand-700" onClick={onOpenStore} data-testid="pack-open-store">
+            {t('store.openStore')}
+          </button>
+        )}
         <button
           type="button"
-          disabled={busy || !supported}
+          hidden={pack.inStore}
+          disabled={busy || !supported || pack.inStore}
           className="rounded-lg bg-brand-600 px-3 py-1.5 font-medium text-white hover:bg-brand-700 disabled:opacity-40"
           onClick={() => void installPack(pack.path, !trusted).then((ok) => ok && onDone(true))}
           data-testid="pack-install"
@@ -163,7 +181,7 @@ function PackPreview({ pack, onDone }: { pack: PackInspection; onDone(installed:
  * Libreria delle basi di conoscenza (Impostazioni → Conoscenza): basi riutilizzabili, con i loro documenti, da
  * collegare alle conversazioni dalla scheda «Conoscenza».
  */
-export function KnowledgeLibrary(): React.JSX.Element {
+export function KnowledgeLibrary({ onOpenStore }: { onOpenStore(): void }): React.JSX.Element {
   const bases = useKnowledge((s) => s.bases)
   const loadBases = useKnowledge((s) => s.loadBases)
   const createBase = useKnowledge((s) => s.createBase)
@@ -213,6 +231,7 @@ export function KnowledgeLibrary(): React.JSX.Element {
 
       {pack && (
         <PackPreview
+          onOpenStore={onOpenStore}
           pack={pack}
           onDone={() => {
             setPack(null)
@@ -256,7 +275,7 @@ export function KnowledgeLibrary(): React.JSX.Element {
         </ul>
       )}
 
-      {open && <BaseEditor key={open.id} base={open} onRemoved={() => setSelected(null)} />}
+      {open && <BaseEditor key={open.id} base={open} onRemoved={() => setSelected(null)} onOpenStore={onOpenStore} />}
     </div>
   )
 }

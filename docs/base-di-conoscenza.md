@@ -73,6 +73,7 @@ Finestra sopra la chat, aperta dal bottone «Store» nella barra laterale (sopra
 - **Oggi si installano le basi di conoscenza**; identità e plugin sono in catalogo ma non installabili. Un pacchetto installa le basi che contiene.
 - **Titoli e descrizioni nella lingua dell'interfaccia** (it/en/fr): nel catalogo (`name`, `summary` per lingua) e nel manifest del pacchetto (`i18n`), così valgono anche in libreria, basi collegate e fonti. Il contenuto resta nella lingua del pacchetto.
 - **Catalogo**: se «Repository dello store» (Impostazioni → Generale) è vuoto si usa quello incluso nell'app (`store/catalog.json`, generato da `npm run packs:build`); altrimenti `GET {url}/catalog.json` e `GET {url}/{file}`. Se il repository non risponde si mostra il catalogo locale con il motivo.
+- **Chi gestisce cosa**: ciò che è dello Store (voci del catalogo, base integrata) si installa, si aggiorna e si rimuove solo dallo Store. In Impostazioni → Conoscenza quelle basi mostrano «Gestisci nello Store» al posto di «Elimina», e «Importa pacchetto…» rifiuta un file con l'id di una voce dello Store. Le Impostazioni gestiscono le basi create dall'utente e i pacchetti importati da file.
 - **Sicurezza**: impronta SHA-256 del file confrontata con il catalogo; dal repository si installano solo pacchetti con firma riconosciuta; quelli del catalogo incluso nell'app sono fidati come la Guida.
 
 Voce del catalogo:

@@ -731,6 +731,10 @@ export const it = {
   'settings.modelSection': 'Impostazioni del modello',
   'settings.language.fr': 'Français',
   // --- store
+  'err.pack.inStore': 'Questo pacchetto è nello Store: installalo o aggiornalo da lì.',
+  'err.knowledge.inStore': 'Questa base viene dallo Store: si rimuove da lì.',
+  'store.manage': 'Gestisci nello Store',
+  'store.openStore': 'Apri lo Store',
   'err.knowledge.builtin': 'La base integrata nell\'app non si elimina',
   'store.remove.confirm': 'Rimuovere «{name}»?',
   'store.title': 'Store',

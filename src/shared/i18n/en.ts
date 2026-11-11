@@ -732,6 +732,10 @@ export const en: Record<Key, string> = {
   'settings.modelSection': 'Model settings',
   'settings.language.fr': 'Français',
   // --- store
+  'err.pack.inStore': 'This package is in the Store: install or update it from there.',
+  'err.knowledge.inStore': 'This base comes from the Store: remove it from there.',
+  'store.manage': 'Manage in the Store',
+  'store.openStore': 'Open the Store',
   'err.knowledge.builtin': 'The base bundled with the app cannot be deleted',
   'store.remove.confirm': 'Remove “{name}”?',
   'store.title': 'Store',

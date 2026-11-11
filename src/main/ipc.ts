@@ -54,6 +54,7 @@ import { electronCipher } from './knowledge/secrets'
 import { PACK_EXTENSION } from './knowledge/pack'
 import { TRUSTED_KEYS } from './knowledge/trust'
 import { createContextLog } from './contextLog'
+import { isStoreBase } from '@shared/store'
 import { createStore } from './store'
 import { createSummarizer } from './summary'
 import { isLocalOllama, systemInfo } from './system'
@@ -436,6 +437,9 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     })
   )
   handle(IPC.knowledgeBaseRemove, async (_e, id: string) => {
+    // Ciò che viene dallo Store si rimuove dallo Store.
+    const base = (await knowledge.listBases()).find((b) => b.id === id)
+    if (base && isStoreBase(base)) throw new Error(t('err.knowledge.inStore'))
     await knowledge.removeBase(requireId(id))
     return knowledge.listBases()
   })
@@ -445,10 +449,14 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     const win = BrowserWindow.fromWebContents(e.sender)
     const options: Electron.OpenDialogOptions = { title: t('pack.pickTitle'), properties: ['openFile'], filters: [{ name: t('pack.filter'), extensions: [PACK_EXTENSION] }] }
     const { canceled, filePaths } = forced ? { canceled: false, filePaths: [forced] } : win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
-    return canceled || !filePaths[0] ? null : knowledge.inspectPack(filePaths[0])
+    if (canceled || !filePaths[0]) return null
+    const inspection = await knowledge.inspectPack(filePaths[0])
+    return { ...inspection, inStore: await store.owns(inspection.manifest.id) }
   })
   handle(IPC.knowledgePackInstall, async (_e, path: unknown, allowUntrusted: unknown) => {
     if (typeof path !== 'string' || !path) throw new Error(t('err.badText'))
+    // Una voce dello Store non si installa da file: sovrascriverebbe (anche senza firma) ciò che lo Store gestisce.
+    if (await store.owns((await knowledge.inspectPack(path)).manifest.id)) throw new Error(t('err.pack.inStore'))
     await knowledge.installPack(path, { allowUntrusted: allowUntrusted === true })
     return knowledge.listBases()
   })

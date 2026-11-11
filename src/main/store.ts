@@ -11,6 +11,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { t } from '@shared/i18n'
 import { parseCatalog, storeEntries, type StoreCatalog, type StoreItem, type StoreView } from '@shared/store'
+import { isStoreBase } from '@shared/store'
 import type { Knowledge } from './knowledge'
 import { PACK_EXTENSION } from './knowledge/pack'
 
@@ -65,7 +66,7 @@ export function createStore({ knowledge, getUrl, localDir, downloadsDir, fetchIm
     const path = join(downloadsDir, `${item.id}.${PACK_EXTENSION}`)
     await writeFile(path, data)
     // Dal repository: solo pacchetti con firma riconosciuta. Dal catalogo dell'app: fidati come l'app.
-    await knowledge.installPack(path, source === 'local' ? { builtin: true } : {})
+    await knowledge.installPack(path, { store: true, ...(source === 'local' ? { builtin: true } : {}) })
   }
 
   /** Installa (o aggiorna) una voce; di un pacchetto, le basi che contiene. */
@@ -90,7 +91,17 @@ export function createStore({ knowledge, getUrl, localDir, downloadsDir, fetchIm
     return catalog()
   }
 
-  return { catalog, install, remove }
+  /**
+   * La voce è dello Store? Lo è se sta nel catalogo, o se la base installata con quell'id viene da lì (vale
+   * anche quando il repository non risponde). Ciò che è dello Store entra ed esce solo dallo Store.
+   */
+  async function owns(id: string): Promise<boolean> {
+    const base = (await knowledge.installedPacks()).get(id)
+    if (base && isStoreBase(base)) return true
+    return (await load()).catalog.items.some((i) => i.id === id)
+  }
+
+  return { catalog, install, remove, owns }
 }
 
 export type Store = ReturnType<typeof createStore>

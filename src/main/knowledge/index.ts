@@ -569,7 +569,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
    * al modello di embedding dichiarato. Di solo testo: i documenti si indicizzano con il modello dell'utente.
    * Senza firma riconosciuta serve la conferma esplicita (`allowUntrusted`); i pacchetti dell'app sono fidati.
    */
-  async function installPack(path: string, opts: { allowUntrusted?: boolean; builtin?: boolean } = {}): Promise<KnowledgeBaseInfo> {
+  async function installPack(path: string, opts: { allowUntrusted?: boolean; builtin?: boolean; store?: boolean } = {}): Promise<KnowledgeBaseInfo> {
     const data = await readFile(path)
     const { manifest, knowledge, vectors, trust } = await readPack(data, trustedKeys)
     if (manifest.type !== 'knowledge' || !knowledge) throw new PackError(t('err.pack.unsupported', { type: manifest.type }))
@@ -586,7 +586,8 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
       ...(manifest.license ? { license: manifest.license } : {}),
       ...(manifest.embedding ? { dimensions: manifest.embedding.dimensions, digest: manifest.embedding.digest ?? null } : {}),
       ...(manifest.i18n ? { i18n: manifest.i18n } : {}),
-      trust: opts.builtin ? 'builtin' : trust
+      trust: opts.builtin ? 'builtin' : trust,
+      ...(opts.store ? { store: true } : {})
     }
     const fields = { name: manifest.name, description: manifest.description ?? '', version: manifest.version, embeddingModel: manifest.embedding?.model ?? null, packageId: manifest.id, meta }
     const existing = await getBaseByPackage(db, manifest.id)

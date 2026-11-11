@@ -183,7 +183,13 @@ export default function App(): React.JSX.Element {
           {conversation && briefOpen && <BriefPanel key={conversation.id} conversation={conversation} />}
         </div>
       </div>
-      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsDialog
+          onClose={() => setSettingsOpen(false)}
+          onOpenStore={() => {
+            setSettingsOpen(false)
+            setStoreOpen(true)
+          }}
+        />}
       {storeOpen && <StoreDialog onClose={() => setStoreOpen(false)} />}
     </div>
   )

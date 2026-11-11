@@ -2,6 +2,7 @@
 // riuniscono più d'uno) e lo stato di ogni voce rispetto a ciò che l'app ha già. Funzioni pure, condivise tra
 // main (legge il catalogo, installa) e renderer (mostra).
 import type { Locale } from './i18n'
+import type { KnowledgeBase } from './types'
 
 export type StoreItemType = 'identity' | 'knowledge' | 'plugin' | 'bundle'
 /** Le categorie dello store, nell'ordine in cui si mostrano. */
@@ -127,3 +128,6 @@ export function storeEntries(catalog: StoreCatalog, installed: ReadonlyMap<strin
     return { ...item, state, installedVersion: installed.get(item.id) ?? null, removable: item.type === 'knowledge' && installed.has(item.id) && !item.builtin }
   })
 }
+
+/** Una base gestita dallo Store: installata da lì o integrata nell'app. Si aggiorna e si rimuove solo dallo Store. */
+export const isStoreBase = (base: Pick<KnowledgeBase, 'origin' | 'meta'>): boolean => base.origin === 'package' && (base.meta?.store === true || base.meta?.trust === 'builtin')

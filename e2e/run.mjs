@@ -924,6 +924,20 @@ try {
     assert.ok(close.x > box.x + box.width - 80 && close.y < box.y + 40, 'chiusura in alto a destra')
     await store.getByTestId('dialog-close').click()
     await store.waitFor({ state: 'detached' })
+    // in Impostazioni → Conoscenza le basi dello Store non si eliminano: rimandano allo Store
+    await page.getByRole('button', { name: 'Impostazioni' }).click()
+    const settings = page.getByTestId('settings-dialog')
+    await settings.getByRole('tab', { name: 'Conoscenza' }).click()
+    for (const name of ['Guida di FastChat', 'Scrivere buoni prompt']) {
+      await settings.getByTestId('library-base').filter({ hasText: name }).click()
+      await settings.getByTestId('library-base-store').waitFor()
+      assert.equal(await settings.getByTestId('library-base-delete').count(), 0)
+    }
+    await settings.getByTestId('library-base-store').click()
+    await settings.waitFor({ state: 'detached' })
+    await store.getByTestId('store-item').first().waitFor()
+    await store.getByTestId('dialog-close').click()
+    await store.waitFor({ state: 'detached' })
     // la base installata si collega dalla scheda «Conoscenza»
     const panel = page.getByTestId('knowledge-panel')
     await waitUntil(async () => (await panel.getByTestId('knowledge-link-select').locator('option').allTextContents()).some((o) => o.startsWith('Scrivere buoni prompt')))

@@ -13,7 +13,7 @@ const TABS: SettingsTab[] = ['general', 'models', 'ollama', 'knowledge']
 type Check = { state: 'idle' } | { state: 'checking' } | { state: 'ok'; count: number } | { state: 'error'; message: string }
 
 /** Impostazioni generali: URL di Ollama, tema, modello predefinito per le nuove conversazioni. */
-export function SettingsDialog({ onClose }: { onClose(): void }): React.JSX.Element {
+export function SettingsDialog({ onClose, onOpenStore }: { onClose(): void; onOpenStore(): void }): React.JSX.Element {
   const { settings, models, saveSettings } = useModels()
   const [draft, setDraft] = useState<AppSettings>(() => settings ?? { ...DEFAULT_SETTINGS, ollamaUrl: '' })
   const [check, setCheck] = useState<Check>({ state: 'idle' })
@@ -74,7 +74,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }): React.JSX.Elem
       </div>
       {tab !== 'general' && (
         <div className="max-h-[70vh] overflow-y-auto p-5">
-          {tab === 'models' ? <ModelManager /> : tab === 'ollama' ? <OllamaEnvPanel /> : <KnowledgeLibrary />}
+          {tab === 'models' ? <ModelManager /> : tab === 'ollama' ? <OllamaEnvPanel /> : <KnowledgeLibrary onOpenStore={onOpenStore} />}
         </div>
       )}
       <form

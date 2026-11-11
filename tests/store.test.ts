@@ -135,6 +135,11 @@ describe('store: installazione', () => {
     const base = (await knowledge.installedPacks()).get('it.fastchat.prompt')!
     expect(base).toMatchObject({ name: 'Scrivere buoni prompt', origin: 'package' })
     expect(base.meta).toMatchObject({ trust: 'builtin', i18n: { en: { name: 'Writing good prompts' } } })
+    // è dello Store: entra ed esce da lì, anche se arriva un file con lo stesso id
+    expect(base.meta?.store).toBe(true)
+    expect(await store.owns('it.fastchat.prompt')).toBe(true)
+    expect(await store.owns('app.fastchat.guida')).toBe(true)
+    expect(await store.owns('local.mio-archivio')).toBe(false)
     await knowledge.wait(base.id)
     expect((await listDocuments(h.db, base.id)).map((d) => d.status)).toEqual(['ready'])
     // collegata: le fonti portano il nome della base nella lingua dell'interfaccia

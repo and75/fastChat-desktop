@@ -112,6 +112,8 @@ export interface KnowledgeBaseMeta {
   digest?: string | null
   /** Come è stata verificata l'origine: firma riconosciuta, integrata nell'app, o installata senza firma valida. */
   trust?: PackTrust | 'builtin'
+  /** Installata dallo Store: si aggiorna e si rimuove da lì. */
+  store?: boolean
   /** Nome e descrizione nelle altre lingue dell'interfaccia (dal manifest del pacchetto). */
   i18n?: PackI18n
 }
@@ -160,6 +162,8 @@ export interface PackInspection {
   trust: PackTrust
   /** Versione già installata dello stesso pacchetto, se c'è. */
   installedVersion: string | null
+  /** Il pacchetto è una voce dello Store: si installa da lì, non da file. */
+  inStore?: boolean
   /** Il modello di embedding dichiarato è installato in Ollama (true anche per i pacchetti di solo testo). */
   modelInstalled: boolean
 }

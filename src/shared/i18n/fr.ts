@@ -732,6 +732,10 @@ export const fr: Record<Key, string> = {
   'knowledge.connection.disconnect.title': 'Déconnecte la source et retire ses documents de la conversation',
   'settings.modelSection': 'Paramètres du modèle',
   // --- store
+  'err.pack.inStore': 'Ce paquet est dans le Store : installez-le ou mettez-le à jour depuis le Store.',
+  'err.knowledge.inStore': 'Cette base vient du Store : elle se supprime depuis le Store.',
+  'store.manage': 'Gérer dans le Store',
+  'store.openStore': 'Ouvrir le Store',
   'err.knowledge.builtin': 'La base incluse dans l\'application ne peut pas être supprimée',
   'store.remove.confirm': 'Supprimer « {name} » ?',
   'store.title': 'Store',
