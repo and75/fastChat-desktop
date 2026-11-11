@@ -1,16 +1,21 @@
 import { useEffect, useState } from 'react'
 import { t, tn } from '@shared/i18n'
-import type { KnowledgeBaseInfo } from '@shared/types'
+import type { KnowledgeBaseInfo, PackInspection } from '@shared/types'
 import { useKnowledge } from '../store/useKnowledge'
 import { BookOpenIcon, TrashIcon } from './icons'
-import { baseDetail, KnowledgeDocuments } from './KnowledgePanel'
+import { baseDetail, KnowledgeDocuments, ModelMissing } from './KnowledgePanel'
 
 /** Una base aperta: nome modificabile, eliminazione con conferma, documenti. */
 function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved(): void }): React.JSX.Element {
   const renameBase = useKnowledge((s) => s.renameBase)
   const removeBase = useKnowledge((s) => s.removeBase)
+  const setAutoLink = useKnowledge((s) => s.setAutoLink)
+  const exportBase = useKnowledge((s) => s.exportBase)
   const [name, setName] = useState(base.name)
   const [confirming, setConfirming] = useState(false)
+  const [exported, setExported] = useState<string | null>(null)
+  const fromPack = base.origin === 'package'
+  const trust = base.meta?.trust
   useEffect(() => setName(base.name), [base.id, base.name])
   const commit = (): void => {
     const clean = name.trim()
@@ -32,10 +37,22 @@ function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved():
                 commit()
               }
             }}
-            className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900"
+            readOnly={fromPack}
+            className={'rounded-lg border border-zinc-300 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900 ' + (fromPack ? 'text-zinc-500' : '')}
             data-testid="library-base-name"
           />
         </label>
+        {!fromPack && (
+          <button
+            type="button"
+            onClick={() => void exportBase(base.id).then(setExported)}
+            title={t('pack.export.title')}
+            className="rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            data-testid="library-base-export"
+          >
+            {t('pack.export')}
+          </button>
+        )}
         {!confirming && (
           <button
             type="button"
@@ -66,7 +83,72 @@ function BaseEditor({ base, onRemoved }: { base: KnowledgeBaseInfo; onRemoved():
           </button>
         </div>
       )}
-      <KnowledgeDocuments ownerId={base.id} />
+      {exported && (
+        <span className="truncate text-xs text-brand-700 dark:text-brand-400" title={exported} data-testid="library-exported">
+          {t('pack.exported', { path: exported })}
+        </span>
+      )}
+      {fromPack && (
+        <p className="text-xs leading-snug text-zinc-500" data-testid="library-base-pack">
+          {t('pack.from', { id: base.packageId ?? '', version: base.version ?? '' })}
+          {base.meta?.author ? ` · ${base.meta.author}` : ''}
+          {' · '}
+          <span className={trust === 'verified' || trust === 'builtin' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}>{t(`pack.trust.${trust ?? 'unsigned'}`)}</span>
+          {base.description ? <span className="mt-1 block">{base.description}</span> : null}
+        </p>
+      )}
+      <p className="text-xs leading-snug text-zinc-500" data-testid="library-base-model">
+        {base.embeddingModel ? t('pack.model.fixed', { model: base.model }) : t('pack.model.settings', { model: base.model })}
+      </p>
+      {!base.modelInstalled && base.documents > 0 && <ModelMissing model={base.model} />}
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={base.autoLink} onChange={(e) => void setAutoLink(base.id, e.target.checked)} data-testid="library-base-autolink" />
+        <span>{t('knowledge.library.autoLink')}</span>
+      </label>
+      <KnowledgeDocuments ownerId={base.id} readOnly={fromPack} />
+    </div>
+  )
+}
+
+const trustClass = (trust: PackInspection['trust']): string => (trust === 'verified' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400')
+
+/** Un pacchetto scelto ma non ancora installato: cosa contiene, con che modello è fatto, se la firma è riconosciuta. */
+function PackPreview({ pack, onDone }: { pack: PackInspection; onDone(installed: boolean): void }): React.JSX.Element {
+  const installPack = useKnowledge((s) => s.installPack)
+  const busy = useKnowledge((s) => s.busy)
+  const m = pack.manifest
+  const supported = m.type === 'knowledge'
+  const trusted = pack.trust === 'verified'
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-brand-300 bg-brand-50/60 p-3 text-sm dark:border-brand-800 dark:bg-brand-950/20" data-testid="pack-preview">
+      <div className="font-medium">
+        {m.name} <span className="font-normal text-zinc-500">v{m.version}</span>
+      </div>
+      {m.description && <p className="text-xs text-zinc-600 dark:text-zinc-300">{m.description}</p>}
+      <ul className="flex flex-col gap-0.5 text-xs text-zinc-600 dark:text-zinc-300">
+        <li>{t('pack.preview.content', { docs: m.documents ?? 0, chunks: m.chunks ?? 0 })}{m.author ? ` · ${m.author}` : ''}</li>
+        <li>
+          {m.embedding ? t('pack.preview.model', { model: m.embedding.model }) : t('pack.preview.textOnly')}
+          {m.embedding && !pack.modelInstalled ? <span className="text-amber-700 dark:text-amber-400"> {t('pack.preview.modelMissing')}</span> : null}
+        </li>
+        <li className={trustClass(pack.trust)}>{t(`pack.trust.${pack.trust}`)}{trusted ? '' : ` ${t('pack.preview.untrusted')}`}</li>
+        {pack.installedVersion && <li>{t('pack.preview.update', { version: pack.installedVersion })}</li>}
+        {!supported && <li className="text-red-700 dark:text-red-300">{t('err.pack.unsupported', { type: m.type })}</li>}
+      </ul>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy || !supported}
+          className="rounded-lg bg-brand-600 px-3 py-1.5 font-medium text-white hover:bg-brand-700 disabled:opacity-40"
+          onClick={() => void installPack(pack.path, !trusted).then((ok) => ok && onDone(true))}
+          data-testid="pack-install"
+        >
+          {pack.installedVersion ? t('pack.update') : trusted ? t('pack.install') : t('pack.installAnyway')}
+        </button>
+        <button type="button" className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => onDone(false)}>
+          {t('common.cancel')}
+        </button>
+      </div>
     </div>
   )
 }
@@ -79,8 +161,11 @@ export function KnowledgeLibrary(): React.JSX.Element {
   const bases = useKnowledge((s) => s.bases)
   const loadBases = useKnowledge((s) => s.loadBases)
   const createBase = useKnowledge((s) => s.createBase)
+  const pickPack = useKnowledge((s) => s.pickPack)
+  const error = useKnowledge((s) => s.error)
   const [selected, setSelected] = useState<string | null>(null)
   const [name, setName] = useState('')
+  const [pack, setPack] = useState<PackInspection | null>(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => void loadBases(), [])
   const open = bases.find((b) => b.id === selected) ?? null
@@ -110,7 +195,30 @@ export function KnowledgeLibrary(): React.JSX.Element {
         <button type="submit" disabled={!name.trim()} className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40" data-testid="library-create">
           {t('knowledge.library.create')}
         </button>
+        <button
+          type="button"
+          onClick={() => void pickPack().then(setPack)}
+          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          data-testid="library-import"
+        >
+          {t('pack.import')}
+        </button>
       </form>
+
+      {pack && (
+        <PackPreview
+          pack={pack}
+          onDone={() => {
+            setPack(null)
+            void loadBases()
+          }}
+        />
+      )}
+      {error && !selected && (
+        <p role="alert" className="text-xs text-red-700 dark:text-red-300">
+          {error}
+        </p>
+      )}
 
       {bases.length === 0 ? (
         <p className="text-sm text-zinc-500">{t('knowledge.library.none')}</p>
@@ -131,7 +239,9 @@ export function KnowledgeLibrary(): React.JSX.Element {
                 <BookOpenIcon size={16} className="shrink-0 text-zinc-400" />
                 <span className="min-w-0 flex-1 truncate font-medium">{b.name}</span>
                 <span className="shrink-0 text-xs text-zinc-500">
+                  {b.origin === 'package' ? `${t('knowledge.source.package')} · ` : ''}
                   {baseDetail(b)}
+                  {!b.modelInstalled && b.documents > 0 ? ` · ${t('knowledge.model.missingShort')}` : ''}
                   {b.conversations > 0 ? ` · ${tn('knowledge.library.used', b.conversations)}` : ''}
                 </span>
               </button>

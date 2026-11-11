@@ -58,6 +58,7 @@ const fake = await startFakeOllama([
   { name: 'embeddinggemma:latest', capabilities: ['embedding'], size: 0.6 * 1024 ** 3 }
 ])
 
+const packFile = join(mkdtempSync(join(tmpdir(), 'fastchat-preview-pack-')), 'archivio-aziendale.fcpack')
 const app = await electron.launch({
   args: [root, '--no-sandbox'],
   env: {
@@ -65,6 +66,8 @@ const app = await electron.launch({
     OLLAMA_URL: fake.url,
     FASTCHAT_USER_DATA: mkdtempSync(join(tmpdir(), 'fastchat-preview-')),
     FASTCHAT_LANG: 'it',
+    FASTCHAT_PACK_EXPORT: packFile,
+    FASTCHAT_PACK_FILE: packFile,
     FASTCHAT_KNOWLEDGE_FILES: [join(root, 'tests', 'fixtures', 'bilancio.pdf'), join(root, 'tests', 'fixtures', 'contratto.docx'), join(root, 'tests', 'fixtures', 'relazione.txt')].join(process.platform === 'win32' ? ';' : ':'),
     FASTCHAT_SYSTEM_RAM: String(32 * 1024 ** 3),
     FASTCHAT_SYSTEM_UNIFIED: '0',
@@ -247,6 +250,15 @@ await settingsDialog.getByTestId('library-base-editor').getByTestId('knowledge-a
 await settingsDialog.locator('[data-testid="knowledge-doc"][data-status="ready"]').nth(2).waitFor({ timeout: 30000 })
 await page.waitForTimeout(400)
 await page.screenshot({ path: out('18-libreria-delle-basi.png') })
+// esporta la base come pacchetto e mostra l'anteprima dell'importazione (modello dichiarato, firma)
+await settingsDialog.getByTestId('library-base-export').click()
+await settingsDialog.getByTestId('library-exported').waitFor()
+await settingsDialog.getByTestId('library-import').click()
+await settingsDialog.getByTestId('pack-preview').waitFor()
+await settingsDialog.getByTestId('library-base').filter({ hasText: 'Archivio aziendale' }).click()
+await page.waitForTimeout(300)
+await page.screenshot({ path: out('20-importa-pacchetto.png') })
+await settingsDialog.getByTestId('pack-preview').getByRole('button', { name: 'Annulla' }).click()
 await settingsDialog.getByRole('button', { name: 'Chiudi' }).click()
 await settingsDialog.waitFor({ state: 'detached' })
 await page.getByTestId('new-conversation').click()

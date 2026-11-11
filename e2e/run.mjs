@@ -84,6 +84,9 @@ const app = await electron.launch({
     OLLAMA_URL: fake.url,
     FASTCHAT_USER_DATA: userData,
     FASTCHAT_EXPORT_PATH: join(userData, 'export'),
+    // Pacchetti: «Esporta…» scrive qui e «Importa pacchetto…» legge lo stesso file, senza dialog.
+    FASTCHAT_PACK_EXPORT: join(userData, 'archivio.fcpack'),
+    FASTCHAT_PACK_FILE: join(userData, 'archivio.fcpack'),
     // Base di conoscenza: «Aggiungi documenti» salta il dialog e aggiunge questi file.
     FASTCHAT_KNOWLEDGE_FILES: [join(root, 'tests', 'fixtures', 'relazione.txt'), join(root, 'tests', 'fixtures', 'bilancio.pdf')].join(process.platform === 'win32' ? ';' : ':'),
     // Macchina finta: 16 GB di RAM. Con un modello da 2 GB e 128 KiB per token la memoria suggerita
@@ -779,7 +782,9 @@ try {
     const dialog = page.getByTestId('settings-dialog')
     await dialog.getByRole('tab', { name: 'Conoscenza' }).click()
     const library = dialog.getByTestId('knowledge-library')
-    await library.getByText('Nessuna base. Creane una per iniziare.').waitFor()
+    // la libreria parte con la base integrata nell'app, installata da un pacchetto all'avvio
+    await library.getByTestId('library-base').filter({ hasText: /Guida di FastChat[\s\S]*Pacchetto/ }).waitFor()
+    assert.equal(await library.getByTestId('library-base').count(), 1)
     await library.getByTestId('library-new-name').fill('Archivio aziendale')
     await library.getByTestId('library-create').click()
     const editor = library.getByTestId('library-base-editor')
@@ -831,17 +836,41 @@ try {
     // scollega: la base resta nella libreria
     await panel.getByTestId('knowledge-unlink').click()
     await waitUntil(async () => (await panel.getByTestId('knowledge-linked-base').count()) === 0)
-    assert.equal((await page.evaluate(() => window.api.knowledge.bases())).data.length, 1)
+    assert.equal((await page.evaluate(() => window.api.knowledge.bases())).data.length, 2)
     // ricollega, poi elimina dalla libreria: la conferma dice quante conversazioni la usano, e sparisce dalla conversazione
     await panel.getByTestId('knowledge-link-select').selectOption({ label: 'Archivio (2 documenti)' })
     await panel.getByTestId('knowledge-linked-base').waitFor()
     await page.getByRole('button', { name: 'Impostazioni' }).click()
     await dialog.getByRole('tab', { name: 'Conoscenza' }).click()
     await library.getByTestId('library-base').filter({ hasText: 'in 1 conversazione' }).click()
+    // prima di eliminarla: esporta come pacchetto (con i vettori) e reimporta il file
+    const editor2 = library.getByTestId('library-base-editor')
+    await editor2.getByTestId('library-base-model').filter({ hasText: 'modello di embedding delle Impostazioni (embeddinggemma)' }).waitFor()
+    await editor2.getByTestId('library-base-export').click()
+    await editor2.getByTestId('library-exported').filter({ hasText: 'archivio.fcpack' }).waitFor()
+    await library.getByTestId('library-import').click()
+    const preview = library.getByTestId('pack-preview')
+    await preview.getByText('2 documenti,').waitFor()
+    await preview.getByText('Vettori inclusi, calcolati con embeddinggemma.').waitFor()
+    await preview.getByText(/non firmato/).waitFor()
+    const embedsBefore = fake.requests.filter((r) => r.path === '/api/embed').length
+    await preview.getByRole('button', { name: 'Installa comunque' }).click()
+    await preview.waitFor({ state: 'detached' })
+    await library.getByTestId('library-base').filter({ hasText: /Archivio[\s\S]*Pacchetto · 2 documenti/ }).waitFor()
+    assert.equal(fake.requests.filter((r) => r.path === '/api/embed').length, embedsBefore, 'installare un pacchetto con i vettori non calcola embedding')
+    // elimina la base locale: la conferma dice quante conversazioni la usano
     await library.getByTestId('library-base-delete').click()
     await library.getByText('Collegata a 1 conversazione').waitFor()
     await library.getByTestId('library-base-delete-confirm').click()
-    await library.getByText('Nessuna base. Creane una per iniziare.').waitFor()
+    await waitUntil(async () => (await library.getByTestId('library-base').count()) === 2)
+    // la base installata dal pacchetto: sola lettura, modello dichiarato, provenienza
+    await library.getByTestId('library-base').filter({ hasText: /Archivio[\s\S]*Pacchetto/ }).click()
+    const packed = library.getByTestId('library-base-editor')
+    await packed.getByTestId('library-base-pack').filter({ hasText: /Pacchetto local\.archivio-[\s\S]*non firmato/ }).waitFor()
+    await packed.getByTestId('library-base-model').filter({ hasText: 'Vettori calcolati con embeddinggemma' }).waitFor()
+    assert.equal(await packed.getByTestId('knowledge-add').count(), 0)
+    assert.equal(await packed.getByTestId('knowledge-doc').count(), 2)
+    assert.equal(await packed.getByTestId('knowledge-doc-remove').count(), 0)
     await dialog.getByRole('button', { name: 'Chiudi' }).click()
     await dialog.waitFor({ state: 'detached' })
     await waitUntil(async () => (await panel.getByTestId('knowledge-linked-base').count()) === 0)

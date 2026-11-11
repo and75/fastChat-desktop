@@ -126,6 +126,8 @@ export interface PickOptions {
   bm25?: ReadonlyMap<string, number>
   /** Estratti al massimo per documento; se assente si calcola dal budget e dal numero di documenti. */
   perDocument?: number
+  /** Punteggi già calcolati per pezzo (basi con modelli di embedding diversi): si usano al posto di `query`. */
+  scores?: ReadonlyMap<string, number>
 }
 
 /**
@@ -157,7 +159,7 @@ export function pickDocumentChunks(
   maxChars: number,
   options: PickOptions = {}
 ): PickedDocumentChunk[] {
-  const scores = hybridScores(query, chunks, options.bm25)
+  const scores = options.scores ?? hybridScores(query, chunks, options.bm25)
   const scored = chunks
     .map((c) => ({ ...c, score: scores.get(c.id) ?? 0 }))
     .filter((c) => c.score >= KNOWLEDGE.minScore)

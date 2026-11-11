@@ -22,6 +22,48 @@ Riferimento del meccanismo, allineato al codice (`src/main/knowledge/`, `src/sha
 - Le chiamate di embedding dei documenti di una conversazione finiscono nel suo monitor del contesto e seguono
   la CPU/GPU del suo modello; quelle delle basi della libreria non appartengono a nessuna conversazione.
 
+## 0.1 Modello di embedding per base
+
+- Una base ha un **modello di embedding effettivo**: quello delle Impostazioni (base della conversazione, basi
+  locali, pacchetti di solo testo) oppure quello **dichiarato dal pacchetto** che ha portato i vettori.
+- Le basi con il modello delle Impostazioni si reindicizzano quando lo si cambia; quelle con il modello
+  dichiarato hanno vettori fissi e non si toccano.
+- Per usare una base serve che il suo modello sia installato in Ollama: altrimenti resta installata ma
+  inattiva, con l'avviso «serve il modello X» e il download.
+- Una conversazione può avere basi con modelli diversi: la domanda diventa vettore **una volta per modello**
+  (di norma uno solo), i punteggi si calcolano per gruppo e la scelta degli estratti è unica. Quando i
+  documenti vanno al modello per intero non serve nessun embedding della domanda.
+
+## 0.2 Pacchetti (.fcpack)
+
+Il formato con cui una base si esporta, si installa e si distribuirà dallo store. È uno zip:
+
+| File | Contenuto |
+|---|---|
+| `manifest.json` | id, tipo (`knowledge`; `identity` e `bundle` sono riservati), nome, versione, autore, lingua, licenza, **modello di embedding dichiarato** (nome, dimensioni, impronta), impronta SHA-256 di ogni file |
+| `knowledge.json` | documenti e pezzi con locatore: il testo c'è sempre (fonti, ricerca a parole) |
+| `vectors.bin` | vettori float32 dei pezzi, nell'ordine dei pezzi; assente nei pacchetti di solo testo |
+| `signature.json` | firma Ed25519 del manifest, che fissa l'impronta degli altri file |
+
+- **Con i vettori** (il caso normale, modello predefinito `embeddinggemma`): all'installazione i pezzi sono
+  subito pronti, senza chiamate a Ollama; la base è legata al modello dichiarato.
+- **Di solo testo**: i documenti si indicizzano con il modello dell'utente; se manca aspettano «in attesa» e
+  ripartono quando il modello viene scaricato. Una copia del pacchetto resta in `userData/packs/`.
+- **Fiducia**: `verified` (firma di una chiave in `src/main/knowledge/trust.ts`), `unsigned`, `unknown`
+  (firmato da una chiave non nota), `builtin` (integrato nell'app). Senza firma verificata l'installazione
+  chiede una conferma esplicita. Un pacchetto alterato (impronte o firma che non tornano) non si installa.
+- **Aggiornamento**: stesso id, nuova versione → la base resta la stessa (e resta collegata), il contenuto
+  viene sostituito.
+- Le basi installate da un pacchetto sono di **sola lettura**; «Intero» resta modificabile.
+- **Esporta** (Impostazioni → Conoscenza): solo basi locali con tutti i documenti pronti; il pacchetto porta i
+  vettori del modello della base, dichiarato nel manifest con dimensioni e impronta.
+- **Pacchetti integrati**: i file in `packs/` vengono installati o aggiornati all'avvio (`npm run packs:build`
+  li rigenera dalla documentazione). Oggi: «Guida di FastChat», di solo testo.
+- **Collega alle nuove conversazioni**: opzione per base della libreria; le nuove conversazioni la trovano già
+  collegata.
+- Firmare: `node scripts/pack-keys.mjs <id>` genera la coppia di chiavi; la pubblica va in `trust.ts`, la
+  privata resta a chi pubblica.
+
 ## 1. Ingresso: i plugin
 
 - Un plugin (`KnowledgeSource`, in `src/main/knowledge/source.ts`) sa leggere un tipo di sorgente e
@@ -144,3 +186,4 @@ budget = min( quota × num_ctx ,
 
 - `FASTCHAT_KNOWLEDGE_FILES`: percorsi (separati da `:`; `;` su Windows) aggiunti al posto del dialog.
 - `FASTCHAT_KNOWLEDGE_FOLDER`: cartella restituita al posto del dialog di scelta cartella.
+- `FASTCHAT_PACK_FILE` / `FASTCHAT_PACK_EXPORT`: pacchetto da importare / percorso in cui esportare, al posto dei dialog.

@@ -92,6 +92,13 @@
       "when": 1794410132397,
       "tag": "0012_knowledge_bases_strict",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1794411980433,
+      "tag": "0013_knowledge_packs",
+      "breakpoints": true
     }
   ]
 }

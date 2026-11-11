@@ -28,6 +28,8 @@ export interface EmbedRequest {
   /** Caratteri per token per la stima nel monitor. */
   cpt: number
   note?: string | null
+  /** Modello di embedding da usare (base con modello dichiarato); assente = quello delle Impostazioni. */
+  model?: string
 }
 
 export function createEmbedder({ db, ollama, contextLog }: EmbedderDeps) {
@@ -39,14 +41,27 @@ export function createEmbedder({ db, ollama, contextLog }: EmbedderDeps) {
     return numGpu === 0 ? { num_gpu: 0 } : undefined
   }
 
-  async function installed(name: string): Promise<boolean> {
+  /** Il modello tra quelli di Ollama: «nome» vale anche per «nome:latest». */
+  async function find(name: string) {
     const models = await ollama.listModels().catch(() => [])
-    return models.some((m) => m.name === name || m.name === `${name}:latest`)
+    return models.find((m) => m.name === name || m.name === `${name}:latest`) ?? null
   }
+
+  const installed = async (name: string): Promise<boolean> => !!(await find(name))
+
+  /** Quali dei modelli indicati sono installati (una sola richiesta a Ollama). */
+  async function installedAmong(names: Iterable<string>): Promise<Set<string>> {
+    const models = await ollama.listModels().catch(() => [])
+    const have = new Set(models.map((m) => m.name))
+    return new Set([...names].filter((n) => have.has(n) || have.has(`${n}:latest`)))
+  }
+
+  /** Impronta del modello installato (cambia quando Ollama lo aggiorna), null se manca. */
+  const digest = async (name: string): Promise<string | null> => (await find(name))?.digest ?? null
 
   /** Embedding dei testi, registrato nel monitor del contesto (una voce: i testi inviati). */
   async function embed(req: EmbedRequest): Promise<number[][]> {
-    const name = await model()
+    const name = req.model ?? (await model())
     let stats: EmbedStats | null = null
     const opts = req.chatModel ? await options(req.chatModel) : undefined
     if (!req.conversationId) return ollama.embed(name, req.texts, opts)
@@ -70,17 +85,18 @@ export function createEmbedder({ db, ollama, contextLog }: EmbedderDeps) {
 
   /**
    * Embedding della domanda in attesa (più la fine della risposta precedente, per «e quello?»), condiviso tra
-   * memoria della conversazione e base di conoscenza: una sola chiamata a Ollama per risposta. null senza domanda.
+   * memoria della conversazione e base di conoscenza: una sola chiamata a Ollama per risposta e per modello di
+   * embedding (di norma uno solo). null senza domanda.
    */
-  async function embedQuestion(conv: Conversation, history: Message[]): Promise<number[] | null> {
+  async function embedQuestion(conv: Conversation, history: Message[], withModel?: string): Promise<number[] | null> {
     const question = history.findLast((m) => m.role === 'user')
     if (!question) return null
     const previous = history.slice(0, history.indexOf(question)).findLast((m) => m.role === 'assistant')
-    const [vector] = await embed({ conversationId: conv.id, kind: 'embed-query', texts: [memoryQuery(question.content, previous?.content)], chatModel: conv.model, cpt: charsPerToken(history) })
+    const [vector] = await embed({ conversationId: conv.id, kind: 'embed-query', texts: [memoryQuery(question.content, previous?.content)], chatModel: conv.model, cpt: charsPerToken(history), model: withModel })
     return vector
   }
 
-  return { model, options, installed, embed, embedQuestion }
+  return { model, options, installed, installedAmong, digest, embed, embedQuestion }
 }
 
 export type Embedder = ReturnType<typeof createEmbedder>

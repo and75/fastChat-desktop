@@ -20,6 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
+    "packs:build": "node scripts/build-packs.mjs",
     "dist": "electron-builder",
     "test:e2e": "npm run build && node e2e/run.mjs",
     "dist:mac": "electron-builder --mac",
@@ -30,6 +31,7 @@
   "dependencies": {
     "@electron-toolkit/utils": "4.0.0",
     "drizzle-orm": "0.45.4",
+    "jszip": "3.10.2",
     "mammoth": "1.13.0",
     "pdfjs-dist": "6.5.438"
   },

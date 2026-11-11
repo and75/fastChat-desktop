@@ -413,13 +413,20 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
           const cpt = charsPerToken(history)
           const { request: draft } = await buildRequest(conv, mode, caps)
           let used = draft.messages.reduce((n, m) => n + estimateTokens(m.content, cpt), 0)
-          const query = await questionEmbedder?.embedQuestion(conv, history).catch(() => null)
-          if (useKnowledge && query) {
-            found = await knowledge!.recall(conv, { vector: query, text: question?.content ?? '' }, knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), cpt).catch(() => found)
+          // Embedding della domanda: calcolato solo se serve, una volta per modello di embedding (di norma uno
+          // solo, condiviso tra documenti e memoria; un pacchetto può dichiararne un altro per i suoi vettori).
+          const vectors = new Map<string, Promise<number[] | null>>()
+          const vector = (model: string): Promise<number[] | null> => {
+            if (!vectors.has(model)) vectors.set(model, questionEmbedder ? questionEmbedder.embedQuestion(conv, history, model).catch(() => null) : Promise.resolve(null))
+            return vectors.get(model)!
+          }
+          if (useKnowledge) {
+            found = await knowledge!.recall(conv, { text: question?.content ?? '', vector }, knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), cpt).catch(() => found)
             if (found.section) used += estimateTokens(found.section, cpt)
           }
           if (useMemory) {
             if (useKnowledge) emit(target, { ...base, type: 'remembering' })
+            const query = questionEmbedder ? await vector(await questionEmbedder.model()) : null
             recall = await memory!.recall(conv, memoryBudget(s.numCtx, s.reserveTokens, used), query).catch(() => recall)
           }
         }

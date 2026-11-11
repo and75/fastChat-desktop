@@ -6,6 +6,7 @@ import type {
   ContextPart,
   DocumentRef,
   DoneReason,
+  KnowledgeBaseMeta,
   KnowledgeBaseOrigin,
   KnowledgeDocumentStatus,
   KnowledgeRef,
@@ -170,6 +171,17 @@ export const knowledgeBases = sqliteTable(
     /** Conversazione proprietaria, solo per la base della conversazione. */
     conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'cascade' }),
     version: text('version'),
+    /**
+     * Modello di embedding della base: null = quello delle Impostazioni (i documenti si reindicizzano se cambia);
+     * indicato = fisso, dichiarato dal pacchetto che ha portato i vettori già calcolati.
+     */
+    embeddingModel: text('embedding_model'),
+    /** Id del pacchetto da cui è stata installata (o con cui è stata esportata). */
+    packageId: text('package_id'),
+    /** Dati del pacchetto: autore, lingua, licenza, dimensione dei vettori, impronta del modello, fiducia. */
+    meta: text('meta', { mode: 'json' }).$type<KnowledgeBaseMeta>(),
+    /** Collegata da sola alle nuove conversazioni. */
+    autoLink: integer('auto_link', { mode: 'boolean' }).notNull().default(false),
     createdAt: integer('created_at').notNull().default(now),
     updatedAt: integer('updated_at').notNull().default(now)
   },

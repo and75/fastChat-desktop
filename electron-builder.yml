@@ -8,6 +8,7 @@ directories:
 files:
   - out/**
   - drizzle/**
+  - packs/**
   - package.json
 asar: true
 # Nessun modulo nativo (SQLite è node:sqlite, integrato in Electron): niente rebuild.

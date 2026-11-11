@@ -4,6 +4,7 @@ import { createRegistry, type SourceRegistry } from '../registry'
 import type { KnowledgeSource } from '../source'
 import { docxSource } from './docx'
 import { createFolderSource } from './folder'
+import { packageSource } from './package'
 import { pdfSource } from './pdf'
 import { textSource } from './text'
 
@@ -14,5 +15,6 @@ export const BUILTIN_SOURCES: KnowledgeSource[] = [textSource, pdfSource, docxSo
 export function createBuiltinRegistry(): SourceRegistry {
   const registry = createRegistry(BUILTIN_SOURCES)
   registry.register(createFolderSource(registry))
+  registry.register(packageSource)
   return registry
 }

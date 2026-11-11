@@ -74,7 +74,7 @@ function ShareControl({ conversation }: { conversation: Conversation }): React.J
 
 const fmtBytes = (n: number | null): string => (n == null ? '' : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
 
-function DocumentRow({ ownerId, doc }: { ownerId: string; doc: KnowledgeDocument }): React.JSX.Element {
+function DocumentRow({ ownerId, doc, readOnly = false }: { ownerId: string; doc: KnowledgeDocument; readOnly?: boolean }): React.JSX.Element {
   const progress = useKnowledge((s) => s.progress[doc.id])
   const remove = useKnowledge((s) => s.remove)
   const reindex = useKnowledge((s) => s.reindex)
@@ -136,17 +136,19 @@ function DocumentRow({ ownerId, doc }: { ownerId: string; doc: KnowledgeDocument
           <RegenerateIcon size={14} />
         </button>
       )}
-      <button
-        type="button"
-        disabled={busy}
-        className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-red-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-red-300"
-        aria-label={t('knowledge.doc.remove', { title: doc.title })}
-        title={t('knowledge.doc.remove.title')}
-        onClick={() => void remove(ownerId, doc.id)}
-        data-testid="knowledge-doc-remove"
-      >
-        <TrashIcon size={14} />
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          disabled={busy}
+          className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-red-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-red-300"
+          aria-label={t('knowledge.doc.remove', { title: doc.title })}
+          title={t('knowledge.doc.remove.title')}
+          onClick={() => void remove(ownerId, doc.id)}
+          data-testid="knowledge-doc-remove"
+        >
+          <TrashIcon size={14} />
+        </button>
+      )}
     </li>
   )
 }
@@ -154,9 +156,10 @@ function DocumentRow({ ownerId, doc }: { ownerId: string; doc: KnowledgeDocument
 /**
  * Documenti di una base (quella di una conversazione o una della libreria): aggiunta da dialog o trascinando i
  * file, sorgenti collegate, elenco con stato, «Intero», rimozione, stato dell'indice e del modello di embedding.
- * `ownerId` è l'id della conversazione o della base.
+ * `ownerId` è l'id della conversazione o della base. `readOnly`: base installata da un pacchetto, non si
+ * aggiungono né si tolgono documenti.
  */
-export function KnowledgeDocuments({ ownerId }: { ownerId: string }): React.JSX.Element {
+export function KnowledgeDocuments({ ownerId, readOnly = false }: { ownerId: string; readOnly?: boolean }): React.JSX.Element {
   const status = useKnowledge((s) => s.status[ownerId])
   const load = useKnowledge((s) => s.load)
   const pickFiles = useKnowledge((s) => s.pickFiles)
@@ -202,6 +205,7 @@ export function KnowledgeDocuments({ ownerId }: { ownerId: string }): React.JSX.
 
   return (
     <div className="flex flex-col gap-3" data-testid="knowledge-documents">
+      {!readOnly && (
       <div
         className={
           'flex flex-col items-center gap-2 rounded-xl border-2 border-dashed px-3 py-4 text-center text-sm transition-colors ' +
@@ -244,6 +248,7 @@ export function KnowledgeDocuments({ ownerId }: { ownerId: string }): React.JSX.
           </div>
         )}
       </div>
+      )}
 
       {connecting && sources.find((s) => s.id === connecting) && (
         <ConnectForm ownerId={ownerId} source={sources.find((s) => s.id === connecting)!} onDone={() => setConnecting(null)} />
@@ -261,7 +266,7 @@ export function KnowledgeDocuments({ ownerId }: { ownerId: string }): React.JSX.
       {docs.length + connections.length > 0 && (
         <ul className="flex flex-col gap-1.5" aria-label={t('knowledge.documents')} data-testid="knowledge-docs">
           {loose.map((d) => (
-            <DocumentRow key={d.id} ownerId={ownerId} doc={d} />
+            <DocumentRow key={d.id} ownerId={ownerId} doc={d} readOnly={readOnly} />
           ))}
           {connections.map((c) => {
             const own = docs.filter((d) => d.connectionId === c.id)
@@ -273,7 +278,7 @@ export function KnowledgeDocuments({ ownerId }: { ownerId: string }): React.JSX.
                 {own.length > 0 && (
                   <ul className="ml-3 flex flex-col gap-1.5 border-l-2 border-brand-100 pl-2 dark:border-brand-900">
                     {own.map((d) => (
-                      <DocumentRow key={d.id} ownerId={ownerId} doc={d} />
+                      <DocumentRow key={d.id} ownerId={ownerId} doc={d} readOnly={readOnly} />
                     ))}
                   </ul>
                 )}
@@ -298,6 +303,28 @@ export function KnowledgeDocuments({ ownerId }: { ownerId: string }): React.JSX.
         </button>
       )}
       {pullError && <span className="text-xs text-red-700 dark:text-red-300">{pullError}</span>}
+    </div>
+  )
+}
+
+/** Avviso «serve il modello X» con il download: la base dichiara un modello di embedding che in Ollama manca. */
+export function ModelMissing({ model }: { model: string }): React.JSX.Element {
+  const pull = useModels((s) => s.pull)
+  const pulling = useModels((s) => s.pulls[model])
+  const loadBases = useKnowledge((s) => s.loadBases)
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-400" data-testid="knowledge-model-missing">
+      <span>{t('knowledge.model.missing', { model })}</span>
+      <button
+        type="button"
+        disabled={!!pulling && !pulling.done}
+        className="rounded border border-amber-400 px-1.5 py-0.5 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-700 dark:hover:bg-amber-950/40"
+        onClick={() => void pull(model).then((e) => (e ? setError(e) : loadBases()))}
+      >
+        {pulling && !pulling.done ? t('longMemory.downloading', { model, pct: pulling.total ? `${Math.round(((pulling.completed ?? 0) / pulling.total) * 100)}%` : '' }) : t('longMemory.download', { model })}
+      </button>
+      {error && <span className="text-red-700 dark:text-red-300">{error}</span>}
     </div>
   )
 }
@@ -328,6 +355,7 @@ function LinkedBases({ conversation }: { conversation: Conversation }): React.JS
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium text-zinc-800 dark:text-zinc-200">{b.name}</div>
                 <div className="truncate text-xs text-zinc-500">{baseDetail(b)}</div>
+                {!b.modelInstalled && <ModelMissing model={b.model} />}
               </div>
               <button
                 type="button"

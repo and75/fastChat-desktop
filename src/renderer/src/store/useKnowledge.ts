@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { KnowledgeBaseInfo, KnowledgeProgress, KnowledgeSourceInfo, KnowledgeStatus } from '@shared/types'
+import type { KnowledgeBaseInfo, KnowledgeProgress, KnowledgeSourceInfo, KnowledgeStatus, PackInspection } from '@shared/types'
 
 interface KnowledgeState {
   /** Plugin disponibili (etichette, estensioni), caricati una volta. */
@@ -30,6 +30,11 @@ interface KnowledgeState {
   createBase(name: string): Promise<KnowledgeBaseInfo | null>
   renameBase(baseId: string, name: string): Promise<void>
   removeBase(baseId: string): Promise<void>
+  setAutoLink(baseId: string, autoLink: boolean): Promise<void>
+  /** Pacchetti: sceglie e legge (senza installare), installa, esporta una base. */
+  pickPack(): Promise<PackInspection | null>
+  installPack(path: string, allowUntrusted: boolean): Promise<boolean>
+  exportBase(baseId: string): Promise<string | null>
   link(conversationId: string, baseId: string): Promise<void>
   unlink(conversationId: string, baseId: string): Promise<void>
   handleProgress(p: KnowledgeProgress): void
@@ -156,6 +161,46 @@ export const useKnowledge = create<KnowledgeState>((set, get) => {
       })
       // Le conversazioni che la collegavano non la vedono più.
       reloadAll()
+    },
+
+    async setAutoLink(baseId, autoLink) {
+      const res = await window.api.knowledge.updateBase(baseId, { autoLink })
+      if (!res.ok) return set({ error: res.error })
+      await get().loadBases()
+    },
+
+    async pickPack() {
+      set({ error: null })
+      const res = await window.api.knowledge.pickPack()
+      if (!res.ok) {
+        set({ error: res.error })
+        return null
+      }
+      return res.data
+    },
+
+    async installPack(path, allowUntrusted) {
+      set({ busy: true, error: null })
+      const res = await window.api.knowledge.installPack(path, allowUntrusted)
+      set({ busy: false })
+      if (!res.ok) {
+        set({ error: res.error })
+        return false
+      }
+      set({ bases: res.data })
+      // Un aggiornamento cambia i documenti di una base che qualche conversazione può avere collegata.
+      reloadAll()
+      return true
+    },
+
+    async exportBase(baseId) {
+      set({ error: null })
+      const res = await window.api.knowledge.exportBase(baseId)
+      if (!res.ok) {
+        set({ error: res.error })
+        return null
+      }
+      return res.data
     },
 
     async link(conversationId, baseId) {

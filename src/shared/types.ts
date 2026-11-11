@@ -91,8 +91,70 @@ export interface KnowledgeBase {
   /** Conversazione proprietaria (solo origin 'conversation'). */
   conversationId: string | null
   version: string | null
+  /** Modello di embedding fisso (dichiarato dal pacchetto); null = quello delle Impostazioni. */
+  embeddingModel: string | null
+  /** Id del pacchetto da cui viene, o con cui è stata esportata. */
+  packageId: string | null
+  meta: KnowledgeBaseMeta | null
+  /** Collegata da sola alle nuove conversazioni. */
+  autoLink: boolean
   createdAt: number
   updatedAt: number
+}
+
+/** Dati del pacchetto di una base. */
+export interface KnowledgeBaseMeta {
+  author?: string
+  language?: string
+  license?: string
+  /** Dimensione dei vettori e impronta del modello di embedding dichiarate dal pacchetto. */
+  dimensions?: number
+  digest?: string | null
+  /** Come è stata verificata l'origine: firma riconosciuta, integrata nell'app, o installata senza firma valida. */
+  trust?: PackTrust | 'builtin'
+}
+
+/** Esito della verifica della firma di un pacchetto. */
+export type PackTrust = 'verified' | 'unsigned' | 'unknown'
+
+export type PackType = 'knowledge' | 'identity' | 'bundle'
+
+/** Il manifest di un pacchetto (.fcpack): cosa contiene e con quale modello è fatto. */
+export interface PackManifest {
+  format: 'fastchat-pack'
+  formatVersion: number
+  /** Identificativo stabile, es. «it.fastchat.guida»: una nuova versione sostituisce la precedente. */
+  id: string
+  type: PackType
+  name: string
+  version: string
+  description?: string
+  author?: string
+  language?: string
+  license?: string
+  createdAt: number
+  /**
+   * Modello di embedding con cui sono calcolati i vettori del pacchetto: per usarlo serve quel modello in
+   * Ollama. Assente = pacchetto di solo testo, indicizzato all'installazione con il modello dell'utente.
+   */
+  embedding?: { model: string; dimensions: number; digest?: string | null }
+  /** Modello di chat per cui è pensata un'identità: consigliato (predefinito) o richiesto. */
+  model?: { name: string; required?: boolean }
+  documents?: number
+  chunks?: number
+  /** Impronta SHA-256 di ogni file del pacchetto: è ciò che la firma del manifest protegge. */
+  files: Record<string, string>
+}
+
+/** Un pacchetto letto ma non ancora installato: cosa mostrare prima di confermare. */
+export interface PackInspection {
+  path: string
+  manifest: PackManifest
+  trust: PackTrust
+  /** Versione già installata dello stesso pacchetto, se c'è. */
+  installedVersion: string | null
+  /** Il modello di embedding dichiarato è installato in Ollama (true anche per i pacchetti di solo testo). */
+  modelInstalled: boolean
 }
 
 /** Una base della libreria con i suoi numeri, per gli elenchi. */
@@ -104,6 +166,9 @@ export interface KnowledgeBaseInfo extends KnowledgeBase {
   chars: number
   /** Conversazioni che la collegano. */
   conversations: number
+  /** Modello di embedding effettivo (il suo, o quello delle Impostazioni) e se è installato in Ollama. */
+  model: string
+  modelInstalled: boolean
 }
 
 /** Un documento di una base di conoscenza. Si salva il testo estratto, non il file. */
@@ -525,6 +590,9 @@ export const IPC = {
   knowledgeBaseCreate: 'knowledge:base-create',
   knowledgeBaseUpdate: 'knowledge:base-update',
   knowledgeBaseRemove: 'knowledge:base-remove',
+  knowledgePackPick: 'knowledge:pack-pick',
+  knowledgePackInstall: 'knowledge:pack-install',
+  knowledgeBaseExport: 'knowledge:base-export',
   knowledgeLink: 'knowledge:link',
   knowledgeUnlink: 'knowledge:unlink',
   knowledgeConnect: 'knowledge:connect',

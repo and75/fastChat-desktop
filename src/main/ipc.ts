@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import {
   IPC,
@@ -50,6 +51,8 @@ import { createEmbedder } from './embedder'
 import { createKnowledge } from './knowledge'
 import { createBuiltinRegistry } from './knowledge/sources'
 import { electronCipher } from './knowledge/secrets'
+import { PACK_EXTENSION } from './knowledge/pack'
+import { TRUSTED_KEYS } from './knowledge/trust'
 import { createContextLog } from './contextLog'
 import { createSummarizer } from './summary'
 import { isLocalOllama, systemInfo } from './system'
@@ -120,6 +123,8 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     embedder,
     registry,
     cipher: electronCipher(safeStorage),
+    packsDir: join(app.getPath('userData'), 'packs'),
+    trustedKeys: TRUSTED_KEYS,
     onProgress: (p) => {
       for (const w of BrowserWindow.getAllWindows()) if (!w.webContents.isDestroyed()) w.webContents.send(IPC.knowledgeProgress, p)
     }
@@ -141,6 +146,9 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
       if (!wc.isDestroyed()) wc.send(IPC.conversationUpdated, conversation)
     }
   })
+
+  // Pacchetti integrati nell'app: installati o aggiornati all'avvio, in sottofondo.
+  void knowledge.installBuiltin(join(app.getAppPath(), 'packs')).catch(() => undefined)
 
   /** Se la finestra si chiude a metà generazione, fermiamo i suoi stream (il parziale viene salvato). */
   const watch = (wc: WebContents): WebContents => {
@@ -179,6 +187,8 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     try {
       await ollama.pullModel(model, (p) => send({ ...p, done: false }), controller.signal)
       send({ status: 'success', completed: null, total: null, done: true })
+      // Se era il modello di embedding che mancava, i documenti dei pacchetti in attesa si indicizzano ora.
+      void knowledge.resumePending().catch(() => undefined)
     } catch (err) {
       send({ status: 'error', completed: null, total: null, done: true, error: toMessage(err) })
       throw err
@@ -334,6 +344,8 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     // I parametri partono dai valori suggeriti per il modello; il template può fissarne alcuni (temperatura).
     const conv = await createConversation(db, init)
     const fill = await calibrationPatch(calibrate, conv.model, { ...conv, temperature: init.temperature ?? null }, true)
+    // Le basi segnate «collega alle nuove conversazioni» (es. quelle predefinite dell'app) arrivano già collegate.
+    await knowledge.linkDefaults(conv).catch(() => undefined)
     return Object.keys(fill).length ? updateConversation(db, conv.id, fill) : conv
   })
 
@@ -410,15 +422,40 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   // Libreria delle basi e collegamenti con le conversazioni.
   handle(IPC.knowledgeBases, () => knowledge.listBases())
   handle(IPC.knowledgeBaseCreate, (_e, name: unknown) => knowledge.createBase(typeof name === 'string' ? name : ''))
-  handle(IPC.knowledgeBaseUpdate, (_e, id: string, patch: { name?: unknown; description?: unknown }) =>
+  handle(IPC.knowledgeBaseUpdate, (_e, id: string, patch: { name?: unknown; description?: unknown; autoLink?: unknown }) =>
     knowledge.renameBase(requireId(id), {
       ...(typeof patch?.name === 'string' ? { name: patch.name } : {}),
-      ...(typeof patch?.description === 'string' ? { description: patch.description } : {})
+      ...(typeof patch?.description === 'string' ? { description: patch.description } : {}),
+      ...(typeof patch?.autoLink === 'boolean' ? { autoLink: patch.autoLink } : {})
     })
   )
   handle(IPC.knowledgeBaseRemove, async (_e, id: string) => {
     await knowledge.removeBase(requireId(id))
     return knowledge.listBases()
+  })
+  /** Sceglie un pacchetto e lo legge senza installarlo: il renderer mostra cosa contiene e chiede conferma. */
+  handle(IPC.knowledgePackPick, async (e) => {
+    const forced = process.env.FASTCHAT_PACK_FILE
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const options: Electron.OpenDialogOptions = { title: t('pack.pickTitle'), properties: ['openFile'], filters: [{ name: t('pack.filter'), extensions: [PACK_EXTENSION] }] }
+    const { canceled, filePaths } = forced ? { canceled: false, filePaths: [forced] } : win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+    return canceled || !filePaths[0] ? null : knowledge.inspectPack(filePaths[0])
+  })
+  handle(IPC.knowledgePackInstall, async (_e, path: unknown, allowUntrusted: unknown) => {
+    if (typeof path !== 'string' || !path) throw new Error(t('err.badText'))
+    await knowledge.installPack(path, { allowUntrusted: allowUntrusted === true })
+    return knowledge.listBases()
+  })
+  /** Esporta una base come pacchetto: chiede dove salvare; restituisce il percorso, o null se annullato. */
+  handle(IPC.knowledgeBaseExport, async (e, id: string) => {
+    const { data, fileName } = await knowledge.exportBase(requireId(id))
+    const forced = process.env.FASTCHAT_PACK_EXPORT
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const options = { title: t('pack.exportTitle'), defaultPath: fileName, filters: [{ name: t('pack.filter'), extensions: [PACK_EXTENSION] }] }
+    const { canceled, filePath } = forced ? { canceled: false, filePath: forced } : win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+    if (canceled || !filePath) return null
+    await writeFile(filePath, data)
+    return filePath
   })
   handle(IPC.knowledgeLink, async (_e, id: string, baseId: string) => {
     const conv = await convOrThrow(id)

@@ -19,6 +19,7 @@ import type {
   ConversationPatch,
   ModelCapabilities,
   OllamaModel,
+  PackInspection,
   Plan,
   PlanUpdate,
   Result,
@@ -88,7 +89,13 @@ export interface Api {
     /** Basi della libreria (non quelle delle conversazioni), con i loro numeri. */
     bases(): Promise<Result<KnowledgeBaseInfo[]>>
     createBase(name: string): Promise<Result<KnowledgeBaseInfo>>
-    updateBase(baseId: string, patch: { name?: string; description?: string }): Promise<Result<KnowledgeBaseInfo>>
+    updateBase(baseId: string, patch: { name?: string; description?: string; autoLink?: boolean }): Promise<Result<KnowledgeBaseInfo>>
+    /** Sceglie un pacchetto (.fcpack) e lo legge senza installarlo; null se annullato. */
+    pickPack(): Promise<Result<PackInspection | null>>
+    /** Installa il pacchetto; senza firma riconosciuta serve `allowUntrusted`. Restituisce la libreria aggiornata. */
+    installPack(path: string, allowUntrusted: boolean): Promise<Result<KnowledgeBaseInfo[]>>
+    /** Esporta una base della libreria come pacchetto con i suoi vettori; percorso scritto, o null se annullato. */
+    exportBase(baseId: string): Promise<Result<string | null>>
     /** Elimina la base: sparisce da tutte le conversazioni che la collegano. Restituisce la libreria aggiornata. */
     removeBase(baseId: string): Promise<Result<KnowledgeBaseInfo[]>>
     /** Collega o scollega una base della libreria a una conversazione. */

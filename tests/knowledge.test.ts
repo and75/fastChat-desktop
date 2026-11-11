@@ -267,21 +267,21 @@ describe('base di conoscenza: servizio', () => {
     await k.wait(conv.id)
     const query = fakeEmbedding('Quante persone ha assunto la sede di Torino?')
     // budget da 100 token (400 caratteri): i due documenti insieme non ci stanno → estratti
-    const found = await k.recall(conv, { vector: query, text: 'Quante persone ha assunto la sede di Torino?' }, 100, 4)
+    const found = await k.recall(conv, { vector: async () => query, text: 'Quante persone ha assunto la sede di Torino?' }, 100, 4)
     expect(found.refs.length).toBeGreaterThan(0)
     expect(found.refs[0]).toMatchObject({ title: 'relazione', locator: null })
     expect(found.refs[0].excerpt).toContain('Torino')
     expect(found.section).toContain('# Base di conoscenza')
     expect(found.section).toContain('[relazione]\n')
-    const install = await k.recall(conv, { vector: fakeEmbedding('Come usare il programma di installazione su Windows?'), text: 'Come usare il programma di installazione su Windows?' }, 100, 4)
+    const install = await k.recall(conv, { vector: async () => fakeEmbedding('Come usare il programma di installazione su Windows?'), text: 'Come usare il programma di installazione su Windows?' }, 100, 4)
     expect(install.refs[0]).toMatchObject({ title: 'manuale', locator: 'Manuale › Installazione › Windows' })
     expect(install.section).toContain('[manuale, Manuale › Installazione › Windows]')
-    expect(await k.recall(conv, { vector: fakeEmbedding('zzzz qqqq'), text: 'zzzz qqqq' }, 100, 4)).toEqual({ section: '', refs: [] })
+    expect(await k.recall(conv, { vector: async () => fakeEmbedding('zzzz qqqq'), text: 'zzzz qqqq' }, 100, 4)).toEqual({ section: '', refs: [] })
     // budget largo: i documenti stanno nella memoria → tutti per intero, un riferimento per documento
-    const whole = await k.recall(conv, { vector: fakeEmbedding('zzzz qqqq'), text: 'zzzz qqqq' }, 800, 4)
+    const whole = await k.recall(conv, { vector: async () => fakeEmbedding('zzzz qqqq'), text: 'zzzz qqqq' }, 800, 4)
     expect(whole.section).toContain('riportati per intero (2 in tutto)')
     expect(whole.refs.map((r) => [r.title, r.whole])).toEqual([['manuale', true], ['relazione', true]])
-    expect(await k.recall(conv, { vector: query, text: 'x' }, 10, 4)).toEqual({ section: '', refs: [] })
+    expect(await k.recall(conv, { vector: async () => query, text: 'x' }, 10, 4)).toEqual({ section: '', refs: [] })
   })
 
   it('stato: documenti, pezzi, da indicizzare, modello installato; rimozione a cascata dei pezzi', async () => {
@@ -395,12 +395,12 @@ describe('base di conoscenza: nella chat', () => {
     // i due documenti stanno nel quarto di memoria: vanno per intero (anche il manuale)
     expect(system).toContain('riportati per intero (2 in tutto)')
     expect(system).toContain('Windows')
-    // un solo embedding (la domanda); i documenti erano già indicizzati
-    expect(embedQueries(before)).toBe(1)
+    // documenti interi: non serve nemmeno l'embedding della domanda
+    expect(embedQueries(before)).toBe(0)
     const calls = (await listContextCalls(h.db, conv.id)).filter((c) => c.kind !== 'title')
     expect(calls[0].kind).toBe('chat')
     expect(calls[0].parts.find((p) => p.key === 'knowledge')).toMatchObject({ label: 'knowledge', count: 2 })
-    expect(calls[1].kind).toBe('embed-query')
+    expect(calls[1].kind).toBe('embed-doc')
     const answer = (await listMessages(h.db, conv.id)).at(-1)!
     expect(answer.role).toBe('assistant')
     expect(answer.knowledgeRefs?.map((r) => [r.title, r.whole])).toEqual([['manuale', true], ['relazione', true]])
@@ -429,7 +429,7 @@ describe('base di conoscenza: nella chat', () => {
     await chat.wait(sent.streamId)
     expect(sent.userMessage?.knowledge).toBe(true)
     expect(events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)[0]).toBe('searching')
-    expect(embedQueries(before)).toBe(1)
+    expect(embedQueries(before)).toBe(0)
     expect(chatBodyFor('Quante persone ha assunto la sede di Torino?').messages[0].content).toContain('# Base di conoscenza')
 
     // rigenera: la domanda aveva il libro acceso, la pill è spenta → cerca di nuovo
@@ -437,7 +437,7 @@ describe('base di conoscenza: nella chat', () => {
     const again = await chat.regenerate({}, conv.id)
     await chat.wait(again.streamId)
     expect(events.filter((e) => e.streamId === again.streamId).map((e) => e.type)[0]).toBe('searching')
-    expect(embedQueries(before)).toBe(1)
+    expect(embedQueries(before)).toBe(0)
   })
 
   it('senza documenti pronti non si cerca, anche con la pill accesa; plan mode salva la scelta sulla domanda', async () => {
@@ -517,7 +517,7 @@ describe('base di conoscenza: plugin PDF, Word, cartella e segreti', () => {
     const { createBuiltinRegistry } = await import('../src/main/knowledge/sources')
     const { listFolder } = await import('../src/main/knowledge/sources/folder')
     const reg = createBuiltinRegistry()
-    expect(reg.all().map((s) => s.id)).toEqual(['text', 'pdf', 'docx', 'folder'])
+    expect(reg.all().map((s) => s.id)).toEqual(['text', 'pdf', 'docx', 'folder', 'package'])
     expect(reg.sourceFor({ kind: 'file', path: '/x/a.PDF' }).id).toBe('pdf')
     expect(reg.sourceFor({ kind: 'file', path: '/x/a.docx' }).id).toBe('docx')
     expect(reg.sourceFor({ kind: 'remote', sourceId: 'folder', uri: '/x/a.txt' }).id).toBe('folder')
@@ -615,7 +615,7 @@ describe('base di conoscenza: sorgente collegata (cartella)', () => {
     ])
     expect(docs[1].ref).toMatchObject({ kind: 'remote', sourceId: 'folder' })
     expect(await k.hasReady(conv.id)).toBe(true)
-    const found = await k.recall(conv, { vector: fakeEmbedding('documento parla gatti'), text: 'documento parla gatti' }, 64, 4)
+    const found = await k.recall(conv, { vector: async () => fakeEmbedding('documento parla gatti'), text: 'documento parla gatti' }, 64, 4)
     expect(found.refs.map((r) => r.title).sort()).toEqual(['due', 'uno'])
 
     // nuovo file, file cambiato (contenuto diverso → versione diversa), file sparito
@@ -714,7 +714,7 @@ describe('base di conoscenza: parole esatte, documenti interi e «fissa»', () =
     try {
       // la domanda condivide poche parole con le fatture (il coseno finto è basso), ma il numero è esatto
       const q = 'Dimmi il totale della 2026/007'
-      const found = await k.recall(conv, { vector: fakeEmbedding(q), text: q }, 120, 4)
+      const found = await k.recall(conv, { vector: async () => fakeEmbedding(q), text: q }, 120, 4)
       expect(found.refs.length).toBeGreaterThan(0)
       expect(found.refs[0].excerpt).toContain('2026/007')
       expect(found.refs.every((r) => !r.whole)).toBe(true)
@@ -731,7 +731,7 @@ describe('base di conoscenza: parole esatte, documenti interi e «fissa»', () =
       expect(s.documents).toHaveLength(40)
       expect(s.totalChars).toBeGreaterThan(40 * 100)
       const budgetTokens = Math.ceil(s.totalChars / 4) + 10
-      const found = await k.recall(conv, { vector: fakeEmbedding('quante fatture'), text: 'quante fatture' }, budgetTokens, 4)
+      const found = await k.recall(conv, { vector: async () => fakeEmbedding('quante fatture'), text: 'quante fatture' }, budgetTokens, 4)
       expect(found.refs).toHaveLength(40)
       expect(found.refs.every((r) => r.whole)).toBe(true)
       expect(found.section).toContain('(40 in tutto)')
@@ -760,7 +760,7 @@ describe('base di conoscenza: parole esatte, documenti interi e «fissa»', () =
       expect(s.pinnedChars).toBeGreaterThan(50)
       expect(s.pinnedChars).toBeLessThan(s.totalChars)
       const q = 'Dimmi il totale della 2026/007'
-      const found = await k.recall(conv, { vector: fakeEmbedding(q), text: q }, 120, 4)
+      const found = await k.recall(conv, { vector: async () => fakeEmbedding(q), text: q }, 120, 4)
       expect(found.refs[0]).toMatchObject({ title: 'fattura-12', whole: true })
       expect(found.refs.slice(1).some((r) => r.excerpt.includes('2026/007'))).toBe(true)
       expect(found.section.indexOf('[fattura-12]')).toBeLessThan(found.section.indexOf('Seguono estratti'))
@@ -869,7 +869,7 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
     expect(await k.hasReady(b.id)).toBe(true)
 
     // A: i due documenti stanno nella memoria → entrambi interi; la fonte della base collegata porta il suo nome
-    const q = { vector: fakeEmbedding('installazione Windows'), text: 'installazione Windows' }
+    const q = { vector: async () => fakeEmbedding('installazione Windows'), text: 'installazione Windows' }
     const ra = await k.recall(a, q, 800, 4)
     expect(ra.refs.map((r) => [r.title, r.base])).toEqual([['manuale', 'Manuali'], ['relazione', undefined]])
     // B vede solo la base collegata

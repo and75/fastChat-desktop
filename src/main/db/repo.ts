@@ -441,7 +441,21 @@ export async function getConversationBase(db: Db, conversationId: string): Promi
   return row ?? null
 }
 
-export async function createBase(db: Db, init: Partial<Pick<KnowledgeBase, 'name' | 'description' | 'origin' | 'conversationId' | 'version'>>): Promise<KnowledgeBase> {
+/** La base installata da un pacchetto (o esportata con quell'id). */
+export async function getBaseByPackage(db: Db, packageId: string): Promise<KnowledgeBase | null> {
+  const [row] = await db.select().from(knowledgeBases).where(eq(knowledgeBases.packageId, packageId))
+  return row ?? null
+}
+
+/** Basi da collegare da sole alle nuove conversazioni. */
+export async function listAutoLinkBases(db: Db): Promise<KnowledgeBase[]> {
+  return db.select().from(knowledgeBases).where(and(eq(knowledgeBases.autoLink, true), sql`${knowledgeBases.origin} <> 'conversation'`))
+}
+
+export async function createBase(
+  db: Db,
+  init: Partial<Pick<KnowledgeBase, 'name' | 'description' | 'origin' | 'conversationId' | 'version' | 'embeddingModel' | 'packageId' | 'meta' | 'autoLink'>>
+): Promise<KnowledgeBase> {
   const now = Date.now()
   const row: KnowledgeBase = {
     id: randomUUID(),
@@ -450,6 +464,10 @@ export async function createBase(db: Db, init: Partial<Pick<KnowledgeBase, 'name
     origin: init.origin ?? 'local',
     conversationId: init.conversationId ?? null,
     version: init.version ?? null,
+    embeddingModel: init.embeddingModel ?? null,
+    packageId: init.packageId ?? null,
+    meta: init.meta ?? null,
+    autoLink: init.autoLink === true,
     createdAt: now,
     updatedAt: now
   }
@@ -457,10 +475,16 @@ export async function createBase(db: Db, init: Partial<Pick<KnowledgeBase, 'name
   return row
 }
 
-export async function updateBase(db: Db, id: string, patch: Partial<Pick<KnowledgeBase, 'name' | 'description'>>): Promise<KnowledgeBase | null> {
+export async function updateBase(
+  db: Db,
+  id: string,
+  patch: Partial<Pick<KnowledgeBase, 'name' | 'description' | 'autoLink' | 'version' | 'embeddingModel' | 'packageId' | 'meta'>>
+): Promise<KnowledgeBase | null> {
   const set: Partial<KnowledgeBase> = { updatedAt: Date.now() }
   if (typeof patch.name === 'string') set.name = patch.name.trim().slice(0, 120)
   if (typeof patch.description === 'string') set.description = patch.description.trim().slice(0, 2000)
+  if (typeof patch.autoLink === 'boolean') set.autoLink = patch.autoLink
+  for (const key of ['version', 'embeddingModel', 'packageId', 'meta'] as const) if (key in patch) (set as Record<string, unknown>)[key] = patch[key] ?? null
   await db.update(knowledgeBases).set(set).where(eq(knowledgeBases.id, id))
   return getBase(db, id)
 }
@@ -508,6 +532,25 @@ export async function countBaseLinks(db: Db, baseIds: string[]): Promise<Map<str
     .groupBy(conversationBases.baseId)
   for (const r of rows) out.set(r.baseId, Number(r.n))
   return out
+}
+
+export async function listBasesById(db: Db, ids: string[]): Promise<KnowledgeBase[]> {
+  return ids.length ? db.select().from(knowledgeBases).where(inArray(knowledgeBases.id, ids)) : []
+}
+
+/** Documenti in attesa nelle basi della libreria (pacchetti installati quando il modello di embedding mancava). */
+export async function listPendingLibraryDocuments(db: Db): Promise<KnowledgeDocument[]> {
+  const rows = await db
+    .select({ doc: knowledgeDocuments })
+    .from(knowledgeDocuments)
+    .innerJoin(knowledgeBases, eq(knowledgeBases.id, knowledgeDocuments.baseId))
+    .where(and(eq(knowledgeDocuments.status, 'pending'), sql`${knowledgeBases.origin} <> 'conversation'`))
+  return rows.map((r) => r.doc)
+}
+
+/** Toglie tutti i documenti di una base (reinstallazione di un pacchetto). */
+export async function clearBase(db: Db, baseId: string): Promise<void> {
+  await db.delete(knowledgeDocuments).where(eq(knowledgeDocuments.baseId, baseId))
 }
 
 /** Documenti delle basi indicate, in ordine di aggiunta. */
