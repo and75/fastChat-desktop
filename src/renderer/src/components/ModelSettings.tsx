@@ -7,7 +7,7 @@ import { useChat } from '../store/useChat'
 import { ContextMonitor } from './ContextMonitor'
 import { BenchmarkButton, describeNumGpu, needsBenchmark, NumGpuSelect } from './ModelManager'
 import { useConversations } from '../store/useConversations'
-import { useKnowledge } from '../store/useKnowledge'
+import { documentCount, useKnowledge } from '../store/useKnowledge'
 import { useModels } from '../store/useModels'
 import { registerPendingSave } from '../store/pendingSaves'
 
@@ -707,7 +707,7 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
     think: !caps ? '…' : !thinkSupported ? t('state.unavailable') : conversation.think ? t('state.on') : t('state.off'),
     style: styleLabel(conversation.style)
   })
-  const knowledgeDocs = useKnowledge((s) => s.status[conversation.id]?.documents.length ?? 0)
+  const knowledgeDocs = useKnowledge((s) => documentCount(s.status[conversation.id]))
   const memorySummary = t('group.memory.summary', {
     tokens: fmt(effective.numCtx),
     summary: conversation.summary

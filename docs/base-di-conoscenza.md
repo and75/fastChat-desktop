@@ -3,6 +3,25 @@
 Riferimento del meccanismo, allineato al codice (`src/main/knowledge/`, `src/shared/knowledge.ts`,
 `src/main/chat.ts`). Quando il codice cambia, aggiornare anche questa pagina.
 
+## 0. Basi di conoscenza
+
+- Una **base** è un insieme di documenti (tabella `knowledge_bases`). Documenti e sorgenti collegate
+  appartengono a una base, non a una conversazione.
+- **Base della conversazione** (`origin: 'conversation'`): una per conversazione, solo sua, per i documenti
+  che l'utente aggiunge dalla scheda «Conoscenza». Nasce al primo documento e viene eliminata con la conversazione.
+- **Basi della libreria** (`origin: 'local'`, e `'package'` per quelle installate da un pacchetto): si creano
+  e si gestiscono in Impostazioni → Conoscenza, e si **collegano** a quante conversazioni si vuole
+  (`conversation_bases`). I documenti si indicizzano una volta sola. Un'identità del modello potrà portare
+  con sé le sue basi collegandole alla conversazione.
+- Una conversazione usa **l'unione**: la sua base più quelle collegate. Ricerca, budget e documenti interi
+  valgono sull'insieme; le fonti riportano il nome della base quando il documento viene dalla libreria.
+- Dalla conversazione le basi collegate si collegano e scollegano soltanto: documenti, «Intero» e sorgenti si
+  modificano nella libreria e valgono per tutte le conversazioni che collegano la base.
+- Eliminando una base dalla libreria (con conferma che dice quante conversazioni la usano) sparisce da tutte,
+  con documenti e pezzi; i documenti propri delle conversazioni restano.
+- Le chiamate di embedding dei documenti di una conversazione finiscono nel suo monitor del contesto e seguono
+  la CPU/GPU del suo modello; quelle delle basi della libreria non appartengono a nessuna conversazione.
+
 ## 1. Ingresso: i plugin
 
 - Un plugin (`KnowledgeSource`, in `src/main/knowledge/source.ts`) sa leggere un tipo di sorgente e
@@ -23,7 +42,7 @@ Riferimento del meccanismo, allineato al codice (`src/main/knowledge/`, `src/sha
 
 ## 2. Indicizzazione (una volta per documento, in sottofondo)
 
-1. Impronta SHA-256 del file: lo stesso file non entra due volte nella stessa conversazione.
+1. Impronta SHA-256 del file: lo stesso file non entra due volte nella stessa base.
 2. Il plugin estrae le sezioni; limite 25 MB per file e 2 milioni di caratteri di testo.
 3. Ogni sezione viene divisa per paragrafi in **pezzi di al massimo 1.600 caratteri** (~400 token);
    ogni pezzo eredita il locatore della sezione.
@@ -45,7 +64,8 @@ A ogni domanda, se valgono entrambe le condizioni:
 
 - la **pill** «Usa la base di conoscenza» della conversazione è accesa, **oppure** il **bottone libro**
   accanto a «Invia» è acceso per questa domanda (la scelta sulla domanda vince su quella della conversazione);
-- c'è almeno un documento `ready` con pezzi per il modello di embedding attuale.
+- c'è almeno un documento `ready` con pezzi per il modello di embedding attuale, nella base della
+  conversazione o in una base collegata.
 
 La scelta del bottone libro si salva sul messaggio dell'utente: «Rigenera» la ripete.
 
@@ -98,7 +118,10 @@ budget = min( quota × num_ctx ,
 
 ## 8. Interfaccia
 
-- Scheda **«Conoscenza»** nel pannello laterale: pill, selettore dello spazio, aggiunta file e drag&drop,
+- **Impostazioni → Conoscenza**: libreria delle basi (crea, rinomina, elimina) e documenti di ogni base, con
+  gli stessi comandi della scheda.
+- Scheda **«Conoscenza»** nel pannello laterale: pill, selettore dello spazio, «Basi collegate» (collega,
+  scollega), aggiunta file e drag&drop,
   «Collega: …» per le sorgenti collegate, elenco documenti con stato, «Intero», «Riprova», rimozione;
   riga di stato con pezzi indicizzati e modello; riga che dice se i documenti stanno nello spazio riservato
   e, se no, quanta memoria servirebbe.

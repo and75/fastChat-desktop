@@ -38,7 +38,9 @@ describe('migrazioni', () => {
     expect(rows.map((r) => r.name)).toEqual([
       'brief_templates',
       'context_calls',
+      'conversation_bases',
       'conversations',
+      'knowledge_bases',
       'knowledge_chunks',
       'knowledge_connections',
       'knowledge_documents',
@@ -53,6 +55,54 @@ describe('migrazioni', () => {
       'plans',
       'settings'
     ])
+  })
+
+  it('basi di conoscenza: i documenti di una conversazione passano alla sua base, con pezzi, indice FTS e connessioni intatti', async () => {
+    const { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    // database fermo alla versione con i documenti legati alla conversazione (migrazioni 0000–0010)
+    const dir = mkdtempSync(join(tmpdir(), 'fastchat-mig-kb-'))
+    cpSync(resolve(__dirname, '../drizzle'), dir, { recursive: true })
+    const journalPath = join(dir, 'meta', '_journal.json')
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8'))
+    journal.entries = journal.entries.slice(0, 11)
+    writeFileSync(journalPath, JSON.stringify(journal))
+    const old = openDatabase(':memory:')
+    try {
+      await runMigrations(old, dir)
+      old.raw.exec(`
+        INSERT INTO conversations (id, title, model) VALUES ('c1', 'Con documenti', 'm'), ('c2', 'Senza', 'm');
+        INSERT INTO knowledge_connections (id, conversation_id, source, config) VALUES ('k1', 'c1', 'folder', '{"path":"/x"}');
+        INSERT INTO knowledge_documents (id, conversation_id, connection_id, source, title, ref, status, chunk_count, pinned)
+          VALUES ('d1', 'c1', NULL, 'text', 'Uno', '{"kind":"file","path":"/a.txt"}', 'ready', 2, 1),
+                 ('d2', 'c1', 'k1', 'folder', 'Due', '{"kind":"remote","sourceId":"folder","uri":"/x/b.txt"}', 'ready', 1, 0);
+        INSERT INTO knowledge_chunks (id, document_id, part, text, model, embedding) VALUES
+          ('p1', 'd1', 0, 'fattura rossi', 'e', x'00'), ('p2', 'd1', 1, 'seconda parte', 'e', x'00'), ('p3', 'd2', 0, 'contratto bianchi', 'e', x'00');
+      `)
+      await runMigrations(old, resolve(__dirname, '../drizzle'))
+      const all = (q: string) => old.raw.prepare(q).all() as Array<Record<string, unknown>>
+      expect(all('select id, origin, conversation_id from knowledge_bases')).toEqual([{ id: 'kb-c1', origin: 'conversation', conversation_id: 'c1' }])
+      expect(all('select id, base_id, connection_id, pinned from knowledge_documents order by id')).toEqual([
+        { id: 'd1', base_id: 'kb-c1', connection_id: null, pinned: 1 },
+        { id: 'd2', base_id: 'kb-c1', connection_id: 'k1', pinned: 0 }
+      ])
+      expect(all('select id, base_id from knowledge_connections')).toEqual([{ id: 'k1', base_id: 'kb-c1' }])
+      // i pezzi non sono stati cancellati dalla ricostruzione delle tabelle, e l'indice a parole li trova ancora
+      expect(all('select count(*) n from knowledge_chunks')).toEqual([{ n: 3 }])
+      expect(all("select count(*) n from knowledge_fts where knowledge_fts match 'rossi'")).toEqual([{ n: 1 }])
+      expect(all("select name from pragma_table_info('knowledge_documents') where name = 'conversation_id'")).toEqual([])
+      // le chiavi esterne sono di nuovo attive: eliminando la conversazione spariscono base, documenti e pezzi
+      expect(all('pragma foreign_keys')).toEqual([{ foreign_keys: 1 }])
+      old.raw.exec("DELETE FROM conversations WHERE id = 'c1'")
+      expect(all('select count(*) n from knowledge_bases')).toEqual([{ n: 0 }])
+      expect(all('select count(*) n from knowledge_documents')).toEqual([{ n: 0 }])
+      expect(all('select count(*) n from knowledge_chunks')).toEqual([{ n: 0 }])
+      expect(all("select count(*) n from knowledge_fts where knowledge_fts match 'rossi'")).toEqual([{ n: 0 }])
+    } finally {
+      old.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('la seconda migrazione aggiunge prompt_eval_count ai messaggi', () => {

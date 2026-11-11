@@ -1,11 +1,12 @@
 import { sql } from 'drizzle-orm'
-import { blob, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { blob, index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 import type {
   BenchmarkRun,
   ContextCallKind,
   ContextPart,
   DocumentRef,
   DoneReason,
+  KnowledgeBaseOrigin,
   KnowledgeDocumentStatus,
   KnowledgeRef,
   KnowledgeShare,
@@ -155,12 +156,47 @@ export const messageChunks = sqliteTable(
   (t) => [index('message_chunks_conversation_idx').on(t.conversationId, t.model)]
 )
 
-/** Base di conoscenza: sorgenti collegate a una conversazione (plugin `connected`), con la configurazione. */
+/**
+ * Basi di conoscenza. Ogni conversazione ha la sua (origin 'conversation', eliminata con lei); le altre stanno
+ * nella libreria (create dall'utente o installate da un pacchetto) e si collegano a più conversazioni.
+ */
+export const knowledgeBases = sqliteTable(
+  'knowledge_bases',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull().default(''),
+    description: text('description').notNull().default(''),
+    origin: text('origin', { enum: ['conversation', 'local', 'package'] }).$type<KnowledgeBaseOrigin>().notNull().default('local'),
+    /** Conversazione proprietaria, solo per la base della conversazione. */
+    conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'cascade' }),
+    version: text('version'),
+    createdAt: integer('created_at').notNull().default(now),
+    updatedAt: integer('updated_at').notNull().default(now)
+  },
+  (t) => [index('knowledge_bases_conversation_idx').on(t.conversationId)]
+)
+
+/** Basi della libreria collegate a una conversazione. */
+export const conversationBases = sqliteTable(
+  'conversation_bases',
+  {
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    baseId: text('base_id')
+      .notNull()
+      .references(() => knowledgeBases.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at').notNull().default(now)
+  },
+  (t) => [primaryKey({ columns: [t.conversationId, t.baseId] })]
+)
+
+/** Base di conoscenza: sorgenti collegate a una base (plugin `connected`), con la configurazione. */
 export const knowledgeConnections = sqliteTable('knowledge_connections', {
   id: text('id').primaryKey(),
-  conversationId: text('conversation_id')
+  baseId: text('base_id')
     .notNull()
-    .references(() => conversations.id, { onDelete: 'cascade' }),
+    .references(() => knowledgeBases.id, { onDelete: 'cascade' }),
   source: text('source').notNull(),
   config: text('config', { mode: 'json' }).$type<Record<string, string>>().notNull(),
   status: text('status', { enum: ['ready', 'syncing', 'error'] }).$type<'ready' | 'syncing' | 'error'>().notNull().default('ready'),
@@ -169,21 +205,21 @@ export const knowledgeConnections = sqliteTable('knowledge_connections', {
   createdAt: integer('created_at').notNull().default(now)
 })
 
-/** Base di conoscenza: documenti di una conversazione (testo estratto dal plugin, non il file). */
+/** Base di conoscenza: documenti di una base (testo estratto dal plugin, non il file). */
 export const knowledgeDocuments = sqliteTable(
   'knowledge_documents',
   {
     id: text('id').primaryKey(),
-    conversationId: text('conversation_id')
+    baseId: text('base_id')
       .notNull()
-      .references(() => conversations.id, { onDelete: 'cascade' }),
+      .references(() => knowledgeBases.id, { onDelete: 'cascade' }),
     connectionId: text('connection_id').references(() => knowledgeConnections.id, { onDelete: 'cascade' }),
     /** Plugin che ha letto il documento. */
     source: text('source').notNull(),
     title: text('title').notNull(),
     ref: text('ref', { mode: 'json' }).$type<DocumentRef>().notNull(),
     version: text('version'),
-    /** Impronta del contenuto: lo stesso file non si aggiunge due volte alla stessa conversazione. */
+    /** Impronta del contenuto: lo stesso file non si aggiunge due volte alla stessa base. */
     hash: text('hash'),
     bytes: integer('bytes'),
     chars: integer('chars').notNull().default(0),
@@ -195,7 +231,7 @@ export const knowledgeDocuments = sqliteTable(
     createdAt: integer('created_at').notNull().default(now),
     indexedAt: integer('indexed_at')
   },
-  (t) => [index('knowledge_documents_conversation_idx').on(t.conversationId, t.createdAt)]
+  (t) => [index('knowledge_documents_base_idx').on(t.baseId, t.createdAt)]
 )
 
 /** Base di conoscenza: pezzi dei documenti con il loro embedding, per modello di embedding. */

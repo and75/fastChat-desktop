@@ -5,7 +5,7 @@ import { DEFAULT_TITLE, type Brief, type Conversation } from '@shared/types'
 import { useConversations } from '../store/useConversations'
 import { useTemplates } from '../store/useTemplates'
 import { registerPendingSave } from '../store/pendingSaves'
-import { useKnowledge } from '../store/useKnowledge'
+import { documentCount, useKnowledge } from '../store/useKnowledge'
 import { BookOpenIcon, BrainIcon, IdCardIcon } from './icons'
 import { KnowledgePanel } from './KnowledgePanel'
 import { ModelSettings, PlanModeToggle } from './ModelSettings'
@@ -150,7 +150,7 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
 
   const preview = buildSystemPrompt(draft, conversation.style)
   const [tab, setTab] = usePanelTab()
-  const documents = useKnowledge((s) => s.status[conversation.id]?.documents.length ?? 0)
+  const documents = useKnowledge((s) => documentCount(s.status[conversation.id]))
 
   const tabs: Array<{ id: PanelTab; label: string; icon: React.ReactNode; filled?: boolean }> = [
     { id: 'model', label: t('brief.tab.model'), icon: <BrainIcon /> },

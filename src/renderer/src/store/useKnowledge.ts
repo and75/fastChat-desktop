@@ -1,11 +1,13 @@
 import { create } from 'zustand'
-import type { KnowledgeDocument, KnowledgeProgress, KnowledgeSourceInfo, KnowledgeStatus } from '@shared/types'
+import type { KnowledgeBaseInfo, KnowledgeProgress, KnowledgeSourceInfo, KnowledgeStatus } from '@shared/types'
 
 interface KnowledgeState {
   /** Plugin disponibili (etichette, estensioni), caricati una volta. */
   sources: KnowledgeSourceInfo[]
-  /** Stato della base di conoscenza, per conversazione. */
+  /** Stato per «proprietario»: l'id di una conversazione (la sua base più le collegate) o di una base della libreria. */
   status: Record<string, KnowledgeStatus>
+  /** Basi della libreria. */
+  bases: KnowledgeBaseInfo[]
   /** Avanzamento dell'indicizzazione in corso, per documento. */
   progress: Record<string, KnowledgeProgress>
   error: string | null
@@ -23,6 +25,13 @@ interface KnowledgeState {
   connect(conversationId: string, sourceId: string, config: Record<string, string>): Promise<boolean>
   refresh(conversationId: string, connectionId: string): Promise<void>
   disconnect(conversationId: string, connectionId: string): Promise<void>
+  /** Libreria: elenco, crea, rinomina, elimina; collega e scollega una base a una conversazione. */
+  loadBases(): Promise<void>
+  createBase(name: string): Promise<KnowledgeBaseInfo | null>
+  renameBase(baseId: string, name: string): Promise<void>
+  removeBase(baseId: string): Promise<void>
+  link(conversationId: string, baseId: string): Promise<void>
+  unlink(conversationId: string, baseId: string): Promise<void>
   handleProgress(p: KnowledgeProgress): void
   clearError(): void
 }
@@ -30,10 +39,15 @@ interface KnowledgeState {
 export const useKnowledge = create<KnowledgeState>((set, get) => {
   const apply = (conversationId: string, status: KnowledgeStatus): void =>
     set((s) => ({ status: { ...s.status, [conversationId]: status } }))
+  /** Ricarica ogni stato già caricato (dopo una modifica alla libreria che tocca più conversazioni). */
+  const reloadAll = (): void => {
+    for (const key of Object.keys(get().status)) void get().load(key)
+  }
 
   return {
     sources: [],
     status: {},
+    bases: [],
     progress: {},
     error: null,
     busy: false,
@@ -109,18 +123,75 @@ export const useKnowledge = create<KnowledgeState>((set, get) => {
       apply(conversationId, res.data)
     },
 
+    async loadBases() {
+      const res = await window.api.knowledge.bases()
+      if (res.ok) set({ bases: res.data })
+    },
+
+    async createBase(name) {
+      set({ error: null })
+      const res = await window.api.knowledge.createBase(name)
+      if (!res.ok) {
+        set({ error: res.error })
+        return null
+      }
+      await get().loadBases()
+      return res.data
+    },
+
+    async renameBase(baseId, name) {
+      const res = await window.api.knowledge.updateBase(baseId, { name })
+      if (!res.ok) return set({ error: res.error })
+      await get().loadBases()
+      reloadAll()
+    },
+
+    async removeBase(baseId) {
+      const res = await window.api.knowledge.removeBase(baseId)
+      if (!res.ok) return set({ error: res.error })
+      set((s) => {
+        const status = { ...s.status }
+        delete status[baseId]
+        return { bases: res.data, status }
+      })
+      // Le conversazioni che la collegavano non la vedono più.
+      reloadAll()
+    },
+
+    async link(conversationId, baseId) {
+      const res = await window.api.knowledge.link(conversationId, baseId)
+      if (!res.ok) return set({ error: res.error })
+      apply(conversationId, res.data)
+      void get().loadBases()
+    },
+
+    async unlink(conversationId, baseId) {
+      const res = await window.api.knowledge.unlink(conversationId, baseId)
+      if (!res.ok) return set({ error: res.error })
+      apply(conversationId, res.data)
+      void get().loadBases()
+    },
+
     handleProgress(p) {
       set((s) => {
         const progress = { ...s.progress }
         if (p.status === 'indexing') progress[p.documentId] = p
         else delete progress[p.documentId]
-        // Il documento nello stato segue l'avanzamento, senza ricaricare tutto a ogni lotto.
-        const current = s.status[p.conversationId]
-        const status = current ? { ...current, documents: current.documents.map((d) => (d.id === p.documentId ? { ...d, status: p.status } : d)) } : current
-        return { progress, status: status ? { ...s.status, [p.conversationId]: status } : s.status }
+        // Il documento segue l'avanzamento in ogni stato che lo mostra, senza ricaricare tutto a ogni lotto.
+        const status: Record<string, KnowledgeStatus> = {}
+        for (const [key, st] of Object.entries(s.status)) {
+          status[key] = st.documents.some((d) => d.id === p.documentId) ? { ...st, documents: st.documents.map((d) => (d.id === p.documentId ? { ...d, status: p.status } : d)) } : st
+        }
+        return { progress, status }
       })
       // A fine indicizzazione (o errore) lo stato completo arriva dal main: pezzi, errore, titolo letto dal plugin.
-      if (p.status !== 'indexing') void get().load(p.conversationId)
+      // Si ricarica chi usa quella base: la base stessa, la conversazione proprietaria, quelle che la collegano.
+      if (p.status !== 'indexing') {
+        for (const [key, st] of Object.entries(get().status)) {
+          if (key === p.baseId || st.baseId === p.baseId || st.baseId === null || st.linked.some((l) => l.id === p.baseId)) void get().load(key)
+        }
+        if (get().bases.length) void get().loadBases()
+      }
     },
 
     clearError() {
@@ -129,6 +200,9 @@ export const useKnowledge = create<KnowledgeState>((set, get) => {
   }
 })
 
-/** Documenti pronti della conversazione (abilitano il bottone libro). */
-export const readyDocuments = (status: KnowledgeStatus | undefined): KnowledgeDocument[] =>
-  status?.documents.filter((d) => d.status === 'ready') ?? []
+/** Documenti pronti che la conversazione può usare, basi collegate comprese (abilitano il bottone libro). */
+export const readyCount = (status: KnowledgeStatus | undefined): number => status?.ready ?? 0
+
+/** Documenti in tutto: quelli della conversazione più quelli delle basi collegate. */
+export const documentCount = (status: KnowledgeStatus | undefined): number =>
+  status ? status.documents.length + status.linked.reduce((n, b) => n + b.documents, 0) : 0

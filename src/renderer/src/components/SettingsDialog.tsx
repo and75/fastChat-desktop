@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { t, tn } from '@shared/i18n'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/types'
 import { useModels } from '../store/useModels'
+import { KnowledgeLibrary } from './KnowledgeLibrary'
 import { ModelManager } from './ModelManager'
 import { OllamaEnvPanel } from './OllamaEnvPanel'
 
-type SettingsTab = 'general' | 'models' | 'ollama'
-const TABS: SettingsTab[] = ['general', 'models', 'ollama']
+type SettingsTab = 'general' | 'models' | 'ollama' | 'knowledge'
+const TABS: SettingsTab[] = ['general', 'models', 'ollama', 'knowledge']
 
 type Check = { state: 'idle' } | { state: 'checking' } | { state: 'ok'; count: number } | { state: 'error'; message: string }
 
@@ -71,7 +72,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }): React.JSX.Elem
       </div>
       {tab !== 'general' && (
         <div className="max-h-[70vh] overflow-y-auto p-5">
-          {tab === 'models' ? <ModelManager /> : <OllamaEnvPanel />}
+          {tab === 'models' ? <ModelManager /> : tab === 'ollama' ? <OllamaEnvPanel /> : <KnowledgeLibrary />}
           <div className="mt-4 flex justify-end">
             <button type="button" onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">
               {t('common.close')}

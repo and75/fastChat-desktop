@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { fmtTime, t } from '@shared/i18n'
-import type { ConfigField, Conversation, KnowledgeConnection, KnowledgeSourceInfo } from '@shared/types'
+import type { ConfigField, KnowledgeConnection, KnowledgeSourceInfo } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useKnowledge } from '../store/useKnowledge'
 import { RegenerateIcon, TrashIcon } from './icons'
@@ -9,7 +9,7 @@ import { RegenerateIcon, TrashIcon } from './icons'
  * Form di configurazione di una sorgente collegata, disegnato dal nucleo a partire dai campi dichiarati dal
  * plugin: testo, cartella (con il dialog di sistema), segreto (password). Il plugin non ha interfaccia propria.
  */
-export function ConnectForm({ conversation, source, onDone }: { conversation: Conversation; source: KnowledgeSourceInfo; onDone(): void }): React.JSX.Element {
+export function ConnectForm({ ownerId, source, onDone }: { ownerId: string; source: KnowledgeSourceInfo; onDone(): void }): React.JSX.Element {
   const connect = useKnowledge((s) => s.connect)
   const busy = useKnowledge((s) => s.busy)
   const [values, setValues] = useState<Record<string, string>>({})
@@ -52,7 +52,7 @@ export function ConnectForm({ conversation, source, onDone }: { conversation: Co
       className="flex flex-col gap-2 rounded-xl border border-zinc-200 p-3 text-sm dark:border-zinc-800"
       onSubmit={async (e) => {
         e.preventDefault()
-        if (await connect(conversation.id, source.id, values)) onDone()
+        if (await connect(ownerId, source.id, values)) onDone()
       }}
       data-testid="connect-form"
     >
@@ -79,11 +79,11 @@ export function ConnectForm({ conversation, source, onDone }: { conversation: Co
 }
 
 /** Una sorgente collegata: cosa, quando è stata aggiornata, stato; «Aggiorna» e «Scollega». */
-export function ConnectionRow({ conversation, connection, documents }: { conversation: Conversation; connection: KnowledgeConnection; documents: number }): React.JSX.Element {
+export function ConnectionRow({ ownerId, connection, documents }: { ownerId: string; connection: KnowledgeConnection; documents: number }): React.JSX.Element {
   const sources = useKnowledge((s) => s.sources)
   const refresh = useKnowledge((s) => s.refresh)
   const disconnect = useKnowledge((s) => s.disconnect)
-  const busy = useChat((s) => !!s.streams[conversation.id])
+  const busy = useChat((s) => !!s.streams[ownerId])
   const source = sources.find((s) => s.id === connection.source)
   const label = source?.label ?? connection.source
   // Il campo principale (il primo) descrive la connessione: la cartella, l'URL…
@@ -111,7 +111,7 @@ export function ConnectionRow({ conversation, connection, documents }: { convers
         className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
         aria-label={t('knowledge.connection.refresh')}
         title={t('knowledge.connection.refresh.title')}
-        onClick={() => void refresh(conversation.id, connection.id)}
+        onClick={() => void refresh(ownerId, connection.id)}
         data-testid="knowledge-connection-refresh"
       >
         <RegenerateIcon size={14} />
@@ -122,7 +122,7 @@ export function ConnectionRow({ conversation, connection, documents }: { convers
         className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-red-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-red-300"
         aria-label={t('knowledge.connection.disconnect')}
         title={t('knowledge.connection.disconnect.title')}
-        onClick={() => void disconnect(conversation.id, connection.id)}
+        onClick={() => void disconnect(ownerId, connection.id)}
         data-testid="knowledge-connection-disconnect"
       >
         <TrashIcon size={14} />

@@ -3,6 +3,7 @@ import type {
   BenchmarkProgress,
   MemoryStatus,
   ContextCall,
+  KnowledgeBaseInfo,
   KnowledgeConnection,
   KnowledgeDocument,
   KnowledgeProgress,
@@ -59,6 +60,10 @@ export interface Api {
     /** Rifà l'indice da zero (es. dopo aver cambiato il modello di embedding). */
     rebuild(conversationId: string): Promise<Result<MemoryStatus>>
   }
+  /**
+   * Basi di conoscenza. Nei metodi sui documenti `ownerId` è l'id di una conversazione (la sua base) o di una
+   * base della libreria.
+   */
   knowledge: {
     /** Plugin disponibili: etichette, estensioni lette, campi di configurazione. */
     sources(): Promise<Result<KnowledgeSourceInfo[]>>
@@ -80,6 +85,15 @@ export interface Api {
     disconnect(conversationId: string, connectionId: string): Promise<Result<KnowledgeStatus>>
     /** Dialog di scelta di una cartella; null se annullato. */
     pickFolder(): Promise<Result<string | null>>
+    /** Basi della libreria (non quelle delle conversazioni), con i loro numeri. */
+    bases(): Promise<Result<KnowledgeBaseInfo[]>>
+    createBase(name: string): Promise<Result<KnowledgeBaseInfo>>
+    updateBase(baseId: string, patch: { name?: string; description?: string }): Promise<Result<KnowledgeBaseInfo>>
+    /** Elimina la base: sparisce da tutte le conversazioni che la collegano. Restituisce la libreria aggiornata. */
+    removeBase(baseId: string): Promise<Result<KnowledgeBaseInfo[]>>
+    /** Collega o scollega una base della libreria a una conversazione. */
+    link(conversationId: string, baseId: string): Promise<Result<KnowledgeStatus>>
+    unlink(conversationId: string, baseId: string): Promise<Result<KnowledgeStatus>>
     /** Avanzamento dell'indicizzazione dei documenti. */
     onProgress(cb: (p: KnowledgeProgress) => void): () => void
     /** Percorso di un file trascinato nella finestra ('' se non è un file su disco). */

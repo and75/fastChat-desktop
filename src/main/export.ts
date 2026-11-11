@@ -58,7 +58,7 @@ export function toMarkdown({ conversation: c, messages, plans, documents = [] }:
       }
       out.push(m.content, '')
       if (m.knowledgeRefs?.length) {
-        out.push(`${t('md.sources')}:`, ...m.knowledgeRefs.map((r) => `- ${sourceLabel(r.title, r.locator)}`), '')
+        out.push(`${t('md.sources')}:`, ...m.knowledgeRefs.map((r) => `- ${sourceLabel(r.title, r.locator)}${r.base ? ` (${r.base})` : ''}`), '')
       }
     }
   }

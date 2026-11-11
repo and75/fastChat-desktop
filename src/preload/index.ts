@@ -44,6 +44,12 @@ const api: Api = {
     refresh: (id, connectionId) => invoke(IPC.knowledgeRefresh, id, connectionId),
     disconnect: (id, connectionId) => invoke(IPC.knowledgeDisconnect, id, connectionId),
     pickFolder: () => invoke(IPC.knowledgePickFolder),
+    bases: () => invoke(IPC.knowledgeBases),
+    createBase: (name) => invoke(IPC.knowledgeBaseCreate, name),
+    updateBase: (baseId, patch) => invoke(IPC.knowledgeBaseUpdate, baseId, patch),
+    removeBase: (baseId) => invoke(IPC.knowledgeBaseRemove, baseId),
+    link: (id, baseId) => invoke(IPC.knowledgeLink, id, baseId),
+    unlink: (id, baseId) => invoke(IPC.knowledgeUnlink, id, baseId),
     onProgress: (cb) => subscribe<KnowledgeProgress>(IPC.knowledgeProgress, cb),
     pathForFile: (file) => {
       try {

@@ -31,7 +31,6 @@ import {
   getSettings,
   listConversations,
   listContextCalls,
-  listDocuments,
   listModelSettings,
   removeModelSetting,
   saveModelSetting,
@@ -362,15 +361,16 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
 
   // ---- base di conoscenza
   handle(IPC.knowledgeSources, () => registry.describe())
-  handle(IPC.knowledgeStatus, async (_e, id: string) => knowledge.status(await convOrThrow(id)))
+  // Il primo argomento dei canali sui documenti è l'id di una conversazione (la sua base) o di una base della libreria.
+  handle(IPC.knowledgeStatus, async (_e, id: string) => knowledge.status(await knowledge.owner(requireId(id))))
   const validPaths = (raw: unknown): string[] => {
     if (!Array.isArray(raw) || raw.some((p) => typeof p !== 'string' || !p)) throw new Error(t('err.badText'))
     return raw as string[]
   }
-  handle(IPC.knowledgeAddFiles, async (_e, id: string, paths: unknown) => knowledge.addFiles(await convOrThrow(id), validPaths(paths)))
+  handle(IPC.knowledgeAddFiles, async (_e, id: string, paths: unknown) => knowledge.addFiles(await knowledge.owner(requireId(id)), validPaths(paths)))
   /** Dialog di scelta dei file, filtrato sulle estensioni dei plugin; poi aggiunta. Null se annullato. */
   handle(IPC.knowledgePickFiles, async (e, id: string) => {
-    const conv = await convOrThrow(id)
+    const owner = await knowledge.owner(requireId(id))
     const extensions = registry.extensions()
     const options: Electron.OpenDialogOptions = {
       title: t('knowledge.pickTitle'),
@@ -386,25 +386,48 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
         ? await dialog.showOpenDialog(win, options)
         : await dialog.showOpenDialog(options)
     if (canceled || filePaths.length === 0) return null
-    return knowledge.addFiles(conv, filePaths)
+    return knowledge.addFiles(owner, filePaths)
   })
   handle(IPC.knowledgeRemove, async (_e, id: string, documentId: string) => {
-    const conv = await convOrThrow(id)
-    await knowledge.remove(conv, requireId(documentId))
-    return knowledge.status(conv)
+    const owner = await knowledge.owner(requireId(id))
+    await knowledge.remove(owner, requireId(documentId))
+    return knowledge.status(owner)
   })
-  handle(IPC.knowledgeReindex, async (_e, id: string, documentId: string) => knowledge.reindex(await convOrThrow(id), requireId(documentId)))
-  handle(IPC.knowledgePin, async (_e, id: string, documentId: string, pinned: unknown) => knowledge.setPinned(await convOrThrow(id), requireId(documentId), pinned === true))
+  handle(IPC.knowledgeReindex, async (_e, id: string, documentId: string) => knowledge.reindex(await knowledge.owner(requireId(id)), requireId(documentId)))
+  handle(IPC.knowledgePin, async (_e, id: string, documentId: string, pinned: unknown) => knowledge.setPinned(await knowledge.owner(requireId(id)), requireId(documentId), pinned === true))
   /** Sorgenti collegate: collega (con la configurazione dei campi del plugin), aggiorna, scollega. */
   handle(IPC.knowledgeConnect, async (_e, id: string, sourceId: string, config: unknown) => {
-    const conv = await convOrThrow(id)
+    const owner = await knowledge.owner(requireId(id))
     const clean = config && typeof config === 'object' ? (config as Record<string, unknown>) : {}
-    return knowledge.connect(conv, requireId(sourceId), clean)
+    return knowledge.connect(owner, requireId(sourceId), clean)
   })
-  handle(IPC.knowledgeRefresh, async (_e, id: string, connectionId: string) => knowledge.refresh(await convOrThrow(id), requireId(connectionId)))
+  handle(IPC.knowledgeRefresh, async (_e, id: string, connectionId: string) => knowledge.refresh(await knowledge.owner(requireId(id)), requireId(connectionId)))
   handle(IPC.knowledgeDisconnect, async (_e, id: string, connectionId: string) => {
+    const owner = await knowledge.owner(requireId(id))
+    await knowledge.disconnect(owner, requireId(connectionId))
+    return knowledge.status(owner)
+  })
+  // Libreria delle basi e collegamenti con le conversazioni.
+  handle(IPC.knowledgeBases, () => knowledge.listBases())
+  handle(IPC.knowledgeBaseCreate, (_e, name: unknown) => knowledge.createBase(typeof name === 'string' ? name : ''))
+  handle(IPC.knowledgeBaseUpdate, (_e, id: string, patch: { name?: unknown; description?: unknown }) =>
+    knowledge.renameBase(requireId(id), {
+      ...(typeof patch?.name === 'string' ? { name: patch.name } : {}),
+      ...(typeof patch?.description === 'string' ? { description: patch.description } : {})
+    })
+  )
+  handle(IPC.knowledgeBaseRemove, async (_e, id: string) => {
+    await knowledge.removeBase(requireId(id))
+    return knowledge.listBases()
+  })
+  handle(IPC.knowledgeLink, async (_e, id: string, baseId: string) => {
     const conv = await convOrThrow(id)
-    await knowledge.disconnect(conv, requireId(connectionId))
+    await knowledge.link(conv, requireId(baseId))
+    return knowledge.status(conv)
+  })
+  handle(IPC.knowledgeUnlink, async (_e, id: string, baseId: string) => {
+    const conv = await convOrThrow(id)
+    await knowledge.unlink(conv, requireId(baseId))
     return knowledge.status(conv)
   })
   /** Dialog di scelta di una cartella (campo `folder` di una sorgente collegata). Null se annullato. */
@@ -434,7 +457,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
       conversation,
       messages: await listMessages(db, conversation.id),
       plans: await listPlans(db, conversation.id),
-      documents: await listDocuments(db, conversation.id)
+      documents: (await knowledge.documentsOf(conversation.id)).docs
     }
     const options = {
       title: t('export.dialogTitle'),

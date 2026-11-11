@@ -19,11 +19,12 @@ export type EmbedKind = Extract<ContextCallKind, 'embed-index' | 'embed-query' |
 const PART_LABEL: Record<EmbedKind, string> = { 'embed-index': 'texts.index', 'embed-query': 'texts.query', 'embed-doc': 'texts.doc' }
 
 export interface EmbedRequest {
-  conversationId: string
+  /** Conversazione nel cui monitor registrare la chiamata; null per le basi della libreria (nessun registro). */
+  conversationId: string | null
   kind: EmbedKind
   texts: string[]
-  /** Modello di chat della conversazione: gli embedding ne seguono la CPU/GPU. */
-  chatModel: string
+  /** Modello di chat della conversazione: gli embedding ne seguono la CPU/GPU. Null: decide Ollama. */
+  chatModel: string | null
   /** Caratteri per token per la stima nel monitor. */
   cpt: number
   note?: string | null
@@ -47,6 +48,8 @@ export function createEmbedder({ db, ollama, contextLog }: EmbedderDeps) {
   async function embed(req: EmbedRequest): Promise<number[][]> {
     const name = await model()
     let stats: EmbedStats | null = null
+    const opts = req.chatModel ? await options(req.chatModel) : undefined
+    if (!req.conversationId) return ollama.embed(name, req.texts, opts)
     const start = {
       conversationId: req.conversationId,
       kind: req.kind,
@@ -56,7 +59,7 @@ export function createEmbedder({ db, ollama, contextLog }: EmbedderDeps) {
       parts: [{ key: 'texts' as const, label: PART_LABEL[req.kind], tokens: req.texts.reduce((n, x) => n + estimateTokens(x, req.cpt), 0), count: req.texts.length }]
     }
     try {
-      const vectors = await ollama.embed(name, req.texts, await options(req.chatModel), (s) => (stats = s))
+      const vectors = await ollama.embed(name, req.texts, opts, (s) => (stats = s))
       await contextLog?.record(callInput(start, stats))
       return vectors
     } catch (err) {

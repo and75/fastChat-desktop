@@ -3,7 +3,7 @@ import { fmtInt, t, tn } from '@shared/i18n'
 import { KNOWLEDGE } from '@shared/knowledge'
 import { DEFAULT_CHARS_PER_TOKEN } from '@shared/prompt'
 import { resolveSettings } from '@shared/settings'
-import { KNOWLEDGE_SHARES, type Conversation, type KnowledgeDocument } from '@shared/types'
+import { KNOWLEDGE_SHARES, type Conversation, type KnowledgeBaseInfo, type KnowledgeDocument } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { useKnowledge } from '../store/useKnowledge'
@@ -74,13 +74,14 @@ function ShareControl({ conversation }: { conversation: Conversation }): React.J
 
 const fmtBytes = (n: number | null): string => (n == null ? '' : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
 
-function DocumentRow({ conversation, doc }: { conversation: Conversation; doc: KnowledgeDocument }): React.JSX.Element {
+function DocumentRow({ ownerId, doc }: { ownerId: string; doc: KnowledgeDocument }): React.JSX.Element {
   const progress = useKnowledge((s) => s.progress[doc.id])
   const remove = useKnowledge((s) => s.remove)
   const reindex = useKnowledge((s) => s.reindex)
   const pin = useKnowledge((s) => s.pin)
   const sources = useKnowledge((s) => s.sources)
-  const busy = useChat((s) => !!s.streams[conversation.id])
+  // Durante una risposta i documenti della conversazione non si tolgono (per una base della libreria non c'è stream).
+  const busy = useChat((s) => !!s.streams[ownerId])
   // Per i documenti di una sorgente collegata conta il tipo di file (PDF, Word…), non la connessione.
   const path = doc.ref.kind === 'file' ? doc.ref.path : doc.ref.uri
   const ext = path.split(/[\\/]/).pop()?.split('.').pop()?.toLowerCase() ?? ''
@@ -118,7 +119,7 @@ function DocumentRow({ conversation, doc }: { conversation: Conversation; doc: K
           }
           aria-label={t('knowledge.doc.pin')}
           title={t('knowledge.doc.pin.title')}
-          onClick={() => void pin(conversation.id, doc.id, !doc.pinned)}
+          onClick={() => void pin(ownerId, doc.id, !doc.pinned)}
           data-testid="knowledge-doc-pin"
         >
           <PinIcon size={14} />
@@ -130,7 +131,7 @@ function DocumentRow({ conversation, doc }: { conversation: Conversation; doc: K
           className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
           aria-label={t('knowledge.doc.retry')}
           title={t('knowledge.doc.retry')}
-          onClick={() => void reindex(conversation.id, doc.id)}
+          onClick={() => void reindex(ownerId, doc.id)}
         >
           <RegenerateIcon size={14} />
         </button>
@@ -141,7 +142,7 @@ function DocumentRow({ conversation, doc }: { conversation: Conversation; doc: K
         className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-red-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-red-300"
         aria-label={t('knowledge.doc.remove', { title: doc.title })}
         title={t('knowledge.doc.remove.title')}
-        onClick={() => void remove(conversation.id, doc.id)}
+        onClick={() => void remove(ownerId, doc.id)}
         data-testid="knowledge-doc-remove"
       >
         <TrashIcon size={14} />
@@ -151,11 +152,12 @@ function DocumentRow({ conversation, doc }: { conversation: Conversation; doc: K
 }
 
 /**
- * Scheda «Base di conoscenza»: la pill, i documenti della conversazione (aggiunta da dialog o trascinando
- * i file), lo stato dell'indice e del modello di embedding.
+ * Documenti di una base (quella di una conversazione o una della libreria): aggiunta da dialog o trascinando i
+ * file, sorgenti collegate, elenco con stato, «Intero», rimozione, stato dell'indice e del modello di embedding.
+ * `ownerId` è l'id della conversazione o della base.
  */
-export function KnowledgePanel({ conversation }: { conversation: Conversation }): React.JSX.Element {
-  const status = useKnowledge((s) => s.status[conversation.id])
+export function KnowledgeDocuments({ ownerId }: { ownerId: string }): React.JSX.Element {
+  const status = useKnowledge((s) => s.status[ownerId])
   const load = useKnowledge((s) => s.load)
   const pickFiles = useKnowledge((s) => s.pickFiles)
   const addFiles = useKnowledge((s) => s.addFiles)
@@ -166,7 +168,6 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
   const settings = useModels((s) => s.settings)
   const pull = useModels((s) => s.pull)
   const pulling = useModels((s) => (settings ? s.pulls[settings.embeddingModel] : undefined))
-  const caps = useModels((s) => s.capabilities[conversation.model])
   const [over, setOver] = useState(false)
   const [pullError, setPullError] = useState<string | null>(null)
   /** Sorgente collegata in configurazione (form aperto). */
@@ -174,7 +175,7 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
   const connected = sources.filter((s) => s.kind === 'connected')
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => void load(conversation.id), [conversation.id, settings?.embeddingModel, pulling])
+  useEffect(() => void load(ownerId), [ownerId, settings?.embeddingModel, pulling])
 
   const model = status?.model ?? settings?.embeddingModel ?? 'embeddinggemma'
   const docs = status?.documents ?? []
@@ -188,21 +189,8 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
     const paths = Array.from(e.dataTransfer.files)
       .map((f) => window.api.knowledge.pathForFile(f))
       .filter(Boolean)
-    void addFiles(conversation.id, paths)
+    void addFiles(ownerId, paths)
   }
-
-  // Stanno nella memoria? La quota di num_ctx riservata ai documenti contro i token stimati dei pezzi pronti.
-  const numCtx = resolveSettings(conversation, caps ?? null).numCtx
-  const share = conversation.knowledgeShare ?? KNOWLEDGE.budgetShare
-  const budgetTokens = Math.floor(numCtx * share)
-  const docTokens = status ? Math.ceil(status.totalChars / DEFAULT_CHARS_PER_TOKEN) : 0
-  const pinnedTokens = status ? Math.ceil(status.pinnedChars / DEFAULT_CHARS_PER_TOKEN) : 0
-  const fitText = !status || docTokens === 0
-    ? null
-    : docTokens <= budgetTokens
-      ? t('knowledge.fit.whole', { tokens: fmtInt(docTokens), budget: fmtInt(budgetTokens), share: Math.round(share * 100) })
-      : t('knowledge.fit.excerpts', { tokens: fmtInt(docTokens), budget: fmtInt(budgetTokens), share: Math.round(share * 100), needed: fmtInt(Math.ceil(docTokens / share / 1024) * 1024) })
-  const pinnedOver = !!status && pinnedTokens > budgetTokens
 
   const statusText = !status
     ? t('knowledge.status.reading')
@@ -213,11 +201,7 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
         : tn('knowledge.status.chunks', status.chunks, { docs: tn('knowledge.status.docs', docs.length) }) + (status.pending ? t('knowledge.status.pending', { n: status.pending }) : '') + t('knowledge.status.with', { model })
 
   return (
-    <div className="flex flex-col gap-3" data-testid="knowledge-panel">
-      <KnowledgePill conversation={conversation} />
-      <p className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">{t('knowledge.intro')}</p>
-      <ShareControl conversation={conversation} />
-
+    <div className="flex flex-col gap-3" data-testid="knowledge-documents">
       <div
         className={
           'flex flex-col items-center gap-2 rounded-xl border-2 border-dashed px-3 py-4 text-center text-sm transition-colors ' +
@@ -234,7 +218,7 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
         <button
           type="button"
           disabled={busy}
-          onClick={() => void pickFiles(conversation.id)}
+          onClick={() => void pickFiles(ownerId)}
           className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
           data-testid="knowledge-add"
         >
@@ -262,7 +246,7 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
       </div>
 
       {connecting && sources.find((s) => s.id === connecting) && (
-        <ConnectForm conversation={conversation} source={sources.find((s) => s.id === connecting)!} onDone={() => setConnecting(null)} />
+        <ConnectForm ownerId={ownerId} source={sources.find((s) => s.id === connecting)!} onDone={() => setConnecting(null)} />
       )}
 
       {error && (
@@ -277,19 +261,19 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
       {docs.length + connections.length > 0 && (
         <ul className="flex flex-col gap-1.5" aria-label={t('knowledge.documents')} data-testid="knowledge-docs">
           {loose.map((d) => (
-            <DocumentRow key={d.id} conversation={conversation} doc={d} />
+            <DocumentRow key={d.id} ownerId={ownerId} doc={d} />
           ))}
           {connections.map((c) => {
             const own = docs.filter((d) => d.connectionId === c.id)
             return (
               <li key={c.id} className="flex flex-col gap-1.5">
                 <ul className="contents">
-                  <ConnectionRow conversation={conversation} connection={c} documents={own.length} />
+                  <ConnectionRow ownerId={ownerId} connection={c} documents={own.length} />
                 </ul>
                 {own.length > 0 && (
                   <ul className="ml-3 flex flex-col gap-1.5 border-l-2 border-brand-100 pl-2 dark:border-brand-900">
                     {own.map((d) => (
-                      <DocumentRow key={d.id} conversation={conversation} doc={d} />
+                      <DocumentRow key={d.id} ownerId={ownerId} doc={d} />
                     ))}
                   </ul>
                 )}
@@ -302,6 +286,121 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
       <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400" data-testid="knowledge-status">
         {statusText}
       </span>
+      {status && docs.length > 0 && !status.modelInstalled && (
+        <button
+          type="button"
+          disabled={!!pulling}
+          className="self-start rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          onClick={() => void pull(model).then((e) => (e ? setPullError(e) : load(ownerId)))}
+          data-testid="knowledge-download"
+        >
+          {pulling ? t('longMemory.downloading', { model, pct: pulling.total ? `${Math.round(((pulling.completed ?? 0) / pulling.total) * 100)}%` : '' }) : t('longMemory.download', { model })}
+        </button>
+      )}
+      {pullError && <span className="text-xs text-red-700 dark:text-red-300">{pullError}</span>}
+    </div>
+  )
+}
+
+/** Numeri di una base: «3 documenti», con i pronti se non lo sono tutti. */
+export const baseDetail = (b: KnowledgeBaseInfo): string =>
+  tn('knowledge.status.docs', b.documents) + (b.ready < b.documents ? ` · ${t('knowledge.base.ready', { n: b.ready })}` : '')
+
+/** Basi della libreria collegate alla conversazione: elenco con «Scollega» e scelta di una base da collegare. */
+function LinkedBases({ conversation }: { conversation: Conversation }): React.JSX.Element {
+  const linked = useKnowledge((s) => s.status[conversation.id]?.linked ?? EMPTY)
+  const bases = useKnowledge((s) => s.bases)
+  const loadBases = useKnowledge((s) => s.loadBases)
+  const link = useKnowledge((s) => s.link)
+  const unlink = useKnowledge((s) => s.unlink)
+  const busy = useChat((s) => !!s.streams[conversation.id])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => void loadBases(), [conversation.id])
+  const available = bases.filter((b) => !linked.some((l) => l.id === b.id))
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="knowledge-linked">
+      <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('knowledge.linked.title')}</span>
+      {linked.length > 0 && (
+        <ul className="flex flex-col gap-1.5">
+          {linked.map((b) => (
+            <li key={b.id} className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 px-2.5 py-2 text-sm dark:border-emerald-900 dark:bg-emerald-950/20" data-testid="knowledge-linked-base">
+              <BookOpenIcon size={16} className="mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-400" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium text-zinc-800 dark:text-zinc-200">{b.name}</div>
+                <div className="truncate text-xs text-zinc-500">{baseDetail(b)}</div>
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                className="shrink-0 rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                aria-label={t('knowledge.linked.unlink', { name: b.name })}
+                title={t('knowledge.linked.unlink', { name: b.name })}
+                onClick={() => void unlink(conversation.id, b.id)}
+                data-testid="knowledge-unlink"
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {available.length > 0 ? (
+        <select
+          value=""
+          disabled={busy}
+          aria-label={t('knowledge.linked.add')}
+          onChange={(e) => e.target.value && void link(conversation.id, e.target.value)}
+          className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          data-testid="knowledge-link-select"
+        >
+          <option value="">{t('knowledge.linked.add')}</option>
+          {available.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name} ({baseDetail(b)})
+            </option>
+          ))}
+        </select>
+      ) : null}
+      <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">{bases.length === 0 ? t('knowledge.linked.empty') : t('knowledge.linked.hint')}</span>
+    </div>
+  )
+}
+
+const EMPTY: KnowledgeBaseInfo[] = []
+
+/**
+ * Scheda «Conoscenza» della conversazione: la pill, lo spazio per i documenti, i documenti della conversazione,
+ * le basi collegate e se tutto insieme sta nella memoria.
+ */
+export function KnowledgePanel({ conversation }: { conversation: Conversation }): React.JSX.Element {
+  const status = useKnowledge((s) => s.status[conversation.id])
+  const caps = useModels((s) => s.capabilities[conversation.model])
+
+  // Stanno nella memoria? La quota di num_ctx riservata ai documenti contro i token stimati dei pezzi pronti
+  // (documenti della conversazione e delle basi collegate).
+  const numCtx = resolveSettings(conversation, caps ?? null).numCtx
+  const share = conversation.knowledgeShare ?? KNOWLEDGE.budgetShare
+  const budgetTokens = Math.floor(numCtx * share)
+  const docTokens = status ? Math.ceil(status.totalChars / DEFAULT_CHARS_PER_TOKEN) : 0
+  const pinnedTokens = status ? Math.ceil(status.pinnedChars / DEFAULT_CHARS_PER_TOKEN) : 0
+  const fitText = !status || docTokens === 0
+    ? null
+    : docTokens <= budgetTokens
+      ? t('knowledge.fit.whole', { tokens: fmtInt(docTokens), budget: fmtInt(budgetTokens), share: Math.round(share * 100) })
+      : t('knowledge.fit.excerpts', { tokens: fmtInt(docTokens), budget: fmtInt(budgetTokens), share: Math.round(share * 100), needed: fmtInt(Math.ceil(docTokens / share / 1024) * 1024) })
+  const pinnedOver = !!status && pinnedTokens > budgetTokens
+
+  return (
+    <div className="flex flex-col gap-3" data-testid="knowledge-panel">
+      <KnowledgePill conversation={conversation} />
+      <p className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">{t('knowledge.intro')}</p>
+      <ShareControl conversation={conversation} />
+
+      <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('knowledge.own.title')}</span>
+      <KnowledgeDocuments ownerId={conversation.id} />
+
+      <LinkedBases conversation={conversation} />
+
       {fitText && (
         <span className={'text-xs leading-snug ' + (docTokens <= budgetTokens ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400')} data-testid="knowledge-fit" data-whole={docTokens <= budgetTokens}>
           {fitText}
@@ -312,18 +411,6 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
           {t('knowledge.fit.pinnedOver', { tokens: fmtInt(pinnedTokens) })}
         </span>
       )}
-      {status && docs.length > 0 && !status.modelInstalled && (
-        <button
-          type="button"
-          disabled={!!pulling}
-          className="self-start rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          onClick={() => void pull(model).then((e) => (e ? setPullError(e) : load(conversation.id)))}
-          data-testid="knowledge-download"
-        >
-          {pulling ? t('longMemory.downloading', { model, pct: pulling.total ? `${Math.round(((pulling.completed ?? 0) / pulling.total) * 100)}%` : '' }) : t('longMemory.download', { model })}
-        </button>
-      )}
-      {pullError && <span className="text-xs text-red-700 dark:text-red-300">{pullError}</span>}
       <p className="text-xs leading-snug text-zinc-400">{t('knowledge.hint')}</p>
     </div>
   )

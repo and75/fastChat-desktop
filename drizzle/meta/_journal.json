@@ -78,6 +78,20 @@
       "when": 1794184672221,
       "tag": "0010_knowledge_share",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1794410119522,
+      "tag": "0011_knowledge_bases",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1794410132397,
+      "tag": "0012_knowledge_bases_strict",
+      "breakpoints": true
     }
   ]
 }

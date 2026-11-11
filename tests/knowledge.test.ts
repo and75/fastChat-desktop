@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { addMessage, createConversation, listContextCalls, listDocuments, listKnowledgeChunks, listMessages, saveModelSetting, setSettings, updateConversation } from '../src/main/db/repo'
+import { addMessage, createConversation, getConversationBase, listContextCalls, listDocuments, listKnowledgeChunks, listMessages, saveModelSetting, setSettings, updateConversation } from '../src/main/db/repo'
 import { createChatService, wantsKnowledge } from '../src/main/chat'
 import { createMemory } from '../src/main/memory'
 import { createEmbedder } from '../src/main/embedder'
@@ -20,6 +20,12 @@ import type { Conversation, KnowledgeProgress, StreamEvent } from '../src/shared
 import { fakeEmbedding, startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
 
 const fixtures = resolve(__dirname, 'fixtures')
+
+/** Documenti della base della conversazione. */
+const convDocs = async (db: DbHandle['db'], conversationId: string) => {
+  const base = await getConversationBase(db, conversationId)
+  return base ? listDocuments(db, base.id) : []
+}
 
 describe('base di conoscenza: funzioni pure', () => {
   it('normalizeText: fine riga, spazi in coda, righe vuote multiple', () => {
@@ -205,7 +211,7 @@ describe('base di conoscenza: servizio', () => {
     expect(doc).toMatchObject({ status: 'pending', source: 'text', title: 'relazione', bytes: 195 })
     expect(doc.hash).toBe(await hashFile(join(fixtures, 'relazione.txt')))
     await k.wait(conv.id)
-    const [ready] = await listDocuments(h.db, conv.id)
+    const [ready] = await convDocs(h.db, conv.id)
     expect(ready).toMatchObject({ status: 'ready', chunkCount: 1, error: null })
     expect(ready.chars).toBeGreaterThan(100)
     expect(ready.indexedAt).not.toBeNull()
@@ -226,10 +232,10 @@ describe('base di conoscenza: servizio', () => {
     const first = await k.addFiles(conv, [join(fixtures, 'relazione.txt')])
     const again = await k.addFiles(conv, [join(fixtures, 'relazione.txt')])
     expect(again[0].id).toBe(first[0].id)
-    expect(await listDocuments(h.db, conv.id)).toHaveLength(1)
+    expect(await convDocs(h.db, conv.id)).toHaveLength(1)
     await expect(k.addFiles(conv, [join(fixtures, 'manca.txt')])).rejects.toThrow(/Impossibile leggere manca.txt/)
     await expect(k.addFiles(conv, [join(fixtures, 'foto.png')])).rejects.toThrow(/Formato non supportato/)
-    expect(await listDocuments(h.db, conv.id)).toHaveLength(1)
+    expect(await convDocs(h.db, conv.id)).toHaveLength(1)
     await k.wait(conv.id)
   })
 
@@ -242,12 +248,12 @@ describe('base di conoscenza: servizio', () => {
       const conv = await createConversation(h.db, { model: 'chat' })
       const [doc] = await k.addFiles(conv, [path])
       await k.wait(conv.id)
-      expect((await listDocuments(h.db, conv.id))[0]).toMatchObject({ status: 'error', error: 'Nessun testo estraibile da note' })
+      expect((await convDocs(h.db, conv.id))[0]).toMatchObject({ status: 'error', error: 'Nessun testo estraibile da note' })
       expect(await k.hasReady(conv.id)).toBe(false)
       writeFileSync(path, 'Adesso il file ha un contenuto vero e proprio.')
       await k.reindex(conv, doc.id)
       await k.wait(conv.id)
-      expect((await listDocuments(h.db, conv.id))[0]).toMatchObject({ status: 'ready', chunkCount: 1, error: null })
+      expect((await convDocs(h.db, conv.id))[0]).toMatchObject({ status: 'ready', chunkCount: 1, error: null })
       expect(await k.hasReady(conv.id)).toBe(true)
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -602,7 +608,7 @@ describe('base di conoscenza: sorgente collegata (cartella)', () => {
     expect(conn).toMatchObject({ source: 'folder', status: 'ready', config: { path: dir } })
     expect(conn.lastSyncAt).not.toBeNull()
     await k.wait(conv.id)
-    let docs = await listDocuments(h.db, conv.id)
+    let docs = await convDocs(h.db, conv.id)
     expect(docs.map((d) => [d.title, d.status, d.connectionId === conn.id])).toEqual([
       ['due', 'ready', true],
       ['uno', 'ready', true]
@@ -621,7 +627,7 @@ describe('base di conoscenza: sorgente collegata (cartella)', () => {
     const again = await k.refresh(conv, conn.id)
     expect(again.status).toBe('ready')
     await k.wait(conv.id)
-    docs = await listDocuments(h.db, conv.id)
+    docs = await convDocs(h.db, conv.id)
     expect(docs.map((d) => [d.title, d.status])).toEqual([
       ['uno', 'ready'],
       ['tre', 'ready']
@@ -633,7 +639,7 @@ describe('base di conoscenza: sorgente collegata (cartella)', () => {
     const s = await k.status(conv)
     expect(s.connections).toHaveLength(1)
     await k.disconnect(conv, conn.id)
-    expect(await listDocuments(h.db, conv.id)).toEqual([])
+    expect(await convDocs(h.db, conv.id)).toEqual([])
     expect((await k.status(conv)).connections).toEqual([])
     await expect(k.refresh(conv, conn.id)).rejects.toThrow(/Connessione non trovata/)
   })
@@ -685,7 +691,7 @@ describe('base di conoscenza: parole esatte, documenti interi e «fissa»', () =
   it('la tabella FTS5 segue i pezzi: ricerca per numero di fattura e nome, con accenti ignorati; cancellando il documento sparisce', async () => {
     const { k, conv, dir } = await withInvoices(5)
     try {
-      const docs = await listDocuments(h.db, conv.id)
+      const docs = await convDocs(h.db, conv.id)
       const ids = docs.map((d) => d.id)
       const { searchKnowledgeChunks } = await import('../src/main/db/repo')
       const hits = await searchKnowledgeChunks(h.db, ids, 'embeddinggemma', ftsQuery('fattura 2026/003'))
@@ -747,7 +753,7 @@ describe('base di conoscenza: parole esatte, documenti interi e «fissa»', () =
   it('documento «intero» (fissato): va per intero prima degli estratti anche quando non ci sta tutto; lo stato ne riporta i caratteri', async () => {
     const { k, conv, dir } = await withInvoices(12)
     try {
-      const docs = await listDocuments(h.db, conv.id)
+      const docs = await convDocs(h.db, conv.id)
       const pinned = await k.setPinned(conv, docs[11].id, true)
       expect(pinned.pinned).toBe(true)
       const s = await k.status(conv)
@@ -762,5 +768,151 @@ describe('base di conoscenza: parole esatte, documenti interi e «fissa»', () =
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('basi di conoscenza: base della conversazione e basi della libreria collegate', () => {
+  let fake: FakeOllama
+  let h: DbHandle
+  let progress: KnowledgeProgress[]
+  beforeAll(async () => {
+    fake = await startFakeOllama([
+      { name: 'chat', capabilities: ['completion'], contextLength: 8192, parameters: 'num_ctx 4096', chunks: [{ content: 'Ok.' }] },
+      { name: 'embeddinggemma:latest', capabilities: ['embedding'] }
+    ])
+  })
+  afterAll(() => fake.close())
+  beforeEach(async () => {
+    h = openDatabase(':memory:')
+    await runMigrations(h, resolve(__dirname, '../drizzle'))
+    progress = []
+  })
+  afterEach(() => h.close())
+
+  function services() {
+    const ollama = createOllamaClient(() => fake.url)
+    const contextLog = createContextLog(h.db)
+    const embedder = createEmbedder({ db: h.db, ollama, contextLog })
+    const knowledge = createKnowledge({ db: h.db, embedder, registry: createRegistry(BUILTIN_SOURCES), onProgress: (p) => progress.push(p) })
+    const chat = createChatService({ db: h.db, ollama, knowledge, embedder, contextLog, emit: () => undefined })
+    return { knowledge, chat }
+  }
+
+  it('la base della conversazione nasce al primo documento, non guardando lo stato; sparisce con la conversazione', async () => {
+    const { knowledge: k } = services()
+    const conv = await createConversation(h.db, { model: 'chat' })
+    expect(await k.status(conv)).toMatchObject({ baseId: null, documents: [], linked: [], ready: 0 })
+    expect(await getConversationBase(h.db, conv.id)).toBeNull()
+    await k.addFiles(conv, [join(fixtures, 'relazione.txt')])
+    await k.wait(conv.id)
+    const base = (await getConversationBase(h.db, conv.id))!
+    expect(base).toMatchObject({ origin: 'conversation', conversationId: conv.id })
+    expect(await k.status(conv)).toMatchObject({ baseId: base.id, ready: 1 })
+    expect(progress.at(-1)).toMatchObject({ baseId: base.id, status: 'ready' })
+    const { removeConversation } = await import('../src/main/db/repo')
+    await removeConversation(h.db, conv.id)
+    expect(await listDocuments(h.db, base.id)).toEqual([])
+    expect(h.raw.prepare('select count(*) n from knowledge_chunks').get()).toEqual({ n: 0 })
+  })
+
+  it('libreria: crea, rinomina, elenca con i numeri; i documenti di una base non finiscono nel monitor di nessuna conversazione', async () => {
+    const { knowledge: k } = services()
+    await expect(k.createBase('  ')).rejects.toThrow(/ha bisogno di un nome/)
+    const base = await k.createBase('Normativa')
+    expect(base).toMatchObject({ name: 'Normativa', origin: 'local', documents: 0, ready: 0, conversations: 0 })
+    await k.addFiles(base, [join(fixtures, 'manuale.md')])
+    await k.wait(base.id)
+    expect(await k.status(base)).toMatchObject({ baseId: base.id, chunks: 4, ready: 1, linked: [] })
+    const renamed = await k.renameBase(base.id, { name: 'Manuali', description: 'Guide del prodotto' })
+    expect(renamed).toMatchObject({ name: 'Manuali', description: 'Guide del prodotto', documents: 1, ready: 1 })
+    expect(renamed.chars).toBeGreaterThan(50)
+    expect((await k.listBases()).map((b) => b.name)).toEqual(['Manuali'])
+    expect(h.raw.prepare('select count(*) n from context_calls').get()).toEqual({ n: 0 })
+    // la base di una conversazione non è nella libreria e non si rinomina né si elimina da lì
+    const conv = await createConversation(h.db, { model: 'chat' })
+    await k.addFiles(conv, [join(fixtures, 'relazione.txt')])
+    await k.wait(conv.id)
+    const own = (await getConversationBase(h.db, conv.id))!
+    expect((await k.listBases()).map((b) => b.id)).toEqual([base.id])
+    await expect(k.removeBase(own.id)).rejects.toThrow(/non trovata/)
+    await expect(k.link(conv, own.id)).rejects.toThrow(/non trovata/)
+    // owner: dall'id si risale alla conversazione o alla base
+    expect(await k.owner(conv.id)).toMatchObject({ id: conv.id, model: 'chat' })
+    expect(await k.owner(base.id)).toMatchObject({ id: base.id, origin: 'local' })
+    await expect(k.owner('nope')).rejects.toThrow(/non trovata/)
+  })
+
+  it('una base collegata a due conversazioni: indicizzata una volta, usata da entrambe insieme ai documenti propri; le fonti dicono la base', async () => {
+    const { knowledge: k, chat } = services()
+    const base = await k.createBase('Manuali')
+    await k.addFiles(base, [join(fixtures, 'manuale.md')])
+    await k.wait(base.id)
+    const embedsAfterIndex = fake.requests.filter((r) => r.path === '/api/embed').length
+    const a = await createConversation(h.db, { model: 'chat', numCtx: 4096 })
+    const b = await createConversation(h.db, { model: 'chat', numCtx: 4096 })
+    await k.link(a, base.id)
+    await k.link(a, base.id) // due volte: nessun doppione
+    await k.link(b, base.id)
+    await k.addFiles(a, [join(fixtures, 'relazione.txt')])
+    await k.wait(a.id)
+    // collegare non reindicizza: l'unico embedding in più è il documento di A
+    expect(fake.requests.filter((r) => r.path === '/api/embed').length).toBe(embedsAfterIndex + 1)
+    expect((await k.listBases())[0]).toMatchObject({ conversations: 2 })
+
+    const sa = await k.status(a)
+    expect(sa.documents.map((d) => d.title)).toEqual(['relazione'])
+    expect(sa.linked.map((l) => [l.name, l.documents, l.ready])).toEqual([['Manuali', 1, 1]])
+    expect(sa.ready).toBe(2)
+    expect(sa.totalChars).toBeGreaterThan(sa.linked[0].chars)
+    const sb = await k.status(b)
+    expect(sb).toMatchObject({ baseId: null, documents: [], ready: 1 })
+    expect(await k.hasReady(b.id)).toBe(true)
+
+    // A: i due documenti stanno nella memoria → entrambi interi; la fonte della base collegata porta il suo nome
+    const q = { vector: fakeEmbedding('installazione Windows'), text: 'installazione Windows' }
+    const ra = await k.recall(a, q, 800, 4)
+    expect(ra.refs.map((r) => [r.title, r.base])).toEqual([['manuale', 'Manuali'], ['relazione', undefined]])
+    // B vede solo la base collegata
+    const rb = await k.recall(b, q, 800, 4)
+    expect(rb.refs.map((r) => [r.title, r.base])).toEqual([['manuale', 'Manuali']])
+    // nella chat di B la risposta usa il manuale
+    const sent = await chat.send({}, b.id, 'Come si installa su Windows?')
+    await chat.wait(sent.streamId)
+    const answer = (await listMessages(h.db, b.id)).at(-1)!
+    expect(answer.knowledgeRefs?.[0]).toMatchObject({ title: 'manuale', base: 'Manuali', whole: true })
+
+    // dalla conversazione non si toccano i documenti della base collegata
+    const doc = (await listDocuments(h.db, base.id))[0]
+    await expect(k.remove(a, doc.id)).rejects.toThrow(/Documento non trovato/)
+    await expect(k.setPinned(a, doc.id, true)).rejects.toThrow(/Documento non trovato/)
+    // «Intero» si imposta sulla base e vale per chi la collega
+    expect((await k.setPinned(base, doc.id, true)).pinned).toBe(true)
+    expect((await k.status(b)).pinnedChars).toBeGreaterThan(0)
+
+    // scollega da B: B non ha più nulla; A continua a usarla
+    await k.unlink(b, base.id)
+    expect(await k.hasReady(b.id)).toBe(false)
+    expect((await k.status(a)).linked).toHaveLength(1)
+    // eliminando la base dalla libreria sparisce anche da A, con documenti e pezzi; i documenti di A restano
+    await k.removeBase(base.id)
+    const after = await k.status(a)
+    expect(after.linked).toEqual([])
+    expect(after.ready).toBe(1)
+    expect(await listKnowledgeChunks(h.db, [doc.id], 'embeddinggemma')).toEqual([])
+    expect(await k.listBases()).toEqual([])
+  })
+
+  it('cambio del modello di embedding: ensureModel rifà anche i documenti delle basi collegate', async () => {
+    const { knowledge: k } = services()
+    const base = await k.createBase('Manuali')
+    await k.addFiles(base, [join(fixtures, 'manuale.md')])
+    await k.wait(base.id)
+    const conv = await createConversation(h.db, { model: 'chat' })
+    await k.link(conv, base.id)
+    await setSettings(h.db, { embeddingModel: 'embeddinggemma:latest' })
+    expect(await k.hasReady(conv.id)).toBe(false)
+    await k.ensureModel(conv)
+    await k.wait(conv.id)
+    expect(await k.hasReady(conv.id)).toBe(true)
   })
 })

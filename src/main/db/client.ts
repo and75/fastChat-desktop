@@ -60,6 +60,20 @@ export function openDatabase(path: string): DbHandle {
 
 /** Applica le migrazioni generate da drizzle-kit (cartella ./drizzle). */
 export async function runMigrations(handle: DbHandle, migrationsFolder: string): Promise<void> {
+  // Alcune migrazioni ricostruiscono una tabella (crea la nuova, copia, elimina la vecchia): con le chiavi
+  // esterne attive l'eliminazione cancellerebbe a cascata le righe collegate. Come indica SQLite, si
+  // disattivano fuori dalla transazione e alla fine si verifica che non ci siano riferimenti rotti.
+  handle.raw.exec('PRAGMA foreign_keys = OFF')
+  try {
+    await applyMigrations(handle, migrationsFolder)
+    const broken = handle.raw.prepare('PRAGMA foreign_key_check').all()
+    if (broken.length) throw new Error(`Migrazione: ${broken.length} riferimenti non validi`)
+  } finally {
+    handle.raw.exec('PRAGMA foreign_keys = ON')
+  }
+}
+
+async function applyMigrations(handle: DbHandle, migrationsFolder: string): Promise<void> {
   await migrate(
     handle.db,
     async (queries) => {

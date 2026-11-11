@@ -71,6 +71,7 @@ export interface Message {
 
 // ---------------------------------------------------------------- base di conoscenza
 
+export type KnowledgeBaseOrigin = 'conversation' | 'local' | 'package'
 export type KnowledgeShare = 0.25 | 0.5 | 0.75
 export const KNOWLEDGE_SHARES: KnowledgeShare[] = [0.25, 0.5, 0.75]
 
@@ -81,10 +82,34 @@ export type DocumentRef =
 
 export type KnowledgeDocumentStatus = 'pending' | 'indexing' | 'ready' | 'error'
 
-/** Un documento della base di conoscenza di una conversazione. Si salva il testo estratto, non il file. */
+/** Una base di conoscenza: quella di una conversazione, oppure una della libreria (collegabile a più conversazioni). */
+export interface KnowledgeBase {
+  id: string
+  name: string
+  description: string
+  origin: KnowledgeBaseOrigin
+  /** Conversazione proprietaria (solo origin 'conversation'). */
+  conversationId: string | null
+  version: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+/** Una base della libreria con i suoi numeri, per gli elenchi. */
+export interface KnowledgeBaseInfo extends KnowledgeBase {
+  /** Documenti in tutto e pronti (con pezzi per il modello di embedding attuale). */
+  documents: number
+  ready: number
+  /** Caratteri dei pezzi pronti. */
+  chars: number
+  /** Conversazioni che la collegano. */
+  conversations: number
+}
+
+/** Un documento di una base di conoscenza. Si salva il testo estratto, non il file. */
 export interface KnowledgeDocument {
   id: string
-  conversationId: string
+  baseId: string
   /** Connessione (sorgente collegata) da cui viene; null se aggiunto a mano. */
   connectionId: string | null
   /** Plugin che l'ha letto. */
@@ -93,7 +118,7 @@ export interface KnowledgeDocument {
   ref: DocumentRef
   /** Versione della sorgente (etag, data, hash): se cambia al refresh, si reindicizza. */
   version: string | null
-  /** Impronta del contenuto (SHA-256): lo stesso file non si aggiunge due volte alla stessa conversazione. */
+  /** Impronta del contenuto (SHA-256): lo stesso file non si aggiunge due volte alla stessa base. */
   hash: string | null
   bytes: number | null
   chars: number
@@ -106,10 +131,10 @@ export interface KnowledgeDocument {
   indexedAt: number | null
 }
 
-/** Una sorgente collegata alla conversazione (plugin `connected`), con la sua configurazione. */
+/** Una sorgente collegata a una base (plugin `connected`), con la sua configurazione. */
 export interface KnowledgeConnection {
   id: string
-  conversationId: string
+  baseId: string
   source: string
   /** Valori dei campi di configurazione del plugin (le credenziali sono cifrate a parte). */
   config: Record<string, string>
@@ -129,17 +154,29 @@ export interface KnowledgeRef {
   excerpt: string
   /** Il documento è stato fornito per intero (fissato, o tutti i documenti stavano nella memoria). */
   whole?: boolean
+  /** Nome della base della libreria da cui viene (assente per i documenti della conversazione). */
+  base?: string
 }
 
-/** Stato della base di conoscenza di una conversazione. */
+/**
+ * Stato della base di conoscenza di una conversazione (la sua base più quelle collegate) o di una base
+ * della libreria. `documents` e `connections` sono quelli modificabili da qui: della base della
+ * conversazione, o della base stessa.
+ */
 export interface KnowledgeStatus {
+  /** La base a cui appartengono `documents` (null se la conversazione non ne ha ancora una). */
+  baseId: string | null
   documents: KnowledgeDocument[]
   connections: KnowledgeConnection[]
-  /** Pezzi indicizzati con il modello di embedding attuale. */
+  /** Basi della libreria collegate alla conversazione (vuoto per una base). */
+  linked: KnowledgeBaseInfo[]
+  /** Pezzi indicizzati con il modello di embedding attuale (di `documents`). */
   chunks: number
   /** Documenti ancora da indicizzare (in attesa, in corso, o indicizzati con un altro modello). */
   pending: number
-  /** Caratteri dei pezzi pronti, in tutto e dei soli documenti fissati: per dire se stanno nella memoria. */
+  /** Documenti pronti in tutto, basi collegate comprese: abilitano il bottone libro. */
+  ready: number
+  /** Caratteri dei pezzi pronti, in tutto e dei soli documenti fissati (basi collegate comprese). */
   totalChars: number
   pinnedChars: number
   model: string
@@ -148,7 +185,7 @@ export interface KnowledgeStatus {
 
 /** Avanzamento dell'indicizzazione di un documento (main → renderer). */
 export interface KnowledgeProgress {
-  conversationId: string
+  baseId: string
   documentId: string
   status: KnowledgeDocumentStatus
   /** Pezzi fatti e totali, durante 'indexing'. */
@@ -483,6 +520,13 @@ export const IPC = {
   knowledgeRemove: 'knowledge:remove',
   knowledgeReindex: 'knowledge:reindex',
   knowledgePin: 'knowledge:pin',
+  /** Libreria delle basi e collegamenti con le conversazioni. */
+  knowledgeBases: 'knowledge:bases',
+  knowledgeBaseCreate: 'knowledge:base-create',
+  knowledgeBaseUpdate: 'knowledge:base-update',
+  knowledgeBaseRemove: 'knowledge:base-remove',
+  knowledgeLink: 'knowledge:link',
+  knowledgeUnlink: 'knowledge:unlink',
   knowledgeConnect: 'knowledge:connect',
   knowledgeRefresh: 'knowledge:refresh',
   knowledgeDisconnect: 'knowledge:disconnect',

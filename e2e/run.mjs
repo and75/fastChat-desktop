@@ -773,6 +773,81 @@ try {
     await panel.getByTestId('knowledge-status').filter({ hasText: /1 documento/ }).waitFor()
   })
 
+  await step('libreria delle basi: crea una base nelle Impostazioni, collegala a una conversazione, fonti con il nome della base, scollega ed elimina', async () => {
+    // Impostazioni → Conoscenza: nuova base con due documenti (dialog saltato)
+    await page.getByRole('button', { name: 'Impostazioni' }).click()
+    const dialog = page.getByTestId('settings-dialog')
+    await dialog.getByRole('tab', { name: 'Conoscenza' }).click()
+    const library = dialog.getByTestId('knowledge-library')
+    await library.getByText('Nessuna base. Creane una per iniziare.').waitFor()
+    await library.getByTestId('library-new-name').fill('Archivio aziendale')
+    await library.getByTestId('library-create').click()
+    const editor = library.getByTestId('library-base-editor')
+    await editor.getByTestId('knowledge-add').click()
+    await editor.locator('[data-testid="knowledge-doc"][data-status="ready"]').nth(1).waitFor({ timeout: 30_000 })
+    await library.getByTestId('library-base').filter({ hasText: /Archivio aziendale[\s\S]*2 documenti/ }).waitFor()
+    // rinomina
+    await editor.getByTestId('library-base-name').fill('Archivio')
+    await editor.getByTestId('library-base-name').press('Enter')
+    await library.getByTestId('library-base').filter({ hasText: /^Archivio2 documenti/ }).waitFor()
+    await dialog.getByRole('button', { name: 'Chiudi' }).click()
+    await dialog.waitFor({ state: 'detached' })
+
+    // conversazione nuova, senza documenti propri: il libro è disabilitato finché non si collega la base
+    await page.getByTestId('new-conversation').click()
+    await page.selectOption('#model-select', 'llama3.2:3b')
+    await openTab('Conoscenza')
+    const panel = page.getByTestId('knowledge-panel')
+    const book = page.getByTestId('knowledge-button')
+    assert.equal(await book.isDisabled(), true)
+    await panel.getByTestId('knowledge-link-select').selectOption({ label: 'Archivio (2 documenti)' })
+    await panel.getByTestId('knowledge-linked-base').filter({ hasText: /Archivio[\s\S]*2 documenti/ }).waitFor()
+    assert.equal(await panel.getByTestId('knowledge-doc').count(), 0, 'i documenti della base non compaiono tra quelli della conversazione')
+    await page.waitForFunction(() => document.querySelector('[data-testid="knowledge-button"]')?.getAttribute('aria-pressed') === 'true')
+    await page.getByRole('tab', { name: 'Conoscenza (compilato)' }).waitFor()
+    const conv = await latestConversation()
+    const status = (await page.evaluate((id) => window.api.knowledge.status(id), conv.id)).data
+    assert.equal(status.baseId, null, 'collegare una base non crea la base della conversazione')
+    assert.equal(status.ready, 2)
+
+    // domanda: i documenti della base collegata entrano nel prompt e le fonti ne riportano il nome
+    const n0 = chatRequests().length
+    const box = page.getByRole('textbox', { name: 'Messaggio' })
+    await box.fill('Quante persone ha assunto la sede di Torino?')
+    await box.press('Enter')
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached', timeout: 60_000 })
+    await waitUntil(() => chatRequests().length > n0)
+    assert.match(chatRequests().at(-1).body.messages[0].content, /# Base di conoscenza[\s\S]*Torino/)
+    const refs = page.getByTestId('message-assistant').last().getByTestId('knowledge-refs')
+    await refs.locator('summary').click()
+    assert.match(await refs.innerText(), /relazione[\s\S]*Archivio/)
+    await page.screenshot({ path: join(root, 'test-results', 'e2e-knowledge-library.png') })
+
+    // un documento proprio accanto alla base collegata: stanno insieme, ciascuno al suo posto
+    await panel.getByTestId('knowledge-add').click()
+    await panel.locator('[data-testid="knowledge-doc"][data-status="ready"]').nth(1).waitFor({ timeout: 30_000 })
+    assert.equal(await panel.getByTestId('knowledge-linked-base').count(), 1)
+
+    // scollega: la base resta nella libreria
+    await panel.getByTestId('knowledge-unlink').click()
+    await waitUntil(async () => (await panel.getByTestId('knowledge-linked-base').count()) === 0)
+    assert.equal((await page.evaluate(() => window.api.knowledge.bases())).data.length, 1)
+    // ricollega, poi elimina dalla libreria: la conferma dice quante conversazioni la usano, e sparisce dalla conversazione
+    await panel.getByTestId('knowledge-link-select').selectOption({ label: 'Archivio (2 documenti)' })
+    await panel.getByTestId('knowledge-linked-base').waitFor()
+    await page.getByRole('button', { name: 'Impostazioni' }).click()
+    await dialog.getByRole('tab', { name: 'Conoscenza' }).click()
+    await library.getByTestId('library-base').filter({ hasText: 'in 1 conversazione' }).click()
+    await library.getByTestId('library-base-delete').click()
+    await library.getByText('Collegata a 1 conversazione').waitFor()
+    await library.getByTestId('library-base-delete-confirm').click()
+    await library.getByText('Nessuna base. Creane una per iniziare.').waitFor()
+    await dialog.getByRole('button', { name: 'Chiudi' }).click()
+    await dialog.waitFor({ state: 'detached' })
+    await waitUntil(async () => (await panel.getByTestId('knowledge-linked-base').count()) === 0)
+    assert.equal(await panel.getByTestId('knowledge-doc').count(), 2, 'i documenti della conversazione restano')
+  })
+
   // ------------------------------------------------------------------ fase 4
   const planRequests = () => fake.requests.filter((r) => r.path === '/api/chat' && r.body?.format)
 

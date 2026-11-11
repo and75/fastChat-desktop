@@ -14,6 +14,7 @@ import {
   type ResponseStyle,
   type Message,
   type MemoryRef,
+  type KnowledgeBase,
   type KnowledgeConnection,
   type KnowledgeDocument,
   type KnowledgeDocumentStatus,
@@ -30,7 +31,9 @@ import type { Db } from './client'
 import {
   briefTemplates,
   contextCalls,
+  conversationBases,
   conversations,
+  knowledgeBases,
   knowledgeChunks,
   knowledgeConnections,
   knowledgeDocuments,
@@ -425,11 +428,96 @@ export async function removeChunks(db: Db, conversationId: string, keepModel?: s
 
 // ---------------------------------------------------------------- base di conoscenza
 
-export async function listDocuments(db: Db, conversationId: string): Promise<KnowledgeDocument[]> {
+// Basi: quella di una conversazione (creata al primo uso) e quelle della libreria, collegabili.
+
+export async function getBase(db: Db, id: string): Promise<KnowledgeBase | null> {
+  const [row] = await db.select().from(knowledgeBases).where(eq(knowledgeBases.id, id))
+  return row ?? null
+}
+
+/** La base della conversazione, se esiste già. */
+export async function getConversationBase(db: Db, conversationId: string): Promise<KnowledgeBase | null> {
+  const [row] = await db.select().from(knowledgeBases).where(eq(knowledgeBases.conversationId, conversationId))
+  return row ?? null
+}
+
+export async function createBase(db: Db, init: Partial<Pick<KnowledgeBase, 'name' | 'description' | 'origin' | 'conversationId' | 'version'>>): Promise<KnowledgeBase> {
+  const now = Date.now()
+  const row: KnowledgeBase = {
+    id: randomUUID(),
+    name: (init.name ?? '').trim().slice(0, 120),
+    description: (init.description ?? '').trim().slice(0, 2000),
+    origin: init.origin ?? 'local',
+    conversationId: init.conversationId ?? null,
+    version: init.version ?? null,
+    createdAt: now,
+    updatedAt: now
+  }
+  await db.insert(knowledgeBases).values(row)
+  return row
+}
+
+export async function updateBase(db: Db, id: string, patch: Partial<Pick<KnowledgeBase, 'name' | 'description'>>): Promise<KnowledgeBase | null> {
+  const set: Partial<KnowledgeBase> = { updatedAt: Date.now() }
+  if (typeof patch.name === 'string') set.name = patch.name.trim().slice(0, 120)
+  if (typeof patch.description === 'string') set.description = patch.description.trim().slice(0, 2000)
+  await db.update(knowledgeBases).set(set).where(eq(knowledgeBases.id, id))
+  return getBase(db, id)
+}
+
+export async function removeBase(db: Db, id: string): Promise<void> {
+  await db.delete(knowledgeBases).where(eq(knowledgeBases.id, id))
+}
+
+/** Basi della libreria (non quelle delle conversazioni), per nome. */
+export async function listLibraryBases(db: Db): Promise<KnowledgeBase[]> {
+  return db
+    .select()
+    .from(knowledgeBases)
+    .where(sql`${knowledgeBases.origin} <> 'conversation'`)
+    .orderBy(asc(sql`lower(${knowledgeBases.name})`), asc(knowledgeBases.createdAt))
+}
+
+/** Basi della libreria collegate alla conversazione, nell'ordine in cui sono state collegate. */
+export async function listLinkedBases(db: Db, conversationId: string): Promise<KnowledgeBase[]> {
+  const rows = await db
+    .select({ base: knowledgeBases })
+    .from(conversationBases)
+    .innerJoin(knowledgeBases, eq(knowledgeBases.id, conversationBases.baseId))
+    .where(eq(conversationBases.conversationId, conversationId))
+    .orderBy(asc(conversationBases.createdAt), asc(sql`conversation_bases.rowid`))
+  return rows.map((r) => r.base)
+}
+
+export async function linkBase(db: Db, conversationId: string, baseId: string): Promise<void> {
+  await db.insert(conversationBases).values({ conversationId, baseId, createdAt: Date.now() }).onConflictDoNothing()
+}
+
+export async function unlinkBase(db: Db, conversationId: string, baseId: string): Promise<void> {
+  await db.delete(conversationBases).where(and(eq(conversationBases.conversationId, conversationId), eq(conversationBases.baseId, baseId)))
+}
+
+/** Quante conversazioni collegano ogni base. */
+export async function countBaseLinks(db: Db, baseIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  if (baseIds.length === 0) return out
+  const rows = await db
+    .select({ baseId: conversationBases.baseId, n: sql<number>`count(*)` })
+    .from(conversationBases)
+    .where(inArray(conversationBases.baseId, baseIds))
+    .groupBy(conversationBases.baseId)
+  for (const r of rows) out.set(r.baseId, Number(r.n))
+  return out
+}
+
+/** Documenti delle basi indicate, in ordine di aggiunta. */
+export async function listDocuments(db: Db, baseIds: string | string[]): Promise<KnowledgeDocument[]> {
+  const ids = Array.isArray(baseIds) ? baseIds : [baseIds]
+  if (ids.length === 0) return []
   return db
     .select()
     .from(knowledgeDocuments)
-    .where(eq(knowledgeDocuments.conversationId, conversationId))
+    .where(inArray(knowledgeDocuments.baseId, ids))
     .orderBy(asc(knowledgeDocuments.createdAt), asc(sql`rowid`))
 }
 
@@ -438,22 +526,22 @@ export async function getDocument(db: Db, id: string): Promise<KnowledgeDocument
   return row ?? null
 }
 
-/** Documento della conversazione con la stessa impronta (lo stesso file non si aggiunge due volte). */
-export async function findDocumentByHash(db: Db, conversationId: string, hash: string): Promise<KnowledgeDocument | null> {
+/** Documento della base con la stessa impronta (lo stesso file non si aggiunge due volte). */
+export async function findDocumentByHash(db: Db, baseId: string, hash: string): Promise<KnowledgeDocument | null> {
   const [row] = await db
     .select()
     .from(knowledgeDocuments)
-    .where(and(eq(knowledgeDocuments.conversationId, conversationId), eq(knowledgeDocuments.hash, hash)))
+    .where(and(eq(knowledgeDocuments.baseId, baseId), eq(knowledgeDocuments.hash, hash)))
   return row ?? null
 }
 
-export type NewDocument = Pick<KnowledgeDocument, 'conversationId' | 'source' | 'title' | 'ref'> &
+export type NewDocument = Pick<KnowledgeDocument, 'baseId' | 'source' | 'title' | 'ref'> &
   Partial<Pick<KnowledgeDocument, 'connectionId' | 'version' | 'bytes'>> & { hash?: string | null }
 
 export async function addDocument(db: Db, doc: NewDocument): Promise<KnowledgeDocument> {
   const row = {
     id: randomUUID(),
-    conversationId: doc.conversationId,
+    baseId: doc.baseId,
     connectionId: doc.connectionId ?? null,
     source: doc.source,
     title: doc.title.trim().slice(0, 200) || 'Documento',
@@ -548,11 +636,11 @@ export async function removeKnowledgeChunks(db: Db, documentId: string): Promise
   await db.delete(knowledgeChunks).where(eq(knowledgeChunks.documentId, documentId))
 }
 
-export async function listConnections(db: Db, conversationId: string): Promise<KnowledgeConnection[]> {
+export async function listConnections(db: Db, baseId: string): Promise<KnowledgeConnection[]> {
   return db
     .select()
     .from(knowledgeConnections)
-    .where(eq(knowledgeConnections.conversationId, conversationId))
+    .where(eq(knowledgeConnections.baseId, baseId))
     .orderBy(asc(knowledgeConnections.createdAt), asc(sql`rowid`))
 }
 
@@ -561,7 +649,7 @@ export async function getConnection(db: Db, id: string): Promise<KnowledgeConnec
   return row ?? null
 }
 
-export async function addConnection(db: Db, init: Pick<KnowledgeConnection, 'conversationId' | 'source' | 'config'>): Promise<KnowledgeConnection> {
+export async function addConnection(db: Db, init: Pick<KnowledgeConnection, 'baseId' | 'source' | 'config'>): Promise<KnowledgeConnection> {
   const row: KnowledgeConnection = { id: randomUUID(), ...init, status: 'ready', error: null, lastSyncAt: null, createdAt: Date.now() }
   await db.insert(knowledgeConnections).values(row)
   return row

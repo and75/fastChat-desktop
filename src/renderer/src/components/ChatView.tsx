@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { t } from '@shared/i18n'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
-import { readyDocuments, useKnowledge } from '../store/useKnowledge'
+import { readyCount, useKnowledge } from '../store/useKnowledge'
 import { ContextMeter } from './ContextMeter'
 import { ConversationTimeline, type TimelineItem } from './ConversationTimeline'
 import { CopyAction } from './CopyButton'
@@ -15,7 +15,7 @@ import { BookOpenIcon, RegenerateIcon } from './icons'
 function KnowledgeButton({ conversation, disabled }: { conversation: { id: string; knowledge: boolean }; disabled: boolean }): React.JSX.Element {
   const next = useChat((s) => s.knowledgeNext)
   const setNext = useChat((s) => s.setKnowledgeNext)
-  const ready = useKnowledge((s) => readyDocuments(s.status[conversation.id]).length)
+  const ready = useKnowledge((s) => readyCount(s.status[conversation.id]))
   const effective = next ?? conversation.knowledge
   const usable = ready > 0 && !disabled
   const title = !usable
