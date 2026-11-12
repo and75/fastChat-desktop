@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { openDatabase, runMigrations, type DbHandle } from './db/client'
-import { getSettings } from './db/repo'
+import { ensureRoles, getSettings } from './db/repo'
 import { IPC } from '@shared/types'
 import { registerIpc, systemLocale } from './ipc'
 import { resolveLocale, setLocale } from '@shared/i18n'
@@ -74,6 +74,8 @@ async function bootstrap(): Promise<void> {
   const settings = await getSettings(dbHandle.db)
   // Lingua di errori e prompt al modello: come l'interfaccia.
   setLocale(resolveLocale(settings.language, systemLocale()))
+  // Dopo la lingua: i titoli dei Brief convertiti in situazione sono nella lingua dell'interfaccia.
+  await ensureRoles(dbHandle.db)
   let ollamaUrl = process.env.OLLAMA_URL || settings.ollamaUrl
   const ollama = createOllamaClient(() => ollamaUrl)
 

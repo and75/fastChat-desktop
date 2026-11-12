@@ -34,6 +34,14 @@ export function buildSystemPrompt(brief: Brief, style?: ResponseStyle | null): s
   return joinSections(...sections, buildStyleSection(style))
 }
 
+/**
+ * Il Brief a quattro campi come testo unico: è la «situazione» delle conversazioni nate prima dei ruoli.
+ * Stesse sezioni e stessi titoli del system prompt, senza lo stile: il prompt di una conversazione convertita
+ * resta identico.
+ */
+export const briefToSituation = (brief: Partial<Brief>): string =>
+  buildSystemPrompt({ role: brief.role ?? '', context: brief.context ?? '', goals: brief.goals ?? '', constraints: brief.constraints ?? '' })
+
 export interface HistoryMessage {
   /** Id del messaggio (serve per sapere quali sono coperti dal riassunto). */
   id?: string

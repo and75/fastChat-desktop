@@ -1,8 +1,12 @@
 import { normalizeContextSettings } from '@shared/compose'
+import { briefToSituation } from '@shared/prompt'
+import { GENERALIST_ROLE, type RoleChoices } from '@shared/roles'
 import { randomUUID } from 'node:crypto'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import {
   DEFAULT_SETTINGS,
+  GENERALIST_ROLE_ID,
+  type RoleRecord,
   type AppSettings,
   type BriefTemplate,
   type ContextCall,
@@ -43,6 +47,7 @@ import {
   messages,
   modelSettings,
   plans,
+  roles,
   settings
 } from './schema'
 
@@ -97,7 +102,11 @@ const PATCHABLE: (keyof ConversationPatch)[] = [
   'summaryUpdatedAt',
   'longMemory',
   'knowledge',
-  'knowledgeShare'
+  'knowledgeShare',
+  'roleId',
+  'roleParams',
+  'mindOverrides',
+  'situation'
 ]
 
 /** Tiene solo i campi ammessi: il patch arriva dal renderer e non va preso alla lettera. */
@@ -125,8 +134,28 @@ export function sanitizePatch(patch: ConversationPatch): ConversationPatch {
     }
   }
   if ('summaryUpTo' in out && typeof out.summaryUpTo !== 'string') out.summaryUpTo = null
+  if ('roleId' in out && !(typeof out.roleId === 'string' && out.roleId.trim())) out.roleId = GENERALIST_ROLE_ID
+  if ('roleParams' in out) out.roleParams = toChoices(out.roleParams)
+  if ('mindOverrides' in out && !isPlainObject(out.mindOverrides)) out.mindOverrides = null
+  if ('situation' in out) out.situation = typeof out.situation === 'string' ? out.situation.slice(0, SITUATION_MAX_CHARS) : ''
   if ('summaryUpdatedAt' in out) out.summaryUpdatedAt = toInt(out.summaryUpdatedAt, 0, Number.MAX_SAFE_INTEGER)
   return out as ConversationPatch
+}
+
+/** Tetto di sicurezza del testo salvato; il limite vero, legato alla memoria del modello, lo applica l'interfaccia. */
+const SITUATION_MAX_CHARS = 100_000
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** Scelte dei parametri: id → opzione, o elenco di opzioni. Il resto si scarta; la coerenza con il ruolo si verifica alla lettura. */
+function toChoices(v: unknown): RoleChoices | null {
+  if (!isPlainObject(v)) return null
+  const out: RoleChoices = {}
+  for (const [key, value] of Object.entries(v)) {
+    if (typeof value === 'string') out[key] = value
+    else if (Array.isArray(value)) out[key] = value.filter((x): x is string => typeof x === 'string')
+  }
+  return out
 }
 
 /** Numero limitato all'intervallo; null se non è un numero finito (= "usa il default di Ollama"). */
@@ -169,7 +198,11 @@ export async function createConversation(
 ): Promise<Conversation> {
   const id = randomUUID()
   const now = Date.now()
-  await db.insert(conversations).values({ ...sanitizePatch(init), id, createdAt: now, updatedAt: now })
+  const clean = sanitizePatch(init)
+  // Ogni conversazione ha un ruolo: senza scelta è il Generalista. Chi porta ancora un Brief (template e copie
+  // nati prima dei ruoli) lo ritrova come situazione.
+  const binding = { roleId: clean.roleId ?? GENERALIST_ROLE_ID, situation: clean.situation ?? briefToSituation(clean) }
+  await db.insert(conversations).values({ ...clean, ...binding, id, createdAt: now, updatedAt: now })
   return (await getConversation(db, id))!
 }
 
@@ -342,6 +375,10 @@ export async function createTemplateFromConversation(db: Db, conversationId: str
     think: conv.think,
     planMode: conv.planMode,
     style: conv.style,
+    roleId: conv.roleId ?? GENERALIST_ROLE_ID,
+    roleParams: conv.roleParams,
+    mindOverrides: conv.mindOverrides,
+    situation: conv.situation ?? briefToSituation(conv),
     createdAt: Date.now()
   }
   await db.insert(briefTemplates).values(row)
@@ -363,8 +400,59 @@ export function conversationFromTemplate(t: BriefTemplate, fallbackModel: string
     temperature: t.temperature,
     think: t.think,
     planMode: t.planMode,
-    style: t.style
+    style: t.style,
+    roleId: t.roleId ?? GENERALIST_ROLE_ID,
+    roleParams: t.roleParams,
+    mindOverrides: t.mindOverrides,
+    situation: t.situation ?? briefToSituation(t)
   }
+}
+
+// ---------------------------------------------------------------- ruoli
+
+export async function listRoles(db: Db): Promise<RoleRecord[]> {
+  return db.select().from(roles).orderBy(asc(sql`lower(${roles.name})`))
+}
+
+export async function getRole(db: Db, id: string): Promise<RoleRecord | null> {
+  const [row] = await db.select().from(roles).where(eq(roles.id, id))
+  return row ?? null
+}
+
+/** Il Generalista esiste sempre: nessuna istruzione, nessun parametro, nessuna base. Si crea se manca. */
+export async function ensureGeneralist(db: Db): Promise<RoleRecord> {
+  await db
+    .insert(roles)
+    .values({ id: GENERALIST_ROLE_ID, name: 'Generalista', definition: GENERALIST_ROLE, origin: 'builtin', createdAt: Date.now() })
+    .onConflictDoNothing()
+  return (await getRole(db, GENERALIST_ROLE_ID))!
+}
+
+/**
+ * Conversione dei Brief nati prima dei ruoli (D22): i quattro campi confluiscono nella situazione, con i loro
+ * titoli nella lingua corrente, e la conversazione o il template passa al Generalista. Una volta sola: fa fede
+ * `role_id` nullo. I vecchi campi restano nel database, intatti.
+ */
+export async function convertBriefs(db: Db): Promise<{ conversations: number; templates: number }> {
+  const pendingConversations = await db.select().from(conversations).where(sql`${conversations.roleId} IS NULL`)
+  for (const row of pendingConversations)
+    await db
+      .update(conversations)
+      .set({ roleId: GENERALIST_ROLE_ID, situation: row.situation ?? briefToSituation(row) })
+      .where(eq(conversations.id, row.id))
+  const pendingTemplates = await db.select().from(briefTemplates).where(sql`${briefTemplates.roleId} IS NULL`)
+  for (const row of pendingTemplates)
+    await db
+      .update(briefTemplates)
+      .set({ roleId: GENERALIST_ROLE_ID, situation: row.situation ?? briefToSituation(row) })
+      .where(eq(briefTemplates.id, row.id))
+  return { conversations: pendingConversations.length, templates: pendingTemplates.length }
+}
+
+/** All'avvio, dopo le migrazioni e la scelta della lingua: il Generalista c'è e nessun Brief resta da convertire. */
+export async function ensureRoles(db: Db): Promise<void> {
+  await ensureGeneralist(db)
+  await convertBriefs(db)
 }
 
 // ---------------------------------------------------------------- configurazione per modello

@@ -4,7 +4,13 @@ import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/clien
 import {
   addMessage,
   conversationFromTemplate,
+  convertBriefs,
   createConversation,
+  ensureGeneralist,
+  ensureRoles,
+  getRole,
+  getTemplate,
+  listRoles,
   createTemplateFromConversation,
   getConversation,
   getSettings,
@@ -18,7 +24,10 @@ import {
   updateConversation
 } from '../src/main/db/repo'
 import { conversations, messages } from '../src/main/db/schema'
-import { DEFAULT_SETTINGS } from '../src/shared/types'
+import { DEFAULT_SETTINGS, GENERALIST_ROLE_ID, RESPONSE_STYLES, type Brief } from '../src/shared/types'
+import { briefToSituation, buildStyleSection, buildSystemPrompt } from '../src/shared/prompt'
+import { setLocale } from '../src/shared/i18n'
+import { roleInstructions, validateRole } from '../src/shared/roles'
 import { eq } from 'drizzle-orm'
 
 let h: DbHandle
@@ -53,6 +62,7 @@ describe('migrazioni', () => {
       'messages',
       'model_settings',
       'plans',
+      'roles',
       'settings'
     ])
   })
@@ -291,5 +301,133 @@ describe('template del brief', () => {
     await removeTemplate(h.db, a.id)
     expect((await listTemplates(h.db)).map((t) => t.name)).toEqual(['beta'])
     await expect(createTemplateFromConversation(h.db, c.id, '  ')).rejects.toThrow('nome')
+  })
+})
+
+describe('ruoli: dati e conversione dei Brief', () => {
+  afterEach(() => setLocale('it'))
+
+  /** Una riga com'era prima dei ruoli: `role_id` nullo, Brief nei quattro campi. */
+  const legacy = (table: 'conversations' | 'brief_templates', id: string, brief: Partial<Brief>): void => {
+    const extra = table === 'brief_templates' ? { name: id } : {}
+    const row = { id, ...extra, ...brief }
+    const cols = Object.keys(row)
+    h.raw.prepare(`insert into ${table} (${cols.map((c) => `"${c}"`).join(', ')}) values (${cols.map(() => '?').join(', ')})`).run(...Object.values(row))
+  }
+  const full: Brief = { role: 'Sei un tutor', context: 'Lezione di matematica', goals: 'Far capire le frazioni', constraints: 'Solo italiano' }
+
+  it('il Generalista si crea se manca, una volta sola, ed è un ruolo valido senza istruzioni', async () => {
+    expect(await listRoles(h.db)).toEqual([])
+    const role = await ensureGeneralist(h.db)
+    expect(role).toMatchObject({ id: GENERALIST_ROLE_ID, name: 'Generalista', origin: 'builtin', language: null, packageId: null, definition: {} })
+    await ensureGeneralist(h.db)
+    expect(await listRoles(h.db)).toHaveLength(1)
+    expect(validateRole(role.definition)).toEqual([])
+    expect(roleInstructions(role.definition)).toBe('')
+    expect(await getRole(h.db, 'manca')).toBeNull()
+  })
+
+  it('Brief pieno, parziale e vuoto diventano situazione sul Generalista', async () => {
+    legacy('conversations', 'pieno', full)
+    legacy('conversations', 'parziale', { role: 'Sei un tutor', constraints: '  Solo italiano  ' })
+    legacy('conversations', 'vuoto', {})
+    expect(await convertBriefs(h.db)).toEqual({ conversations: 3, templates: 0 })
+
+    expect(await getConversation(h.db, 'pieno')).toMatchObject({
+      roleId: GENERALIST_ROLE_ID,
+      roleParams: null,
+      mindOverrides: null,
+      situation: '# Ruolo\nSei un tutor\n\n# Contesto\nLezione di matematica\n\n# Obiettivi\nFar capire le frazioni\n\n# Vincoli\nSolo italiano',
+      // I vecchi campi restano nel database, intatti.
+      ...full
+    })
+    expect((await getConversation(h.db, 'parziale'))!.situation).toBe('# Ruolo\nSei un tutor\n\n# Vincoli\nSolo italiano')
+    expect(await getConversation(h.db, 'vuoto')).toMatchObject({ roleId: GENERALIST_ROLE_ID, situation: '' })
+  })
+
+  it('i template si convertono allo stesso modo', async () => {
+    legacy('brief_templates', 'Tutor', full)
+    expect(await convertBriefs(h.db)).toEqual({ conversations: 0, templates: 1 })
+    const template = (await getTemplate(h.db, 'Tutor'))!
+    expect(template).toMatchObject({ roleId: GENERALIST_ROLE_ID, situation: briefToSituation(full), ...full })
+    expect(await createConversation(h.db, conversationFromTemplate(template, 'llama3.2'))).toMatchObject({ roleId: GENERALIST_ROLE_ID, situation: briefToSituation(full) })
+  })
+
+  it('una volta sola: ciò che è già convertito non si tocca più', async () => {
+    legacy('conversations', 'c1', full)
+    await convertBriefs(h.db)
+    await updateConversation(h.db, 'c1', { situation: 'Riscritta a mano', role: 'Altro' })
+    expect(await convertBriefs(h.db)).toEqual({ conversations: 0, templates: 0 })
+    expect((await getConversation(h.db, 'c1'))!.situation).toBe('Riscritta a mano')
+  })
+
+  it('i titoli sono nella lingua dell\'interfaccia al momento della conversione', async () => {
+    setLocale('fr')
+    legacy('conversations', 'c1', { role: 'Tu es un tuteur' })
+    await convertBriefs(h.db)
+    setLocale('it')
+    expect((await getConversation(h.db, 'c1'))!.situation).toBe('# Rôle\nTu es un tuteur')
+  })
+
+  it('il system prompt di una conversazione convertita è identico a quello di prima', async () => {
+    const briefs: Array<Partial<Brief>> = [full, { role: 'Sei un tutor' }, { context: 'Solo contesto\n\ncon due paragrafi' }, { goals: ' ', constraints: 'Breve' }, {}]
+    for (const [i, brief] of briefs.entries()) legacy('conversations', `c${i}`, brief)
+    await ensureRoles(h.db)
+    const generalist = (await getRole(h.db, GENERALIST_ROLE_ID))!
+    for (const [i] of briefs.entries()) {
+      const conv = (await getConversation(h.db, `c${i}`))!
+      for (const style of RESPONSE_STYLES) {
+        // Ciò che il passo 2.3 metterà nel sistema: istruzioni del ruolo, situazione, stile.
+        const after = [roleInstructions(generalist.definition, conv.roleParams), conv.situation ?? '', buildStyleSection(style)].filter((p) => p.trim()).join('\n\n')
+        expect(after).toBe(buildSystemPrompt(conv, style))
+      }
+    }
+  })
+
+  it('le conversazioni nuove nascono sul Generalista; il patch accetta solo valori sensati', async () => {
+    const plain = await createConversation(h.db)
+    expect(plain).toMatchObject({ roleId: GENERALIST_ROLE_ID, situation: '', roleParams: null, mindOverrides: null })
+    const withRole = await createConversation(h.db, { roleId: 'app.fastchat.ruolo.prompt.it', roleParams: { stile: 'asciutto', tecniche: ['ruolo', 3 as unknown as string], rotto: 1 as unknown as string }, situation: 'Lavoro su un prompt' })
+    expect(withRole).toMatchObject({ roleId: 'app.fastchat.ruolo.prompt.it', roleParams: { stile: 'asciutto', tecniche: ['ruolo'] }, situation: 'Lavoro su un prompt' })
+    const patched = await updateConversation(h.db, plain.id, { roleId: ' ', roleParams: [] as never, mindOverrides: { temperature: 0.5 }, situation: null })
+    expect(patched).toMatchObject({ roleId: GENERALIST_ROLE_ID, roleParams: null, mindOverrides: { temperature: 0.5 }, situation: '' })
+  })
+
+  it('un template salva ruolo, scelte, ritocchi e situazione', async () => {
+    const src = await createConversation(h.db, { roleId: 'r1', roleParams: { stile: 'asciutto' }, mindOverrides: { temperature: 0.5 }, situation: 'Contesto mio' })
+    const t = await createTemplateFromConversation(h.db, src.id, 'Mio')
+    expect(await getTemplate(h.db, t.id)).toMatchObject({ roleId: 'r1', roleParams: { stile: 'asciutto' }, mindOverrides: { temperature: 0.5 }, situation: 'Contesto mio' })
+    expect(conversationFromTemplate(t, 'm')).toMatchObject({ roleId: 'r1', roleParams: { stile: 'asciutto' }, mindOverrides: { temperature: 0.5 }, situation: 'Contesto mio' })
+  })
+
+  it('un database della versione 0.1.22 si apre, converte e non perde nulla', async () => {
+    const { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'fastchat-mig-'))
+    cpSync(resolve(__dirname, '../drizzle'), dir, { recursive: true })
+    const journalPath = join(dir, 'meta', '_journal.json')
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8'))
+    // Fino alla 0015: lo schema rilasciato nella 0.1.22.
+    journal.entries = journal.entries.filter((e: { tag: string }) => e.tag < '0016')
+    writeFileSync(journalPath, JSON.stringify(journal))
+
+    const old = openDatabase(':memory:')
+    try {
+      await runMigrations(old, dir)
+      old.raw.exec("insert into conversations (id, model, role, goals, style) values ('c1', 'm', 'Sei un tutor', 'Spiegare', 'concise')")
+      old.raw.exec("insert into messages (id, conversation_id, role, content) values ('m1', 'c1', 'user', 'ciao')")
+      old.raw.exec("insert into brief_templates (id, name, constraints) values ('t1', 'Breve', 'Solo italiano')")
+      await runMigrations(old, resolve(__dirname, '../drizzle'))
+      await ensureRoles(old.db)
+      const conv = (await getConversation(old.db, 'c1'))!
+      expect(conv).toMatchObject({ model: 'm', role: 'Sei un tutor', goals: 'Spiegare', style: 'concise', roleId: GENERALIST_ROLE_ID, situation: '# Ruolo\nSei un tutor\n\n# Obiettivi\nSpiegare' })
+      expect((await listMessages(old.db, 'c1')).map((m) => m.content)).toEqual(['ciao'])
+      expect(await getTemplate(old.db, 't1')).toMatchObject({ constraints: 'Solo italiano', roleId: GENERALIST_ROLE_ID, situation: '# Vincoli\nSolo italiano' })
+      expect((await listRoles(old.db)).map((r) => r.id)).toEqual([GENERALIST_ROLE_ID])
+    } finally {
+      old.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

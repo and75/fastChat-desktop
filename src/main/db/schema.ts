@@ -17,8 +17,10 @@ import type {
   ResponseStyle,
   BasePurpose,
   ContextOrder,
-  SystemSlot
+  SystemSlot,
+  RoleOrigin
 } from '@shared/types'
+import type { Role, RoleChoices, RoleProfileMind } from '@shared/roles'
 
 const now = sql`(unixepoch('subsec') * 1000)`
 
@@ -52,6 +54,11 @@ export const conversations = sqliteTable(
     knowledge: integer('knowledge', { mode: 'boolean' }).notNull().default(true),
     /** Quota massima della memoria (num_ctx) per i documenti: 0,25 / 0,5 / 0,75. */
     knowledgeShare: real('knowledge_share').$type<KnowledgeShare>().notNull().default(0.5),
+    /** Ruolo, scelte dei parametri, ritocchi alla mente, situazione (docs/ruoli.md). `role_id` nullo = Brief da convertire. */
+    roleId: text('role_id'),
+    roleParams: text('role_params', { mode: 'json' }).$type<RoleChoices>(),
+    mindOverrides: text('mind_overrides', { mode: 'json' }).$type<RoleProfileMind>(),
+    situation: text('situation'),
     createdAt: integer('created_at').notNull().default(now),
     updatedAt: integer('updated_at').notNull().default(now)
   },
@@ -113,6 +120,27 @@ export const briefTemplates = sqliteTable('brief_templates', {
   think: integer('think', { mode: 'boolean' }).notNull().default(false),
   planMode: integer('plan_mode', { mode: 'boolean' }).notNull().default(false),
   style: text('style', { enum: ['essential', 'concise', 'normal', 'extended'] }).$type<ResponseStyle>().notNull().default('normal'),
+  /** Ruolo, scelte dei parametri, ritocchi alla mente, situazione (docs/ruoli.md). `role_id` nullo = Brief da convertire. */
+  roleId: text('role_id'),
+  roleParams: text('role_params', { mode: 'json' }).$type<RoleChoices>(),
+  mindOverrides: text('mind_overrides', { mode: 'json' }).$type<RoleProfileMind>(),
+  situation: text('situation'),
+  createdAt: integer('created_at').notNull().default(now)
+})
+
+/** Ruoli installati: il Generalista (creato all'avvio) e quelli dei pacchetti. */
+export const roles = sqliteTable('roles', {
+  id: text('id').primaryKey(),
+  packageId: text('package_id'),
+  /** Varianti dello stesso ruolo in lingue diverse. */
+  group: text('role_group'),
+  language: text('language'),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  version: text('version'),
+  /** Contenuto di `role.json`: istruzioni, mente, parametri, basi, profili. */
+  definition: text('definition', { mode: 'json' }).$type<Role>().notNull(),
+  origin: text('origin', { enum: ['builtin', 'package'] }).$type<RoleOrigin>().notNull().default('package'),
   createdAt: integer('created_at').notNull().default(now)
 })
 

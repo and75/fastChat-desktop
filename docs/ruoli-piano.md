@@ -1,7 +1,7 @@
 # Ruoli — decisioni e piano di esecuzione
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
-1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatto il passo 2.1.
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1 e 2.2.
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -332,6 +332,7 @@ installare ruoli dallo Store nella propria lingua.
 | 1.7 Prova con Ollama | **Da eseguire dall'utente** | `node scripts/cache-probe.mjs --model gemma4:e4b` |
 | 1.8 Chiusura | Fatto | Documentazione e protocollo di prova |
 | 2.1 Il ruolo come dato | Fatto | `src/shared/roles.ts`, `tests/roles.test.ts`, ruoli di prova in `tests/fixtures/roles/` |
+| 2.2 Dati e conversione | Fatto | Migrazione 0016; Generalista e conversione dei Brief all'avvio (`ensureRoles`) |
 
 Scelte fatte nel passo 2.1:
 
@@ -348,6 +349,20 @@ Scelte fatte nel passo 2.1:
   pill dei documenti (D15).
 - **Quote del profilo**: nelle Impostazioni le quote non hanno ancora il valore «Automatico». Per ora valgono
   quelle del profilo finché nelle Impostazioni restano le predefinite (20/20/60). Da rivedere con l'interfaccia.
+
+Scelte fatte nel passo 2.2:
+
+- **La conversione avviene all'avvio, nel codice** (`convertBriefs`), non nella migrazione: i titoli dei quattro
+  campi dipendono dalla lingua dell'interfaccia. Si esegue una volta sola: fa fede `role_id` nullo.
+- **I titoli restano nella lingua del momento della conversione.** Prima seguivano la lingua dell'interfaccia a
+  ogni domanda; dopo sono testo dell'utente.
+- **Per il Generalista la situazione entra nel prompt senza un titolo suo**: così il prompt è identico a prima.
+  Se metterlo per gli altri ruoli si decide al passo 2.3.
+- **La scheda Brief resta senza effetto dal passo 2.3 al 2.5** (deciso dall'utente: siamo in sviluppo). Nel
+  passo 2.2 il prompt legge ancora i quattro campi; dal 2.3 leggerà la situazione, e la scheda Brief verrà
+  sostituita solo al 2.5. Chi modifica il Brief in quel periodo non cambia il prompt.
+- Le conversazioni e i template nuovi nascono sul Generalista; un template salva anche ruolo, scelte, ritocchi
+  e situazione.
 
 Scoperte durante il lavoro:
 
@@ -395,8 +410,8 @@ Scoperte durante il lavoro:
 
 - **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8). `main` e il branch
   `claude/contesto-parametri-effettivi` coincidono, salvo questo documento.
-- **Seconda consegna** (ruoli): fatto il **passo 2.1** (il ruolo come dato, non ancora usato dall'app). Si
-  prosegue dal **passo 2.2**.
+- **Seconda consegna** (ruoli): fatti i **passi 2.1** (il ruolo come dato) e **2.2** (dati e conversione dei
+  Brief). Il prompt legge ancora il Brief. Si prosegue dal **passo 2.3**.
 
 ## Cosa manca dalla prima consegna
 
@@ -432,7 +447,7 @@ Scoperte durante il lavoro:
 | Cosa | Comando |
 |---|---|
 | Typecheck | `npm run typecheck` |
-| Test unitari (306) | `npx vitest run` |
+| Test unitari (315) | `npx vitest run` |
 | End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
 | Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
 | Pacchetti e catalogo dello Store | `npm run packs:build` |

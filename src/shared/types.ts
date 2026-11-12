@@ -1,4 +1,5 @@
 // Tipi condivisi tra main, preload e renderer.
+import type { Role, RoleChoices, RoleProfileMind } from './roles'
 
 export interface Brief {
   role: string
@@ -24,7 +25,40 @@ export const RESPONSE_STYLES: ResponseStyle[] = ['essential', 'concise', 'normal
 /** Titolo delle conversazioni appena create: finché resta questo, dopo il primo scambio se ne genera uno. */
 export const DEFAULT_TITLE = 'Nuova conversazione'
 
-export interface Conversation extends Brief, ConversationSettings {
+/** Ruolo di una conversazione o di un template (docs/ruoli.md). I campi del Brief restano per una versione. */
+export interface RoleBinding {
+  /** Ruolo con cui si parla. `null` solo finché il Brief non è stato convertito (all'avvio). */
+  roleId: string | null
+  /** Scelte dei parametri del ruolo; ciò che manca prende il predefinito del ruolo. */
+  roleParams: RoleChoices | null
+  /** Ritocchi manuali alla mente: valgono finché non cambia l'opzione che governa quel valore. */
+  mindOverrides: RoleProfileMind | null
+  /** Il contesto di questa conversazione, scritto dall'utente. Sostituisce il Brief. */
+  situation: string | null
+}
+
+/** Id del ruolo senza istruzioni né parametri: è l'app senza ruoli. */
+export const GENERALIST_ROLE_ID = 'app.fastchat.ruolo.generalista'
+
+export type RoleOrigin = 'builtin' | 'package'
+
+/** Un ruolo installato. La definizione è il contenuto di `role.json` del pacchetto. */
+export interface RoleRecord {
+  id: string
+  packageId: string | null
+  /** Lega le varianti dello stesso ruolo in lingue diverse. */
+  group: string | null
+  /** Lingua in cui il ruolo è scritto; `null` = segue l'interfaccia (Generalista). */
+  language: string | null
+  name: string
+  description: string
+  version: string | null
+  definition: Role
+  origin: RoleOrigin
+  createdAt: number
+}
+
+export interface Conversation extends Brief, ConversationSettings, RoleBinding {
   id: string
   title: string
   model: string
@@ -385,7 +419,7 @@ export interface Plan {
   createdAt: number
 }
 
-export interface BriefTemplate extends Brief {
+export interface BriefTemplate extends Brief, RoleBinding {
   id: string
   name: string
   model: string | null
@@ -513,6 +547,10 @@ export type ConversationPatch = Partial<
     | 'longMemory'
     | 'knowledge'
     | 'knowledgeShare'
+    | 'roleId'
+    | 'roleParams'
+    | 'mindOverrides'
+    | 'situation'
   >
 >
 

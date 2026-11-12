@@ -25,6 +25,10 @@ const conv: Conversation = {
   longMemory: true,
   knowledge: true,
   knowledgeShare: 0.5,
+  roleId: null,
+  roleParams: null,
+  mindOverrides: null,
+  situation: null,
   createdAt: Date.UTC(2026, 0, 1),
   updatedAt: Date.UTC(2026, 0, 2)
 }
