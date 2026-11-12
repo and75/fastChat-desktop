@@ -1,3 +1,4 @@
+import { detectSystemSlot } from '@shared/compose'
 import type { DoneReason, ModelCapabilities, ModelDefaults, OllamaModel } from '@shared/types'
 import { t } from '@shared/i18n'
 
@@ -55,6 +56,8 @@ export interface ChatResult {
   loadMs: number | null
   promptEvalMs: number | null
   evalMs: number | null
+  /** Tempo, misurato dall'app, dall'invio della richiesta al primo frammento ricevuto (ragionamento o risposta). */
+  firstTokenMs: number | null
   /** 'length' se Ollama ha fermato la risposta al limite di token (num_predict), 'stop' se è finita. */
   doneReason: DoneReason | null
   /** true se la generazione è stata interrotta: content/thinking contengono il parziale. */
@@ -231,6 +234,8 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       capabilities?: string[]
       model_info?: Record<string, unknown>
       parameters?: unknown
+      template?: unknown
+      modelfile?: unknown
     }
     const capabilities = body.capabilities ?? []
     const info = body.model_info ?? {}
@@ -240,7 +245,8 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       contextLength: modelInfoNumber(info, '.context_length'),
       kvBytesPerToken: kvBytesPerToken(info),
       layers: modelInfoNumber(info, '.block_count'),
-      defaults: parseModelDefaults(body.parameters)
+      defaults: parseModelDefaults(body.parameters),
+      systemSlot: detectSystemSlot(body.template, body.modelfile)
     }
     capsCache.set(key, caps)
     return caps
@@ -260,8 +266,13 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       loadMs: null,
       promptEvalMs: null,
       evalMs: null,
+      firstTokenMs: null,
       doneReason: null,
       aborted: false
+    }
+    const started = Date.now()
+    const first = (): void => {
+      if (result.firstTokenMs == null) result.firstTokenMs = Date.now() - started
     }
 
     const handleLine = (line: string): void => {
@@ -275,11 +286,13 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       if (chunk.error) throw new OllamaError('http', chunk.error)
       const thinking = chunk.message?.thinking
       if (thinking) {
+        first()
         result.thinking += thinking
         handlers.onThinking?.(thinking)
       }
       const content = chunk.message?.content
       if (content) {
+        first()
         result.content += content
         handlers.onContent?.(content)
       }

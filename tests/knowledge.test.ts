@@ -981,6 +981,11 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
     expect(answer.knowledgeRefs ?? []).toEqual([])
     const call = (await listContextCalls(h.db, conv.id)).find((c) => c.kind === 'chat')!
     expect(call.parts.map((p) => [p.key, p.count])).toEqual([['behavior', 1], ['question', undefined]])
+    // misure della chiamata: composizione usata, tempo al primo frammento, ragionamento, tipo di posto «sistema»
+    expect(call).toMatchObject({ contextOrder: 'A', reminder: false, thinkingTokens: 0, systemSlot: 'unknown' })
+    expect(call.firstTokenMs).toBeGreaterThanOrEqual(0)
+    // il titolo generato dopo la risposta non è una chiamata di chat: nessuna composizione
+    expect((await listContextCalls(h.db, conv.id)).find((c) => c.kind === 'title')).toMatchObject({ contextOrder: null, reminder: null, thinkingTokens: null })
     rmSync(dir, { recursive: true, force: true })
   })
 

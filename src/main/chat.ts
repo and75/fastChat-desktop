@@ -411,7 +411,11 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
       model: conv.model,
       numCtx: request.options?.num_ctx ?? null,
       parts: composed.parts,
-      droppedMessages: composed.dropped
+      droppedMessages: composed.dropped,
+      contextOrder: context.order,
+      reminder: context.reminder,
+      systemSlot: caps?.systemSlot ?? null,
+      cpt: charsPerToken(history)
     }
     return { request, start }
   }

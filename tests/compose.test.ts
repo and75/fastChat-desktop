@@ -184,3 +184,33 @@ describe('impostazioni della composizione', () => {
     expect(() => validateContextSettings({ situationShare: 0.5 })).toThrow(/tra 1 e 25/)
   })
 })
+
+// ------------------------------------------------------------------ posto «sistema» del modello
+import { detectSystemSlot } from '../src/shared/compose'
+
+describe('posto «sistema» del modello, dal template di Ollama', () => {
+  it('dedicato: turno di sistema con i suoi marcatori (Llama 3, ChatML)', () => {
+    const llama3 = '{{- if .System }}<|start_header_id|>system<|end_header_id|>\n\n{{ .System }}<|eot_id|>{{ end }}{{- range .Messages }}<|start_header_id|>{{ .Role }}<|end_header_id|>\n\n{{ .Content }}<|eot_id|>{{ end }}'
+    const chatml = '{{- if .System }}<|im_start|>system\n{{ .System }}<|im_end|>\n{{ end }}{{- range .Messages }}<|im_start|>{{ .Role }}\n{{ .Content }}<|im_end|>\n{{ end }}<|im_start|>assistant\n'
+    expect(detectSystemSlot(llama3)).toBe('dedicated')
+    expect(detectSystemSlot(chatml)).toBe('dedicated')
+  })
+
+  it('fuso: il testo di sistema finisce nel turno dell\'utente (Gemma 3, Mistral con [INST])', () => {
+    const gemma3 = '{{- range $i, $_ := .Messages }}{{- if or (eq .Role "user") (eq .Role "system") }}<start_of_turn>user\n{{ .Content }}<end_of_turn>\n{{ end }}{{- if eq .Role "assistant" }}<start_of_turn>model\n{{ .Content }}<end_of_turn>\n{{ end }}{{- end }}<start_of_turn>model\n'
+    const gemma2 = '<start_of_turn>user\n{{ if .System }}{{ .System }} {{ end }}{{ .Prompt }}<end_of_turn>\n<start_of_turn>model\n'
+    const mistral = '[INST] {{ if .System }}{{ .System }} {{ end }}{{ .Prompt }} [/INST]'
+    expect(detectSystemSlot(gemma3)).toBe('merged')
+    expect(detectSystemSlot(gemma2)).toBe('merged')
+    expect(detectSystemSlot(mistral)).toBe('merged')
+  })
+
+  it('non determinabile: formattatore interno di Ollama (gemma4), template assente o sconosciuto', () => {
+    const modelfile = 'FROM blob\nTEMPLATE {{ .Prompt }}\nRENDERER gemma4\nPARSER gemma4\nPARAMETER temperature 1\n'
+    expect(detectSystemSlot('{{ .Prompt }}', modelfile)).toBe('unknown')
+    expect(detectSystemSlot('{{ .Prompt }}')).toBe('unknown')
+    expect(detectSystemSlot('<|im_start|>system\n{{ .System }}', modelfile)).toBe('unknown')
+    expect(detectSystemSlot(undefined)).toBe('unknown')
+    expect(detectSystemSlot('{{ .Prompt }} qualcosa')).toBe('unknown')
+  })
+})

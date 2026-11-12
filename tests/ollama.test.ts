@@ -53,7 +53,9 @@ describe('showModel', () => {
       contextLength: 40960,
       kvBytesPerToken: null,
       layers: null,
-      defaults: { temperature: 0.6, topP: 0.95, numCtx: 8192 }
+      defaults: { temperature: 0.6, topP: 0.95, numCtx: 8192 },
+      // il finto Ollama non espone un template: il posto «sistema» non è determinabile
+      systemSlot: 'unknown'
     })
     const llama = await c.showModel('llama3.2:3b')
     expect(llama.thinking).toBe(false)
@@ -110,7 +112,10 @@ describe('chatStream', () => {
     expect(thinking).toEqual(['Ci penso. '])
     expect(content).toEqual(['Ciao', ' mondo!'])
     expect(res.promptEvalCount).toBeGreaterThan(0)
-    expect({ ...res, promptEvalCount: undefined }).toEqual({
+    // tempo al primo frammento: misurato dall'app, non da Ollama
+    expect(res.firstTokenMs).toBeGreaterThanOrEqual(0)
+    expect({ ...res, promptEvalCount: undefined, firstTokenMs: undefined }).toEqual({
+      firstTokenMs: undefined,
       content: 'Ciao mondo!',
       thinking: 'Ci penso. ',
       promptEvalCount: undefined,

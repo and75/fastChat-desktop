@@ -10,7 +10,7 @@
 // seguito. Nel database resta solo il testo scritto dall'utente.
 import { t } from './i18n'
 import { selectHistory, withSummary, type HistoryLimits, type HistoryMessage } from './prompt'
-import { DEFAULT_CONTEXT_SETTINGS, type ContextOrder, type ContextSettings } from './types'
+import { DEFAULT_CONTEXT_SETTINGS, type ContextOrder, type ContextSettings, type SystemSlot } from './types'
 
 export const CONTEXT_ORDERS: ContextOrder[] = ['A', 'B', 'C']
 
@@ -129,4 +129,31 @@ export function validateContextSettings(raw: unknown): ContextSettings {
 export function resolveContext(settings: ContextSettings | null | undefined): { order: ContextOrder; reminder: boolean; shares: ContextSettings['shares'] } {
   const s = settings ?? DEFAULT_CONTEXT_SETTINGS
   return { order: s.order === 'auto' ? 'A' : s.order, reminder: s.reminder === 'on', shares: s.shares }
+}
+
+// ---------------------------------------------------------------- posto «sistema» del modello
+
+/** Marcatori di un turno di sistema separato (ChatML, Llama 3, Phi, Mistral recenti, Gemma 4…). */
+const DEDICATED = [/<\|im_start\|>\s*system/, /<\|start_header_id\|>\s*system/, /<\|system\|>/, /\[SYSTEM_PROMPT\]/, /<<SYS>>/, /<\|turn>\s*system/, /<start_of_turn>\s*system/, /<\|start_of_role\|>\s*system/]
+/** Il testo di sistema finisce dentro il turno dell'utente (Gemma 2 e 3, Mistral con [INST]). */
+const MERGED = [
+  /eq \.Role "user"\)\s*\(eq \.Role "system"\)/,
+  /eq \.Role "system"\)\s*\(eq \.Role "user"\)/,
+  /<start_of_turn>user\s*(\{\{-?\s*if\s+(and\s+)?[^}]*\.System[^}]*\}\}\s*)?\{\{-?\s*\.System/,
+  /\[INST\]\s*(\{\{-?\s*if\s+[^}]*\.System[^}]*\}\}\s*)?\{\{-?\s*\.System/
+]
+
+/**
+ * Come il modello tratta il messaggio di sistema, dal template di chat che Ollama espone (/api/show). È un
+ * riconoscimento di schemi noti: quando non basta, o quando Ollama compone il testo con un formattatore interno
+ * (riga RENDERER nel Modelfile, template ridotto a «{{ .Prompt }}»), la risposta è `unknown` e decidono i test.
+ */
+export function detectSystemSlot(template: unknown, modelfile?: unknown): SystemSlot {
+  const tpl = typeof template === 'string' ? template : ''
+  if (typeof modelfile === 'string' && /^\s*RENDERER\s+\S/m.test(modelfile)) return 'unknown'
+  if (!tpl.trim() || /^\{\{-?\s*\.Prompt\s*-?\}\}$/.test(tpl.trim())) return 'unknown'
+  if (!/\.System|"system"/.test(tpl)) return 'unknown'
+  if (MERGED.some((re) => re.test(tpl))) return 'merged'
+  if (DEDICATED.some((re) => re.test(tpl))) return 'dedicated'
+  return 'unknown'
 }

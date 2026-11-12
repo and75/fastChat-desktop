@@ -15,7 +15,9 @@ import type {
   PlanStatus,
   PlanStep,
   ResponseStyle,
-  BasePurpose
+  BasePurpose,
+  ContextOrder,
+  SystemSlot
 } from '@shared/types'
 
 const now = sql`(unixepoch('subsec') * 1000)`
@@ -291,6 +293,11 @@ export const contextCalls = sqliteTable(
     doneReason: text('done_reason').$type<DoneReason>(),
     aborted: integer('aborted', { mode: 'boolean' }).notNull().default(false),
     error: text('error'),
+    contextOrder: text('context_order').$type<ContextOrder>(),
+    reminder: integer('reminder', { mode: 'boolean' }),
+    firstTokenMs: integer('first_token_ms'),
+    thinkingTokens: integer('thinking_tokens'),
+    systemSlot: text('system_slot').$type<SystemSlot>(),
     createdAt: integer('created_at').notNull().default(now)
   },
   (t) => [index('context_calls_conversation_idx').on(t.conversationId, t.createdAt)]

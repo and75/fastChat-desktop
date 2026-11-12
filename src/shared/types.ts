@@ -343,6 +343,15 @@ export interface ContextCall {
   doneReason: DoneReason | null
   aborted: boolean
   error: string | null
+  /** Composizione usata (solo chiamate di chat): ordine dei blocchi e promemoria del ruolo. */
+  contextOrder: ContextOrder | null
+  reminder: boolean | null
+  /** Tempo al primo frammento, misurato dall'app (ms). */
+  firstTokenMs: number | null
+  /** Token di ragionamento, stimati dal testo (Ollama li conta insieme alla risposta in evalCount). */
+  thinkingTokens: number | null
+  /** Come il modello tratta il messaggio di sistema. */
+  systemSlot: SystemSlot | null
   createdAt: number
 }
 
@@ -416,7 +425,15 @@ export interface ModelCapabilities {
   /** Memoria occupata da ogni token di contesto (cache KV in f16), dall'architettura in /api/show; null se non calcolabile. */
   kvBytesPerToken: number | null
   defaults: ModelDefaults
+  /** Come il modello tratta il messaggio di sistema, letto dal suo template (assente nei dati salvati prima). */
+  systemSlot?: SystemSlot
 }
+
+/**
+ * Dove finisce il messaggio di sistema: in un posto suo (`dedicated`), incollato al primo messaggio dell'utente
+ * (`merged`), o non leggibile dal template (`unknown`, es. modelli che Ollama compone con un formattatore interno).
+ */
+export type SystemSlot = 'dedicated' | 'merged' | 'unknown'
 
 /** Una configurazione provata dal test CPU/GPU. */
 export interface BenchmarkRun {
