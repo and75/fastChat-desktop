@@ -88,6 +88,13 @@ Regole:
 - Un'opzione che tocca la mente lo **dichiara** nell'interfaccia («imposta la temperatura a 0,4»).
 - **Vince l'ultima azione**: se l'utente sposta a mano un valore dopo aver scelto l'opzione, vale il suo; se
   poi cambia opzione, vale quello dell'opzione.
+- **Calcolo della mente** (deterministico, senza stato nascosto): valori base del ruolo (`mind`) → effetti delle
+  opzioni scelte, nell'**ordine di definizione dei parametri** (se due toccano lo stesso valore vale l'ultimo
+  definito) → ritocchi manuali dell'utente. Deselezionando un'opzione il valore torna da solo a quello
+  dell'altra opzione attiva o, se non c'è, a quello base del ruolo. Un ritocco manuale su un valore decade
+  quando l'utente cambia un'opzione che tocca quello stesso valore.
+- Un `toggle` è trattato come un `single` con due opzioni (`on`/`off`): anche lo stato spento può avere la sua
+  frase e il suo effetto sulla mente.
 
 ### 3.3 Basi del ruolo
 
@@ -164,7 +171,9 @@ Stesso `.fcpack` delle basi, con `type: "identity"`. Stesse regole di firma e im
 
 - Un solo campo libero al posto dei quattro campi del Brief.
 - **Limite di caratteri** = una quota del contesto del modello (proposta: 5% di `num_ctx`, con contatore
-  visibile; il valore è regolabile insieme alle altre quote).
+  visibile; il valore è regolabile insieme alle altre quote). `num_ctx` è in token, il contatore in caratteri:
+  si converte con i caratteri per token già stimati dall'app (4 in partenza, poi misurati sulla conversazione).
+  Esempio: 8.192 token × 5% × 4 ≈ 1.600 caratteri.
 - Si può modificare in ogni momento; vale dalla domanda successiva.
 - È sempre nella lingua dell'utente, così com'è.
 
@@ -259,6 +268,11 @@ alla domanda. Serve a tenere il ruolo nelle conversazioni lunghe senza toglierlo
 
 Note:
 
+- Con B e C conoscenza, promemoria e domanda sono **un solo messaggio `user`**, composto al momento dell'invio:
+  mai due messaggi `user` di seguito (molti modelli locali li gestiscono male). In database resta solo il testo
+  scritto dall'utente.
+- Gli esempi sono racchiusi in delimitatori netti (es. `<esempio>…</esempio>`) e l'istruzione del blocco dice
+  di imitarne forma e stile, non di copiarne il contenuto.
 - Il numero di token inviati è lo stesso nei tre ordini: cambia dove stanno e quanto si riusa.
 - Con B e C gli estratti viaggiano con l'ultima domanda e **non restano** nei messaggi precedenti salvati: la
   cronologia in database contiene solo la domanda dell'utente. È già così oggi.
@@ -392,8 +406,10 @@ La seconda introduce i ruoli.
 
 - `context_calls`: ordine usato, promemoria sì/no, quote, **tempo al primo token**; il tempo di valutazione del
   prompt c'è già.
-  - Quanti token Ollama abbia riusato non è un dato che l'API restituisce in modo diretto: si deduce dal
-    tempo di valutazione del prompt. Da verificare sul campo quanto è affidabile.
+  - Riuso di Ollama: `prompt_eval_count` e il tempo di valutazione sono già registrati. **Da verificare con un
+    Ollama vero** se `prompt_eval_count` conta solo i token nuovi (e allora misura il riuso in modo esatto) o
+    tutto il prompt: il comportamento è cambiato tra versioni. La prova è semplice: due domande di seguito
+    sulla stessa conversazione e confronto dei due valori. Fino ad allora fa fede il tempo di valutazione.
 - Monitor del contesto: mostra ordine e tempi per ogni chiamata.
 - Export CSV delle chiamate di una conversazione, per confrontare gli ordini.
 - **Protocollo di prova** (manuale, con modelli veri): stessa conversazione medio-lunga (30–40 scambi) ripetuta
@@ -429,6 +445,8 @@ fino alla seconda consegna (i quattro campi si leggono e scrivono come sezioni d
 - `pack.ts`: lettura e scrittura del tipo `identity` (`role.json`), campo `group`, verifica delle basi
   richieste.
 - Installazione: ruolo + basi richieste; rimozione con controllo d'uso delle basi.
+- Se una base richiesta dal ruolo non c'è più, all'apertura della conversazione compare un avviso non
+  bloccante (come per il modello mancante), con il rimando allo Store.
 - Catalogo: `group` e varianti per lingua; `storeEntries` raggruppa.
 - Store: scheda unica con scelta della lingua, ricerca su tutte le varianti, filtro per lingua.
 - Regola «ciò che è dello Store entra ed esce dallo Store» estesa ai ruoli.
