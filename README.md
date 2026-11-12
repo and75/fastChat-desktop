@@ -61,6 +61,8 @@ con una fixture.
 
 Il meccanismo completo è descritto in [`docs/base-di-conoscenza.md`](docs/base-di-conoscenza.md).
 
+**Composizione del contesto** (Impostazioni → Contesto): l'ordine in cui istruzioni, riassunto, memoria e documenti arrivano al modello è regolabile (tutto nel system prompt, oppure conoscenza accanto alla domanda), con un promemoria del ruolo opzionale. Il monitor del contesto registra per ogni chiamata l'ordine usato e il tempo al primo frammento, ed esporta tutto in CSV per confrontare disposizioni e modelli. Progetto dei ruoli: [`docs/ruoli.md`](docs/ruoli.md), piano: [`docs/ruoli-piano.md`](docs/ruoli-piano.md).
+
 **Database.** SQLite in `userData/chats.db` tramite il modulo integrato `node:sqlite` (Electron 45 / Node 24)
 e Drizzle ORM (driver `sqlite-proxy`). Nessun modulo nativo da ricompilare per Electron o da impacchettare.
 

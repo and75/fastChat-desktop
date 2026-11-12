@@ -416,6 +416,39 @@ Il Generalista non ha lingua propria e continua a seguire l'interfaccia.
 
 ---
 
+### 5.6 Come provare (prima consegna)
+
+Tutto si fa dall'app, senza toccare file.
+
+**Strumenti**
+
+- **Impostazioni → Contesto**: ordine dei blocchi (Automatico, A, B, C), promemoria del ruolo, quote dei tre
+  tipi di base. Vale dalla domanda successiva, anche in una conversazione già avviata.
+- **Scheda Conoscenza → base collegata → uso**: Documenti, Comportamento, Esempi. È il modo di provare le basi
+  del ruolo prima che i ruoli esistano.
+- **Monitor del contesto** (scheda Modello → dettaglio delle chiamate): per ogni chiamata, ordine usato,
+  promemoria, tipo di posto «sistema», tempo al primo frammento, tempi di Ollama, token per voce.
+- **Esporta CSV**: una riga per chiamata, colonne fisse (`order`, `first_token_ms`, `prompt_eval_ms`,
+  `prompt_eval_count`, `part_*`…).
+- **`node scripts/cache-probe.mjs --model <modello>`**: misura fuori dall'app quanto si riusa con A e con B, e
+  dice se `prompt_eval_count` conta solo i token nuovi.
+
+**Protocollo proposto**
+
+1. Scegli un modello e una conversazione di 30–40 scambi con un Brief compilato (o creala).
+2. Prepara 5–8 domande fisse: alcune che dipendono da dettagli lontani, alcune sui documenti, una fuori tema.
+3. Per ogni combinazione (A, B, C; promemoria spento e acceso) duplica la conversazione, imposta l'ordine, fai
+   le stesse domande.
+4. Esporta il CSV di ogni conversazione.
+5. **Velocità**: confronta `first_token_ms` e `prompt_eval_ms` a parità di domanda. Scarta la prima domanda dopo
+   un cambio di impostazione (rilegge tutto, in ogni ordine).
+6. **Qualità**, letta a mano: il modello tiene il ruolo? usa i documenti giusti? cita le fonti? risponde nella
+   lingua attesa? Annota un voto per risposta.
+7. Ripeti con un secondo modello: i risultati cambiano da modello a modello, ed è per questo che finiranno nei
+   profili del ruolo (§3.5).
+
+---
+
 ## 6. Lingue e Store
 
 - Un ruolo e le sue basi sono **scritti in una lingua**. Nome del ruolo, parametri e opzioni si vedono in quella

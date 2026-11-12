@@ -1,6 +1,7 @@
 # Ruoli — decisioni e piano di esecuzione
 
-Stato: **piano da approvare, codice non ancora scritto.**
+Stato: **prima consegna realizzata sul branch** (passi 1.0–1.8), non rilasciata. Manca solo la prova con Ollama
+vero (passo 1.7), che va eseguita sul computer dell'utente. La seconda consegna non è iniziata.
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -315,6 +316,30 @@ installare ruoli dallo Store nella propria lingua.
 ⏸ **Controllo 5** — tutto sul branch; release solo con il tuo ok.
 
 ---
+
+## 2.2bis Stato dei passi
+
+| Passo | Stato | Note |
+|---|---|---|
+| 1.0 Rete di sicurezza | Fatto | `tests/compose.test.ts`: fotografie dei messaggi inviati oggi |
+| 1.1 Impostazioni | Fatto | `AppSettings.context` |
+| 1.2 Compositore | Fatto | `src/shared/compose.ts` |
+| 1.3 Nella chat | Fatto | Con le impostazioni predefinite i messaggi sono identici a prima |
+| 1.4 Tre tipi di base | Fatto | Migrazione 0014; selettore dell'uso sulla base collegata |
+| 1.5 Misure | Fatto | Migrazione 0015; due test esistenti aggiornati con i campi nuovi |
+| 1.6 Interfaccia | Fatto | Impostazioni → Contesto; monitor; export CSV |
+| 1.7 Prova con Ollama | **Da eseguire dall'utente** | `node scripts/cache-probe.mjs --model gemma4:e4b` |
+| 1.8 Chiusura | Fatto | Documentazione e protocollo di prova |
+
+Scoperte durante il lavoro:
+
+- **Riuso con l'ordine B**: non è «solo l'ultima domanda». Gli estratti viaggiano con la domanda corrente; alla
+  domanda successiva quella precedente torna al suo testo, quindi Ollama riusa tutto fino allo scambio prima e
+  ricalcola l'ultimo scambio più la nuova domanda. Con A ricalcola l'intera conversazione.
+- **Titolo «# Domanda»**: negli ordini B e C (e con il promemoria) la domanda è preceduta da un titolo che la
+  separa dal materiale. Se non c'è nulla da accompagnare la domanda resta com'è.
+- L'app aveva già un messaggio nel monitor per il caso in cui Ollama conta meno token della stima («ha riusato
+  la cache»): la prova 1.7 dirà se è ciò che accade davvero.
 
 ## 2.3 Ordine e dipendenze
 
