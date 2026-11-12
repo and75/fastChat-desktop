@@ -731,6 +731,17 @@ export const fr: Record<Key, string> = {
   'knowledge.connection.disconnect': 'Déconnecter',
   'knowledge.connection.disconnect.title': 'Déconnecte la source et retire ses documents de la conversation',
   'settings.modelSection': 'Paramètres du modèle',
+  // --- composizione del contesto
+  'prompt.questionHeading': 'Question',
+  'prompt.reminder': 'Rappel du rôle',
+  'err.context.order': 'Ordre du contexte non valide',
+  'err.context.reminder': 'Valeur du rappel non valide',
+  'err.context.shares': 'Les parts de connaissance doivent être comprises entre 0 et 100 et totaliser 100',
+  'err.context.situation': 'La part de la situation doit être comprise entre 1 et 25',
+  'part.situation': 'Situation',
+  'part.behavior': 'Comportement du rôle',
+  'part.examples': 'Exemples du rôle',
+  'part.reminder': 'Rappel du rôle',
   // --- store
   'err.pack.inStore': 'Ce paquet est dans le Store : installez-le ou mettez-le à jour depuis le Store.',
   'err.knowledge.inStore': 'Cette base vient du Store : elle se supprime depuis le Store.',

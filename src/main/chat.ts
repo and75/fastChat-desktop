@@ -10,7 +10,6 @@ import {
   historyAfter,
   parsePlan,
   PLAN_SCHEMA,
-  selectHistory,
   withSummary
 } from '@shared/prompt'
 import { resolveSettings } from '@shared/settings'
@@ -43,9 +42,10 @@ import {
   updateConversation,
   updatePlan
 } from './db/repo'
+import { composeMessages, resolveContext, roleReminder } from '@shared/compose'
 import { chatParts } from '@shared/context'
 import { t } from '@shared/i18n'
-import type { ContextPart } from '@shared/types'
+import type { ContextOrder, ContextPart, ContextSettings } from '@shared/types'
 import { callInput, type CallStart, type ContextLog } from './contextLog'
 import type { ChatMessage, ChatOptions, ChatRequest, OllamaClient } from './ollama'
 import { memoryBudget, type Memory, type Recall } from './memory'
@@ -73,6 +73,8 @@ export interface ChatServiceDeps {
   embedder?: Embedder
   /** Monitor del contesto: registra ogni chiamata a Ollama. */
   contextLog?: ContextLog
+  /** Composizione del contesto scelta nelle Impostazioni (assente = comportamento storico). */
+  getContext?(): Promise<ContextSettings>
 }
 
 interface ActiveStream {
@@ -127,29 +129,52 @@ export function buildChatMessages(
   return composeChat(conv, history, system, caps, { memory }).messages
 }
 
+/** Come si compone il contesto di una chiamata: ordine dei blocchi e promemoria del ruolo. */
+export interface ComposeConfig {
+  order: ContextOrder
+  reminder: boolean
+  /** Per l'ordine C: le istruzioni senza la situazione, e la situazione da sola (insieme fanno `base`). */
+  instructions?: string
+  situation?: string
+}
+
 /** Come buildChatMessages, più le voci per il monitor del contesto e i messaggi rimasti fuori. */
 export function composeChat(
   conv: Conversation,
   history: Message[],
   base: string,
   caps: ModelCapabilities | null = null,
-  extras: Extras = {}
+  extras: Extras = {},
+  config: ComposeConfig = { order: 'A', reminder: false }
 ): { messages: ChatMessage[]; parts: ContextPart[]; dropped: number } {
   const s = resolveSettings(conv, caps)
   const { recent, aligned } = historyAfter(history, conv.summaryUpTo)
-  let system = aligned ? withSummary(base, conv.summary) : base
-  const summary = system.slice(base.length)
   const memory = extras.memory ?? ''
   const knowledge = extras.knowledge ?? ''
-  // Ordine: riassunto, memoria della conversazione, documenti (i più vicini alla domanda per ultimi).
-  for (const section of [memory, knowledge]) if (section) system = system ? `${system}\n\n${section}` : section
-  const picked = selectHistory(recent, system, { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.reserveTokens })
-  const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : []
-  for (const m of picked) out.push({ role: m.role, content: m.content })
+  const reminder = config.reminder ? roleReminder(conv.role) : ''
+  // Ordine di lettura: riassunto, memoria della conversazione, documenti (i più vicini alla domanda per ultimi).
+  const composed = composeMessages({
+    order: config.order,
+    base,
+    instructions: config.instructions,
+    situation: config.situation,
+    summary: aligned ? conv.summary : null,
+    blocks: [
+      { key: 'memory', text: memory },
+      { key: 'knowledge', text: knowledge }
+    ],
+    reminder,
+    history: recent,
+    limits: { ...DEFAULT_HISTORY_LIMITS, maxTokens: s.numCtx, reserveTokens: s.reserveTokens }
+  })
+  const picked = composed.picked
+  // Le stime per voce si fanno sulle sezioni messe in fila (com'è l'ordine A): la posizione non cambia i token.
+  const summary = (aligned ? withSummary(base, conv.summary) : base).slice(base.length)
   const style = buildStyleSection(conv.style)
   const hasStyle = !!style && base.includes(style)
+  const cpt = charsPerToken(history)
   const parts = chatParts({
-    system,
+    system: composed.flat,
     instructions: hasStyle ? base.replace(style, '') : base,
     style: hasStyle ? style : '',
     summary,
@@ -159,9 +184,13 @@ export function composeChat(
     memoryCount: extras.memoryCount ?? 0,
     knowledgeCount: extras.knowledgeCount ?? 0,
     messages: picked,
-    cpt: charsPerToken(history)
+    cpt
   })
-  return { messages: out, parts, dropped: recent.length - picked.length }
+  if (reminder) {
+    const at = parts.findIndex((p) => p.key === 'history' || p.key === 'question')
+    parts.splice(at < 0 ? parts.length : at, 0, { key: 'reminder', label: 'reminder', tokens: estimateTokens(reminder, cpt) })
+  }
+  return { messages: composed.messages, parts, dropped: recent.length - picked.length }
 }
 
 /**
@@ -206,7 +235,7 @@ function systemFor(conv: Conversation, mode: Mode): string {
   }
 }
 
-export function createChatService({ db, ollama, emit, onConversationUpdated, summarizer, memory, knowledge, embedder, contextLog }: ChatServiceDeps) {
+export function createChatService({ db, ollama, emit, onConversationUpdated, summarizer, memory, knowledge, embedder, contextLog, getContext }: ChatServiceDeps) {
   const streams = new Map<string, ActiveStream>()
   const questionEmbedder = embedder ?? memory?.embedder ?? knowledge?.embedder ?? null
 
@@ -351,7 +380,10 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     extras: Extras = {}
   ): Promise<{ request: ChatRequest; start: CallStart }> {
     const history = await listMessages(db, conv.id)
-    const composed = composeChat(conv, history, systemFor(conv, mode), caps, extras)
+    const context = resolveContext(await getContext?.().catch(() => null))
+    // Ordine C: la «situazione» (oggi il Contesto del brief) resta nel sistema, il resto va con la domanda.
+    const split = context.order === 'C' ? { instructions: systemFor({ ...conv, context: '' }, mode), situation: buildSystemPrompt({ role: '', context: conv.context, goals: '', constraints: '' }) } : {}
+    const composed = composeChat(conv, history, systemFor(conv, mode), caps, extras, { ...context, ...split })
     const request: ChatRequest = {
       model: conv.model,
       messages: composed.messages,

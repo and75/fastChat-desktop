@@ -730,6 +730,17 @@ export const it = {
   'knowledge.connection.disconnect.title': 'Scollega la sorgente e rimuove i suoi documenti dalla conversazione',
   'settings.modelSection': 'Impostazioni del modello',
   'settings.language.fr': 'Français',
+  // --- composizione del contesto
+  'prompt.questionHeading': 'Domanda',
+  'prompt.reminder': 'Promemoria del ruolo',
+  'err.context.order': 'Ordine del contesto non valido',
+  'err.context.reminder': 'Valore del promemoria non valido',
+  'err.context.shares': 'Le quote della conoscenza devono essere tra 0 e 100 e sommare a 100',
+  'err.context.situation': 'La quota della situazione deve essere tra 1 e 25',
+  'part.situation': 'Situazione',
+  'part.behavior': 'Comportamento del ruolo',
+  'part.examples': 'Esempi del ruolo',
+  'part.reminder': 'Promemoria del ruolo',
   // --- store
   'err.pack.inStore': 'Questo pacchetto è nello Store: installalo o aggiornalo da lì.',
   'err.knowledge.inStore': 'Questa base viene dallo Store: si rimuove da lì.',

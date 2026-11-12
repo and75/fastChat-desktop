@@ -380,6 +380,10 @@ Note:
   scritto dall'utente.
 - Gli esempi sono racchiusi in delimitatori netti (es. `<esempio>…</esempio>`) e l'istruzione del blocco dice
   di imitarne forma e stile, non di copiarne il contenuto.
+- **Quanto si riusa davvero con B e C**: gli estratti viaggiano solo con la domanda *corrente*. Alla domanda
+  successiva la domanda precedente torna al suo testo originale, quindi Ollama riusa tutto fino allo scambio
+  prima e ricalcola **l'ultimo scambio** (domanda e risposta precedenti) più la nuova domanda con i suoi
+  estratti. Con A ricalcola invece l'intera conversazione. Verificato dai test (`tests/compose.test.ts`).
 - Il numero di token inviati è lo stesso nei tre ordini: cambia dove stanno e quanto si riusa.
 - Con B e C gli estratti viaggiano con l'ultima domanda e **non restano** nei messaggi precedenti salvati: la
   cronologia in database contiene solo la domanda dell'utente. È già così oggi.

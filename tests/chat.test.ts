@@ -441,3 +441,44 @@ describe('limiti del modello', () => {
     expect(title.options).toMatchObject({ num_ctx: 2048, num_predict: 32, temperature: 0.3 })
   })
 })
+
+describe('composizione del contesto scelta nelle Impostazioni', () => {
+  const withOrder = (order: 'A' | 'B' | 'C', reminder: 'on' | 'off' = 'off') =>
+    createChatService({
+      db: h.db,
+      ollama: createOllamaClient(() => fake.url),
+      emit: (_t, e) => events.push(e),
+      getContext: async () => ({ order, reminder, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, situationShare: 0.05 })
+    })
+  const ask = async (svc: ReturnType<typeof service>, id: string, text: string): Promise<void> => {
+    const { streamId } = await svc.send(target, id, text)
+    await svc.wait(streamId)
+  }
+
+  it('B con promemoria: il system prompt resta il brief, il promemoria viaggia con la domanda; in database resta il testo dell\'utente', async () => {
+    const conv = await createConversation(h.db, { model: 'llama3.2', role: 'Sei un tutor', context: 'Lezione di matematica' })
+    await ask(withOrder('B', 'on'), conv.id, 'ciao')
+    expect(lastChatBody().messages).toEqual([
+      { role: 'system', content: '# Ruolo\nSei un tutor\n\n# Contesto\nLezione di matematica' },
+      { role: 'user', content: '[Promemoria del ruolo: Sei un tutor]\n\n# Domanda\nciao' }
+    ])
+    expect((await listMessages(h.db, conv.id))[0].content).toBe('ciao')
+  })
+
+  it('C: nel system prompt solo la situazione, le istruzioni con la domanda; anche in plan mode', async () => {
+    const conv = await createConversation(h.db, { model: 'llama3.2', role: 'Sei un tutor', context: 'Lezione di matematica' })
+    const svc = withOrder('C')
+    await ask(svc, conv.id, 'ciao')
+    expect(lastChatBody().messages).toEqual([
+      { role: 'system', content: '# Contesto\nLezione di matematica' },
+      { role: 'user', content: '# Ruolo\nSei un tutor\n\n# Domanda\nciao' }
+    ])
+    await updateConversation(h.db, conv.id, { planMode: true })
+    const { streamId } = await svc.proposePlan(target, conv.id, 'spiegami le frazioni')
+    await svc.wait(streamId)
+    const plan = lastChatBody()
+    expect(plan.format).toBeDefined()
+    expect(plan.messages[0]).toEqual({ role: 'system', content: '# Contesto\nLezione di matematica' })
+    expect(plan.messages.at(-1)!.content).toMatch(/^# Ruolo\nSei un tutor\n\n# Modalità piano[\s\S]*\n\n# Domanda\nspiegami le frazioni$/)
+  })
+})

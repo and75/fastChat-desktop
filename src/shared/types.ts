@@ -305,7 +305,7 @@ export type ContextCallKind = 'chat' | 'plan' | 'execute' | 'summary' | 'condens
 
 /** Voce di ciò che è stato inviato, con i token stimati dall'app. */
 export interface ContextPart {
-  key: 'instructions' | 'style' | 'summary' | 'memory' | 'knowledge' | 'history' | 'question' | 'transcript' | 'texts'
+  key: 'instructions' | 'style' | 'situation' | 'summary' | 'memory' | 'behavior' | 'examples' | 'knowledge' | 'reminder' | 'history' | 'question' | 'transcript' | 'texts'
   label: string
   tokens: number
   /** Quanti elementi (messaggi, estratti, pezzi), se ha senso. */
@@ -561,6 +561,32 @@ export interface AppSettings {
   language: 'auto' | 'it' | 'en' | 'fr'
   /** Indirizzo del repository dello store; vuoto = catalogo incluso nell'app. */
   storeUrl: string
+  /** Composizione del contesto inviato al modello: ordine dei blocchi, promemoria, quote. */
+  context: ContextSettings
+}
+
+/**
+ * Ordine dei blocchi nel contesto: A = tutto nel system prompt (storico), B = conoscenza accanto alla domanda,
+ * C = anche le istruzioni del ruolo accanto alla domanda (diagnostico). Vedi docs/ruoli.md §5.3.
+ */
+export type ContextOrder = 'A' | 'B' | 'C'
+
+export interface ContextSettings {
+  /** «auto»: decide il ruolo (finché non ci sono ruoli vale A). */
+  order: 'auto' | ContextOrder
+  /** Promemoria del ruolo accanto alla domanda. «auto»: decide il ruolo (oggi spento). */
+  reminder: 'auto' | 'on' | 'off'
+  /** Come si divide lo spazio della conoscenza tra i tre tipi di base (somma 1). */
+  shares: { behavior: number; examples: number; documents: number }
+  /** Quota del contesto del modello concessa alla «situazione» scritta dall'utente. */
+  situationShare: number
+}
+
+export const DEFAULT_CONTEXT_SETTINGS: ContextSettings = {
+  order: 'auto',
+  reminder: 'auto',
+  shares: { behavior: 0.2, examples: 0.2, documents: 0.6 },
+  situationShare: 0.05
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -570,7 +596,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   kvCacheType: 'f16',
   embeddingModel: 'embeddinggemma',
   language: 'auto',
-  storeUrl: ''
+  storeUrl: '',
+  context: DEFAULT_CONTEXT_SETTINGS
 }
 
 /** Esito tipizzato delle chiamate IPC: gli errori arrivano al renderer come valori, non come eccezioni. */

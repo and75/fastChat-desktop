@@ -54,6 +54,7 @@ import { electronCipher } from './knowledge/secrets'
 import { PACK_EXTENSION } from './knowledge/pack'
 import { TRUSTED_KEYS } from './knowledge/trust'
 import { createContextLog } from './contextLog'
+import { validateContextSettings } from '@shared/compose'
 import { isStoreBase } from '@shared/store'
 import { createStore } from './store'
 import { createSummarizer } from './summary'
@@ -139,6 +140,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     knowledge,
     embedder,
     contextLog,
+    getContext: async () => (await getSettings(db)).context,
     emit: (target, event) => {
       const wc = target as WebContents
       if (!wc.isDestroyed()) wc.send(IPC.chatStream, event)
@@ -298,6 +300,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
       if (url && !/^https?:\/\/\S+$/i.test(url)) throw new Error(t('err.store.badUrl'))
       patch.storeUrl = url.replace(/\/+$/, '')
     }
+    if (patch.context !== undefined) patch.context = validateContextSettings(patch.context)
     if (patch.kvCacheType !== undefined && !KV_CACHE_TYPES.includes(patch.kvCacheType)) throw new Error(t('err.badKv'))
     if (patch.language !== undefined && !LANGUAGE_SETTINGS.includes(patch.language)) throw new Error(t('err.badLanguage'))
     const next = await setSettings(db, patch)

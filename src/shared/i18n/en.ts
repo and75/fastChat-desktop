@@ -731,6 +731,17 @@ export const en: Record<Key, string> = {
   'knowledge.connection.disconnect.title': 'Disconnects the source and removes its documents from the conversation',
   'settings.modelSection': 'Model settings',
   'settings.language.fr': 'Français',
+  // --- composizione del contesto
+  'prompt.questionHeading': 'Question',
+  'prompt.reminder': 'Role reminder',
+  'err.context.order': 'Invalid context order',
+  'err.context.reminder': 'Invalid reminder value',
+  'err.context.shares': 'Knowledge shares must be between 0 and 100 and add up to 100',
+  'err.context.situation': 'The situation share must be between 1 and 25',
+  'part.situation': 'Situation',
+  'part.behavior': 'Role behaviour',
+  'part.examples': 'Role examples',
+  'part.reminder': 'Role reminder',
   // --- store
   'err.pack.inStore': 'This package is in the Store: install or update it from there.',
   'err.knowledge.inStore': 'This base comes from the Store: remove it from there.',

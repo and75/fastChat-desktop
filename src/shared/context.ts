@@ -23,6 +23,10 @@ const PART_LABEL_KEYS: Record<string, Key> = {
   'texts.index': 'part.texts.index',
   'texts.query': 'part.texts.query',
   'texts.doc': 'part.texts.doc',
+  situation: 'part.situation',
+  behavior: 'part.behavior',
+  examples: 'part.examples',
+  reminder: 'part.reminder',
   answer: 'part.answer',
   ollama: 'part.ollamaDelta',
   // testi delle chiamate registrate prima della traduzione

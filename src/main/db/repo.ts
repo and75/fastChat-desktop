@@ -1,3 +1,4 @@
+import { normalizeContextSettings } from '@shared/compose'
 import { randomUUID } from 'node:crypto'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import {
@@ -56,6 +57,8 @@ export async function getSettings(db: Db): Promise<AppSettings> {
       ;(out as unknown as Record<string, unknown>)[row.key] = row.value
     }
   }
+  // Salvate da una versione precedente, o incomplete: ciò che manca torna al predefinito.
+  out.context = normalizeContextSettings(out.context)
   return out
 }
 
