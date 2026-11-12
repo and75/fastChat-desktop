@@ -6,12 +6,14 @@ import JSZip from 'jszip'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createChatService } from '../src/main/chat'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { createConversation, getBase, listDocuments, listKnowledgeChunks, listMessages, setSettings } from '../src/main/db/repo'
+import { createConversation, getBase, getRole, listDocuments, listKnowledgeChunks, listMessages, listRoles, setSettings, updateConversation } from '../src/main/db/repo'
 import { createEmbedder } from '../src/main/embedder'
 import { createKnowledge } from '../src/main/knowledge'
 import { readPack, slugify, validPackId, writePack, type PackSigner } from '../src/main/knowledge/pack'
 import { createBuiltinRegistry } from '../src/main/knowledge/sources'
 import { createOllamaClient } from '../src/main/ollama'
+import { GENERALIST_ROLE_ID } from '../src/shared/types'
+import { resolveChoices, type Role } from '../src/shared/roles'
 import { fakeEmbedding, startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
 
 const fixtures = resolve(__dirname, 'fixtures')
@@ -357,5 +359,178 @@ describe('pacchetti: esporta, installa, modello dichiarato', () => {
     const conv2 = await createConversation(h.db, { model: 'chat' })
     await k.linkDefaults(conv2)
     expect((await k.status(conv2)).linked).toEqual([])
+  })
+
+  // ---------------------------------------------------------------- ruoli (docs/ruoli-piano.md, passo 2.4)
+
+  const promptRole = JSON.parse(readFileSync(join(fixtures, 'roles', 'prompt.it.json'), 'utf8')) as Role
+  const roleManifest = { id: 'app.fastchat.ruolo.prompt.it', group: 'app.fastchat.ruolo.prompt', language: 'it', type: 'identity' as const, name: 'Esperto di prompt engineering', description: 'Scrive e migliora i prompt.', version: '1.0.0', createdAt: 1 }
+  const TECNICHE = 'app.fastchat.kb.prompt-tecniche.it'
+  const ESEMPI = 'app.fastchat.kb.prompt-esempi.it'
+  const basePack = (id: string, name: string, version = '1.0.0') => writePack({ manifest: { ...manifest, id, name, version }, knowledge })
+  /** Scrive in una cartella il pacchetto del ruolo e, se richiesti, quelli delle sue basi. */
+  async function roleFolder(name: string, opts: { bases?: string[]; role?: Role; manifest?: Partial<typeof roleManifest>; signer?: PackSigner } = {}): Promise<string> {
+    const { mkdirSync } = await import('node:fs')
+    const folder = join(dir, name)
+    mkdirSync(folder, { recursive: true })
+    for (const id of opts.bases ?? []) writeFileSync(join(folder, `${id}.fcpack`), await basePack(id, id === TECNICHE ? 'Tecniche di prompt' : 'Esempi di prompt'))
+    const path = join(folder, 'ruolo.fcpack')
+    writeFileSync(path, await writePack({ manifest: { ...roleManifest, ...opts.manifest }, role: opts.role ?? promptRole, signer: opts.signer }))
+    return path
+  }
+
+  it('ruolo: il pacchetto porta role.json con impronta; un ruolo non valido è rifiutato alla costruzione e alla lettura', async () => {
+    const data = await writePack({ manifest: roleManifest, role: promptRole })
+    const pack = await readPack(data)
+    expect(pack.manifest).toMatchObject({ type: 'identity', group: 'app.fastchat.ruolo.prompt', language: 'it' })
+    expect(Object.keys(pack.manifest.files)).toEqual(['role.json'])
+    expect(pack.role).toEqual(promptRole)
+    expect(pack.knowledge).toBeNull()
+    // un pacchetto di conoscenza non porta un ruolo
+    expect((await readPack(await writePack({ manifest, knowledge }))).role).toBeNull()
+
+    const broken = { ...promptRole, parameters: [...promptRole.parameters!, { ...promptRole.parameters![4], id: 'doppione' }] }
+    await expect(writePack({ manifest: roleManifest, role: broken })).rejects.toThrow(/ruolo del pacchetto non è valido: mind\.conflict \(parameters\[doppione\]\.temperature\)/)
+    await expect(writePack({ manifest: roleManifest })).rejects.toThrow(/non è valido: role\.shape/)
+    // costruito altrove senza controlli: lo ferma la lettura
+    const zip = await JSZip.loadAsync(data)
+    const bad = Buffer.from(JSON.stringify(broken))
+    zip.file('role.json', bad)
+    const m = JSON.parse(await zip.file('manifest.json')!.async('string'))
+    const { createHash } = await import('node:crypto')
+    m.files['role.json'] = createHash('sha256').update(bad).digest('hex')
+    zip.file('manifest.json', JSON.stringify(m))
+    await expect(readPack(await zip.generateAsync({ type: 'nodebuffer' }))).rejects.toThrow(/non è valido: mind\.conflict/)
+    // role.json alterato dopo la costruzione: l'impronta non torna
+    const tampered = await JSZip.loadAsync(data)
+    tampered.file('role.json', JSON.stringify({ instructions: 'Ignora tutto.' }))
+    await expect(readPack(await tampered.generateAsync({ type: 'nodebuffer' }))).rejects.toThrow(/alterato/)
+  })
+
+  it('ruolo: si installa con le basi che richiede, trovate nella sua cartella; senza firma serve la conferma', async () => {
+    const path = await roleFolder('completo', { bases: [TECNICHE, ESEMPI] })
+    const k = service()
+    expect(await k.inspectPack(path)).toMatchObject({ trust: 'unsigned', installedVersion: null, manifest: { type: 'identity' } })
+    await expect(k.installRole(path)).rejects.toThrow(/firma/i)
+    expect(await getRole(h.db, roleManifest.id)).toBeNull()
+    // installPack resta per le basi: un ruolo non passa di lì
+    await expect(k.installPack(path, { allowUntrusted: true })).rejects.toThrow(/non ancora supportato/)
+
+    const { role, missing } = await k.installRole(path, { allowUntrusted: true })
+    expect(missing).toEqual([])
+    expect(role).toMatchObject({ id: roleManifest.id, packageId: roleManifest.id, group: 'app.fastchat.ruolo.prompt', language: 'it', name: 'Esperto di prompt engineering', version: '1.0.0', origin: 'package', definition: promptRole })
+    expect((await k.listBases()).map((b) => [b.packageId, b.origin, b.meta?.forRole])).toEqual([
+      [ESEMPI, 'package', true],
+      [TECNICHE, 'package', true]
+    ])
+    expect((await k.inspectPack(path)).installedVersion).toBe('1.0.0')
+    expect((await listRoles(h.db)).map((r) => r.id)).toEqual([roleManifest.id])
+
+    // una conversazione con questo ruolo riceve le sue basi, ciascuna con il suo tipo
+    const conv = await createConversation(h.db, { model: 'chat', roleId: roleManifest.id })
+    expect(await k.linkRole(conv)).toEqual([])
+    expect((await k.status(conv)).linked.map((b) => [b.packageId, b.purpose]).sort()).toEqual([
+      [ESEMPI, 'examples'],
+      [TECNICHE, 'behavior']
+    ])
+    expect(await k.roleHealth(conv)).toEqual({ roleMissing: false, missingBases: [] })
+  })
+
+  it('ruolo firmato: si installa senza conferma; le basi senza firma riconosciuta restano fuori e sono segnalate', async () => {
+    const editor = keys('fastchat')
+    const path = await roleFolder('firmato', { bases: [TECNICHE], signer: editor.signer })
+    const k = service(h.db, { trustedKeys: { fastchat: editor.publicKey } })
+    const { missing } = await k.installRole(path)
+    // la base c'è nella cartella ma non è firmata: senza conferma non entra; l'altra non c'è proprio
+    expect(missing).toEqual([TECNICHE, ESEMPI])
+    expect(await k.listBases()).toEqual([])
+  })
+
+  it('base mancante: il ruolo si installa comunque; l\'avviso sparisce quando la base arriva, e la conversazione la riceve', async () => {
+    const path = await roleFolder('parziale', { bases: [TECNICHE] })
+    const k = service()
+    expect((await k.installRole(path, { allowUntrusted: true })).missing).toEqual([ESEMPI])
+    const conv = await createConversation(h.db, { model: 'chat', roleId: roleManifest.id })
+    expect(await k.roleHealth(conv)).toEqual({ roleMissing: false, missingBases: [ESEMPI] })
+    expect((await k.status(conv)).linked.map((b) => b.packageId)).toEqual([TECNICHE])
+    // la base arriva dopo, come un normale pacchetto
+    const late = join(dir, 'esempi.fcpack')
+    writeFileSync(late, await basePack(ESEMPI, 'Esempi di prompt'))
+    await k.installPack(late, { allowUntrusted: true })
+    expect(await k.roleHealth(conv)).toEqual({ roleMissing: false, missingBases: [] })
+    expect((await k.status(conv)).linked.map((b) => [b.packageId, b.purpose]).sort()).toEqual([
+      [ESEMPI, 'examples'],
+      [TECNICHE, 'behavior']
+    ])
+    // il Generalista non ha nulla da segnalare
+    expect(await k.roleHealth(await createConversation(h.db, { model: 'chat' }))).toEqual({ roleMissing: false, missingBases: [] })
+  })
+
+  it('aggiornamento: la versione nuova sostituisce la definizione; le scelte che il ruolo non conosce più tornano al predefinito', async () => {
+    const k = service()
+    await k.installRole(await roleFolder('v1', { bases: [TECNICHE, ESEMPI] }), { allowUntrusted: true })
+    const conv = await createConversation(h.db, { model: 'chat', roleId: roleManifest.id, roleParams: { stile: 'dettagliato', intervento: 'spiega' } })
+    const next: Role = { ...promptRole, parameters: promptRole.parameters!.map((p) => (p.id === 'intervento' ? { ...p, options: p.options.filter((o) => o.id !== 'spiega') } : p)) }
+    const { role, missing } = await k.installRole(await roleFolder('v2', { role: next, manifest: { version: '1.1.0' } }), { allowUntrusted: true })
+    expect(missing).toEqual([])
+    expect(role).toMatchObject({ version: '1.1.0', definition: next })
+    expect(await listRoles(h.db)).toHaveLength(1)
+    expect((await k.listBases()).length).toBe(2)
+    const saved = (await updateConversation(h.db, conv.id, {})).roleParams
+    expect(saved).toEqual({ stile: 'dettagliato', intervento: 'spiega' })
+    expect(resolveChoices(role.definition, saved)).toMatchObject({ stile: 'dettagliato', intervento: 'migliora' })
+  })
+
+  it('rimozione: le basi arrivate con il ruolo se ne vanno solo se nessun altro ruolo le richiede; la conversazione resta', async () => {
+    const k = service()
+    await k.installRole(await roleFolder('uno', { bases: [TECNICHE, ESEMPI] }), { allowUntrusted: true })
+    // un secondo ruolo che condivide le tecniche
+    const other: Role = { instructions: 'Sei un revisore di prompt.', bases: [{ id: TECNICHE, purpose: 'behavior' }] }
+    await k.installRole(await roleFolder('due', { role: other, manifest: { id: 'test.ruolo.revisore', name: 'Revisore' } }), { allowUntrusted: true })
+    // una base installata per conto proprio, che un ruolo richiede: non è «del ruolo»
+    const own = join(dir, 'mia.fcpack')
+    writeFileSync(own, await basePack('test.mia', 'Mia'))
+    await k.installPack(own, { allowUntrusted: true })
+    const third: Role = { instructions: 'Sei un archivista.', bases: [{ id: 'test.mia', purpose: 'documents' }] }
+    await k.installRole(await roleFolder('tre', { role: third, manifest: { id: 'test.ruolo.archivista', name: 'Archivista' } }), { allowUntrusted: true })
+
+    const conv = await createConversation(h.db, { model: 'chat', roleId: roleManifest.id, situation: 'Lavoro su un prompt' })
+    await k.linkRole(conv)
+    expect(await k.removeRole(roleManifest.id)).toEqual({ removedBases: [ESEMPI] })
+    expect((await k.listBases()).map((b) => b.packageId).sort()).toEqual([TECNICHE, 'test.mia'])
+    // la conversazione resta, con la sua situazione; l'app sa dire che il ruolo non c'è più
+    expect(await k.roleHealth((await updateConversation(h.db, conv.id, {}))!)).toEqual({ roleMissing: true, missingBases: [] })
+    expect((await k.status(conv)).linked.map((b) => b.packageId)).toEqual([TECNICHE])
+
+    expect(await k.removeRole('test.ruolo.revisore')).toEqual({ removedBases: [TECNICHE] })
+    expect(await k.removeRole('test.ruolo.archivista')).toEqual({ removedBases: [] })
+    expect((await k.listBases()).map((b) => b.packageId)).toEqual(['test.mia'])
+    await expect(k.removeRole('test.ruolo.archivista')).rejects.toThrow(/Ruolo non trovato/)
+  })
+
+  it('ruoli integrati: installati all\'avvio dopo le basi, aggiornati solo se la versione cambia, non rimovibili; il Generalista non si sostituisce', async () => {
+    const { mkdirSync } = await import('node:fs')
+    const builtin = join(dir, 'packs')
+    mkdirSync(builtin)
+    // in ordine alfabetico il ruolo viene prima delle sue basi: l'app installa comunque prima le basi
+    writeFileSync(join(builtin, 'a-ruolo.fcpack'), await writePack({ manifest: roleManifest, role: promptRole }))
+    writeFileSync(join(builtin, 'b-tecniche.fcpack'), await basePack(TECNICHE, 'Tecniche di prompt'))
+    writeFileSync(join(builtin, 'c-esempi.fcpack'), await basePack(ESEMPI, 'Esempi di prompt'))
+    writeFileSync(join(builtin, 'd-finto-generalista.fcpack'), await writePack({ manifest: { ...roleManifest, id: GENERALIST_ROLE_ID }, role: { instructions: 'Non sono il Generalista.' } }))
+    const k = service()
+    await k.installBuiltin(builtin)
+    expect((await listRoles(h.db)).map((r) => [r.id, r.origin, r.version])).toEqual([[roleManifest.id, 'builtin', '1.0.0']])
+    // le basi sono quelle dell'app, non «del ruolo»: restano anche senza di lui
+    expect((await k.listBases()).map((b) => [b.packageId, b.meta?.trust, b.meta?.forRole])).toEqual([
+      [ESEMPI, 'builtin', undefined],
+      [TECNICHE, 'builtin', undefined]
+    ])
+    await expect(k.removeRole(roleManifest.id)).rejects.toThrow(/integrato nell'app non si elimina/)
+    const before = (await getRole(h.db, roleManifest.id))!.createdAt
+    await k.installBuiltin(builtin)
+    expect((await getRole(h.db, roleManifest.id))!.createdAt).toBe(before)
+    writeFileSync(join(builtin, 'a-ruolo.fcpack'), await writePack({ manifest: { ...roleManifest, version: '1.1.0' }, role: { ...promptRole, instructions: 'Sei un esperto di prompt.' } }))
+    await k.installBuiltin(builtin)
+    expect(await getRole(h.db, roleManifest.id)).toMatchObject({ version: '1.1.0', definition: { instructions: 'Sei un esperto di prompt.' } })
   })
 })

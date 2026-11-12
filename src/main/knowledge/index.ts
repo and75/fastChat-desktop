@@ -4,7 +4,7 @@
 // della conversazione i documenti interi o gli estratti pertinenti.
 import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { createReadStream } from 'node:fs'
 import { getLocale, t } from '@shared/i18n'
 import {
@@ -25,7 +25,7 @@ import {
   type StoredDocumentChunk
 } from '@shared/knowledge'
 import { fromBuffer, toBuffer } from '@shared/memory'
-import { BASE_PURPOSES, type BasePurpose } from '@shared/types'
+import { BASE_PURPOSES, GENERALIST_ROLE_ID, type BasePurpose, type RoleRecord } from '@shared/types'
 import type {
   Conversation,
   DocumentRef,
@@ -59,6 +59,10 @@ import {
   clearBase,
   getBaseByPackage,
   roleOf,
+  getRole,
+  listRoles,
+  removeRole as deleteRole,
+  saveRole,
   listAutoLinkBases,
   listPendingLibraryDocuments,
   listConnections,
@@ -137,6 +141,16 @@ export function hashFile(path: string): Promise<string> {
       .on('end', () => resolve(hash.digest('hex')))
   })
 }
+
+/** Come si installa un pacchetto: conferma per quelli senza firma riconosciuta, integrato nell'app, arrivato dallo Store. */
+export interface InstallOptions {
+  allowUntrusted?: boolean
+  builtin?: boolean
+  store?: boolean
+}
+
+/** Trova il file del pacchetto di una base dato il suo id; null se non c'è. */
+export type BaseFinder = (packageId: string) => Promise<string | null>
 
 export function createKnowledge({ db, embedder, registry, cipher = plainCipher, onProgress, packsDir, trustedKeys = {} }: KnowledgeDeps) {
   /** Indicizzazioni in corso, per documento. */
@@ -642,7 +656,8 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
   /** Legge un pacchetto senza installarlo: cosa contiene, se la firma è riconosciuta, se il suo modello c'è. */
   async function inspectPack(path: string): Promise<PackInspection> {
     const { manifest, trust } = await readPack(await readFile(path), trustedKeys)
-    const existing = await getBaseByPackage(db, manifest.id)
+    // Un ruolo e una base sono due cose diverse anche con lo stesso id: ciascuno si confronta con i suoi.
+    const existing = manifest.type === 'identity' ? await getRole(db, manifest.id) : await getBaseByPackage(db, manifest.id)
     const model = manifest.embedding?.model
     return { path, manifest, trust, installedVersion: existing ? existing.version : null, modelInstalled: model ? await embedder.installed(model) : true }
   }
@@ -653,7 +668,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
    * al modello di embedding dichiarato. Di solo testo: i documenti si indicizzano con il modello dell'utente.
    * Senza firma riconosciuta serve la conferma esplicita (`allowUntrusted`); i pacchetti dell'app sono fidati.
    */
-  async function installPack(path: string, opts: { allowUntrusted?: boolean; builtin?: boolean; store?: boolean } = {}): Promise<KnowledgeBaseInfo> {
+  async function installPack(path: string, opts: InstallOptions & { forRole?: boolean } = {}): Promise<KnowledgeBaseInfo> {
     const data = await readFile(path)
     const { manifest, knowledge, vectors, trust } = await readPack(data, trustedKeys)
     if (manifest.type !== 'knowledge' || !knowledge) throw new PackError(t('err.pack.unsupported', { type: manifest.type }))
@@ -673,8 +688,10 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
       trust: opts.builtin ? 'builtin' : trust,
       ...(opts.store ? { store: true } : {})
     }
-    const fields = { name: manifest.name, description: manifest.description ?? '', version: manifest.version, embeddingModel: manifest.embedding?.model ?? null, packageId: manifest.id, meta }
     const existing = await getBaseByPackage(db, manifest.id)
+    // Arrivata con un ruolo: lo resta anche quando si aggiorna.
+    if (opts.forRole || existing?.meta?.forRole) meta.forRole = true
+    const fields = { name: manifest.name, description: manifest.description ?? '', version: manifest.version, embeddingModel: manifest.embedding?.model ?? null, packageId: manifest.id, meta }
     if (existing) await clearBase(db, existing.id)
     const base = existing ? (await updateBase(db, existing.id, fields))! : await createBase(db, { ...fields, origin: 'package' })
     const dims = manifest.embedding?.dimensions ?? 0
@@ -719,19 +736,116 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     return new Map((await listLibraryBases(db)).filter((b) => b.origin === 'package' && b.packageId).map((b) => [b.packageId!, b]))
   }
 
-  /** Installa o aggiorna i pacchetti integrati nell'app (cartella `packs/`): è ciò che l'app sa di suo. */
+  /**
+   * Installa o aggiorna i pacchetti integrati nell'app (cartella `packs/`): è ciò che l'app sa di suo. Prima le
+   * basi, poi i ruoli, che così trovano già installate quelle che richiedono.
+   */
   async function installBuiltin(dir: string): Promise<void> {
     const names = (await readdir(dir).catch(() => [])).filter((n) => n.endsWith(`.${PACK_EXTENSION}`)).sort()
+    const found: Array<{ path: string; role: boolean }> = []
     for (const name of names) {
       try {
         const path = join(dir, name)
         const { manifest, installedVersion } = await inspectPack(path)
-        if (installedVersion !== manifest.version) await installPack(path, { builtin: true })
+        if (installedVersion !== manifest.version) found.push({ path, role: manifest.type === 'identity' })
       } catch {
         /* un pacchetto integrato difettoso non deve impedire l'avvio */
       }
     }
+    for (const { path, role } of [...found.filter((f) => !f.role), ...found.filter((f) => f.role)]) {
+      try {
+        if (role) await installRole(path, { builtin: true })
+        else await installPack(path, { builtin: true })
+      } catch {
+        /* come sopra */
+      }
+    }
     await resumePending()
+  }
+
+  // ---- ruoli
+
+  /** Dove cercare il pacchetto di una base richiesta da un ruolo: nella cartella da cui arriva il ruolo. */
+  function siblingPacks(dir: string): BaseFinder {
+    let index: Promise<Map<string, string>> | null = null
+    const scan = async (): Promise<Map<string, string>> => {
+      const out = new Map<string, string>()
+      for (const name of (await readdir(dir).catch(() => [])).filter((n) => n.endsWith(`.${PACK_EXTENSION}`)).sort()) {
+        try {
+          const { manifest } = await readPack(await readFile(join(dir, name)), trustedKeys)
+          if (manifest.type === 'knowledge' && !out.has(manifest.id)) out.set(manifest.id, join(dir, name))
+        } catch {
+          /* un file che non è un pacchetto valido non è la base cercata */
+        }
+      }
+      return out
+    }
+    return async (id) => (await (index ??= scan())).get(id) ?? null
+  }
+
+  /**
+   * Installa un ruolo da un pacchetto di tipo «identity», o aggiorna quello già installato con lo stesso id (le
+   * conversazioni tengono le loro scelte; quelle che il ruolo non conosce più tornano al predefinito). Le basi
+   * che il ruolo richiede e che non ci sono vengono cercate (`findBase`, di norma la cartella del pacchetto) e
+   * installate con le stesse regole di fiducia; quelle non trovate o non installabili tornano in `missing`: il
+   * ruolo funziona comunque, senza.
+   */
+  async function installRole(path: string, opts: InstallOptions & { findBase?: BaseFinder } = {}): Promise<{ role: RoleRecord; missing: string[] }> {
+    const data = await readFile(path)
+    const { manifest, role: definition, trust } = await readPack(data, trustedKeys)
+    if (manifest.type !== 'identity' || !definition) throw new PackError(t('err.pack.unsupported', { type: manifest.type }))
+    if (manifest.id === GENERALIST_ROLE_ID) throw new PackError(t('err.pack.badId'))
+    if (trust !== 'verified' && !opts.builtin && !opts.allowUntrusted) throw new PackError(t('err.pack.untrusted'))
+    const role = await saveRole(db, {
+      id: manifest.id,
+      packageId: manifest.id,
+      group: manifest.group ?? null,
+      language: manifest.language ?? null,
+      name: manifest.name,
+      description: manifest.description ?? '',
+      version: manifest.version,
+      definition,
+      origin: opts.builtin ? 'builtin' : 'package'
+    })
+    const findBase = opts.findBase ?? siblingPacks(dirname(path))
+    const missing: string[] = []
+    for (const wanted of definition.bases ?? []) {
+      if (await getBaseByPackage(db, wanted.id)) continue
+      const found = await findBase(wanted.id).catch(() => null)
+      const installed = found ? await installPack(found, { allowUntrusted: opts.allowUntrusted, builtin: opts.builtin, store: opts.store, forRole: true }).catch(() => null) : null
+      if (!installed) missing.push(wanted.id)
+    }
+    return { role, missing }
+  }
+
+  /**
+   * Rimuove un ruolo installato. Le basi arrivate con lui se ne vanno solo se nessun altro ruolo le richiede; le
+   * conversazioni che lo usavano restano, come Generalista, con la loro situazione. I ruoli dell'app non si tolgono.
+   */
+  async function removeRole(id: string): Promise<{ removedBases: string[] }> {
+    const role = await getRole(db, id)
+    if (!role) throw new Error(t('err.role.notFound'))
+    if (role.origin === 'builtin') throw new Error(t('err.role.builtin'))
+    await deleteRole(db, id)
+    const stillWanted = new Set((await listRoles(db)).flatMap((r) => (r.definition.bases ?? []).map((b) => b.id)))
+    const removedBases: string[] = []
+    for (const wanted of role.definition.bases ?? []) {
+      if (stillWanted.has(wanted.id)) continue
+      const base = await getBaseByPackage(db, wanted.id)
+      if (!base || !base.meta?.forRole || base.meta.trust === 'builtin') continue
+      await removeBase(db, base.id)
+      removedBases.push(wanted.id)
+    }
+    return { removedBases }
+  }
+
+  /**
+   * Stato del ruolo di una conversazione, per l'avviso non bloccante all'apertura: il ruolo non c'è più, o
+   * mancano basi che richiede. Le basi installate dopo la creazione della conversazione vengono collegate ora.
+   */
+  async function roleHealth(conv: Conversation): Promise<{ roleMissing: boolean; missingBases: string[] }> {
+    const roleMissing = !!conv.roleId && conv.roleId !== GENERALIST_ROLE_ID && !(await getRole(db, conv.roleId))
+    return { roleMissing, missingBases: await linkRole(conv) }
   }
 
   /**
@@ -840,6 +954,9 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     inspectPack,
     installPack,
     installBuiltin,
+    installRole,
+    removeRole,
+    roleHealth,
     installedPacks,
     resumePending,
     exportBase,

@@ -1,7 +1,7 @@
 # Ruoli — decisioni e piano di esecuzione
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
-1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1, 2.2 e 2.3.
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1–2.4.
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -334,6 +334,7 @@ installare ruoli dallo Store nella propria lingua.
 | 2.1 Il ruolo come dato | Fatto | `src/shared/roles.ts`, `tests/roles.test.ts`, ruoli di prova in `tests/fixtures/roles/` |
 | 2.2 Dati e conversione | Fatto | Migrazione 0016; Generalista e conversione dei Brief all'avvio (`ensureRoles`) |
 | 2.3 Il ruolo nel prompt | Fatto | `rolePrompt`, lingua del ruolo (`src/main/promptLocale.ts`), `linkRole`; un test end-to-end aggiornato |
+| 2.4 Pacchetti | Fatto | `role.json` nel `.fcpack`; `installRole`, `removeRole`, `roleHealth`; ruoli integrati all'avvio |
 
 Scelte fatte nel passo 2.1:
 
@@ -387,6 +388,21 @@ Scelte fatte nel passo 2.3:
 - **Basi del ruolo** (`knowledge.linkRole`): collegate alla creazione della conversazione con il loro tipo;
   quelle non installate sono restituite, per l'avviso del passo 2.4.
 
+Scelte fatte nel passo 2.4:
+
+- **Pacchetti separati** (deciso dall'utente): il ruolo dichiara gli id delle basi che richiede; ogni base è un
+  normale pacchetto di conoscenza. Si cercano nella cartella da cui arriva il ruolo (`findBase`; lo Store ne
+  passerà uno suo al passo 2.6).
+- **Fiducia**: stesse regole per ruolo e basi. Un ruolo firmato si installa senza conferma; una sua base senza
+  firma riconosciuta resta fuori ed è segnalata come mancante.
+- **Basi «del ruolo»** (`meta.forRole`): solo quelle installate insieme a un ruolo. Alla rimozione del ruolo se
+  ne vanno se nessun altro ruolo le richiede. Una base installata per conto proprio, o integrata nell'app, resta.
+- **Ruoli integrati**: dalla cartella `packs/` dell'app, dopo le basi; non rimovibili. Per ora la cartella non
+  ne contiene (passo 2.7). Un pacchetto non può sostituire il Generalista.
+- **Solo lato main**: nessuna voce nuova nell'interfaccia né nelle API del renderer. Installare un ruolo da
+  file, l'elenco dei ruoli e l'avviso per ruolo o base mancante (`roleHealth`) si collegano al passo 2.5.
+- Il ruolo installato non registra ancora fiducia e provenienza dallo Store: servirà una colonna al passo 2.6.
+
 Scoperte durante il lavoro:
 
 - **Riuso con l'ordine B**: non è «solo l'ultima domanda». Gli estratti viaggiano con la domanda corrente; alla
@@ -434,8 +450,8 @@ Scoperte durante il lavoro:
 - **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8). `main` e il branch
   `claude/contesto-parametri-effettivi` coincidono, salvo questo documento.
 - **Seconda consegna** (ruoli): fatti i **passi 2.1** (il ruolo come dato), **2.2** (dati e conversione dei
-  Brief) e **2.3** (il prompt nasce da ruolo e situazione). Non c'è ancora modo di scegliere un ruolo dall'app.
-  Si prosegue dal **passo 2.4**.
+  Brief) e **2.3** (il prompt nasce da ruolo e situazione) e **2.4** (pacchetti dei ruoli). Non c'è ancora modo di
+  scegliere o installare un ruolo dall'app. Si prosegue dal **passo 2.5** (interfaccia: prima le anteprime).
 
 ## Cosa manca dalla prima consegna
 
@@ -471,7 +487,7 @@ Scoperte durante il lavoro:
 | Cosa | Comando |
 |---|---|
 | Typecheck | `npm run typecheck` |
-| Test unitari (329) | `npx vitest run` |
+| Test unitari (336) | `npx vitest run` |
 | End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
 | Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
 | Pacchetti e catalogo dello Store | `npm run packs:build` |

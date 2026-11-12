@@ -3,11 +3,13 @@
 //   manifest.json   cosa contiene, versione, modello di embedding dichiarato, impronta di ogni file
 //   knowledge.json  documenti e pezzi (il testo c'è sempre: serve per le fonti e la ricerca a parole)
 //   vectors.bin     vettori dei pezzi (float32, nell'ordine dei pezzi), se il pacchetto li porta
+//   role.json       definizione di un ruolo (pacchetti di tipo «identity»): istruzioni, mente, parametri, basi, profili
 //   signature.json  firma Ed25519 del manifest (che a sua volta fissa l'impronta degli altri file)
 // Un pacchetto con i vettori dichiara il modello con cui sono calcolati: per usarlo serve quel modello.
 import { createHash, createPrivateKey, createPublicKey, sign as cryptoSign, verify as cryptoVerify } from 'node:crypto'
 import JSZip from 'jszip'
 import { t } from '@shared/i18n'
+import { validateRole, type Role } from '@shared/roles'
 import type { PackManifest, PackTrust } from '@shared/types'
 
 export const PACK_FORMAT = 'fastchat-pack'
@@ -34,6 +36,8 @@ export interface PackContent {
   knowledge: PackKnowledge | null
   /** Vettori di tutti i pezzi, uno dopo l'altro (lunghezza = pezzi × dimensioni); null per i pacchetti di solo testo. */
   vectors: Float32Array | null
+  /** Definizione del ruolo, già controllata; null per i pacchetti che non sono ruoli. */
+  role: Role | null
   trust: PackTrust
 }
 
@@ -71,12 +75,15 @@ export interface WritePackInput {
   manifest: Omit<PackManifest, 'format' | 'formatVersion' | 'files' | 'documents' | 'chunks'>
   knowledge?: PackKnowledge
   vectors?: Float32Array | null
+  /** Definizione del ruolo, per i pacchetti di tipo «identity». */
+  role?: Role
   signer?: PackSigner
 }
 
 /** Costruisce il file del pacchetto. Il manifest riporta l'impronta di ogni file; se c'è chi firma, firma il manifest. */
-export async function writePack({ manifest, knowledge, vectors, signer }: WritePackInput): Promise<Buffer> {
+export async function writePack({ manifest, knowledge, vectors, role, signer }: WritePackInput): Promise<Buffer> {
   if (!validPackId(manifest.id)) throw new PackError(t('err.pack.badId'))
+  if (manifest.type === 'identity') assertRole(role)
   const zip = new JSZip()
   const files: Record<string, string> = {}
   const add = (name: string, data: Uint8Array): void => {
@@ -93,6 +100,7 @@ export async function writePack({ manifest, knowledge, vectors, signer }: WriteP
     if (!manifest.embedding || dims <= 0 || vectors.length !== chunks * dims) throw new PackError(t('err.pack.badVectors'))
     add('vectors.bin', new Uint8Array(vectors.buffer, vectors.byteOffset, vectors.byteLength))
   }
+  if (role) add('role.json', Buffer.from(JSON.stringify(role, null, 2), 'utf8'))
   const full: PackManifest = {
     ...manifest,
     format: PACK_FORMAT,
@@ -185,5 +193,23 @@ export async function readPack(data: Uint8Array, trusted: TrustedKeys = {}): Pro
   } else if (manifest.embedding) {
     throw new PackError(t('err.pack.badVectors'))
   }
-  return { manifest, knowledge, vectors, trust }
+  let role: Role | null = null
+  const roleBytes = contents.get('role.json')
+  if (manifest.type === 'identity' || roleBytes) {
+    let raw: unknown
+    try {
+      raw = roleBytes ? JSON.parse(Buffer.from(roleBytes).toString('utf8')) : undefined
+    } catch {
+      throw new PackError(t('err.pack.invalid'))
+    }
+    assertRole(raw)
+    role = raw
+  }
+  return { manifest, knowledge, vectors, role, trust }
+}
+
+/** Un ruolo che non rispetta le regole (docs/ruoli.md §3.2) è rifiutato, alla costruzione e all'installazione. */
+function assertRole(raw: unknown): asserts raw is Role {
+  const issues = validateRole(raw)
+  if (issues.length > 0) throw new PackError(t('err.pack.badRole', { issues: issues.map((i) => `${i.code} (${i.at})`).join(', ') }))
 }

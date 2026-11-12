@@ -437,6 +437,10 @@ export async function saveRole(db: Db, role: Omit<RoleRecord, 'createdAt'>): Pro
   return (await getRole(db, id))!
 }
 
+export async function removeRole(db: Db, id: string): Promise<void> {
+  await db.delete(roles).where(eq(roles.id, id))
+}
+
 /**
  * Il ruolo di una conversazione: definizione e lingua. Un ruolo che non c'è più (pacchetto rimosso) vale il
  * Generalista: la conversazione resta utilizzabile, con la sua situazione.

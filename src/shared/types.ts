@@ -148,6 +148,8 @@ export interface KnowledgeBaseMeta {
   trust?: PackTrust | 'builtin'
   /** Installata dallo Store: si aggiorna e si rimuove da lì. */
   store?: boolean
+  /** Arrivata insieme a un ruolo che la richiede: se ne va con l'ultimo ruolo che la usa. */
+  forRole?: boolean
   /** Nome e descrizione nelle altre lingue dell'interfaccia (dal manifest del pacchetto). */
   i18n?: PackI18n
 }
@@ -167,6 +169,8 @@ export interface PackManifest {
   /** Identificativo stabile, es. «it.fastchat.guida»: una nuova versione sostituisce la precedente. */
   id: string
   type: PackType
+  /** Lega le varianti dello stesso contenuto in lingue diverse (es. un ruolo in italiano e in francese). */
+  group?: string
   name: string
   version: string
   description?: string
