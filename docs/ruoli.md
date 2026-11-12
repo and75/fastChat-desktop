@@ -88,11 +88,15 @@ Regole:
 - Un'opzione che tocca la mente lo **dichiara** nell'interfaccia («imposta la temperatura a 0,4»).
 - **Vince l'ultima azione**: se l'utente sposta a mano un valore dopo aver scelto l'opzione, vale il suo; se
   poi cambia opzione, vale quello dell'opzione.
-- **Calcolo della mente** (deterministico, senza stato nascosto): valori base del ruolo (`mind`) → effetti delle
-  opzioni scelte, nell'**ordine di definizione dei parametri** (se due toccano lo stesso valore vale l'ultimo
-  definito) → ritocchi manuali dell'utente. Deselezionando un'opzione il valore torna da solo a quello
-  dell'altra opzione attiva o, se non c'è, a quello base del ruolo. Un ritocco manuale su un valore decade
-  quando l'utente cambia un'opzione che tocca quello stesso valore.
+- **Nessun conflitto possibile**: due opzioni che possono essere attive insieme non toccano mai la stessa
+  impostazione della mente. In pratica ogni impostazione (es. `temperature`) appartiene al massimo a **un**
+  parametro del ruolo, e in un parametro a scelta multipla al massimo a **una** opzione. Le opzioni alternative
+  di una scelta singola possono impostare lo stesso valore, perché ne è attiva una sola.
+  Il controllo si fa quando il pacchetto viene costruito e quando viene installato: un ruolo che viola la
+  regola è rifiutato.
+- **Calcolo della mente**: valori base del ruolo (`mind`) → effetti delle opzioni scelte → ritocchi manuali
+  dell'utente. Deselezionando un'opzione il valore torna a quello base del ruolo. Un ritocco manuale decade
+  quando l'utente cambia l'opzione che governa quello stesso valore.
 - Un `toggle` è trattato come un `single` con due opzioni (`on`/`off`): anche lo stato spento può avere la sua
   frase e il suo effetto sulla mente.
 
