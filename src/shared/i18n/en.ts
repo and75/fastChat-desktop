@@ -618,6 +618,7 @@ export const en: Record<Key, string> = {
   'prompt.style.concise': 'Get straight to the point: no introductions or conclusions. One example at most, when it clarifies. Explain only the non-obvious steps. {accuracy}',
   'prompt.style.extended': 'Answer thoroughly: context, alternatives, examples, caveats and edge cases. Structure the text with headings and lists when it helps.',
   'prompt.styleHeading': 'Answer style',
+  'prompt.situationHeading': 'Situation',
   'prompt.summaryHeading': 'Summary of the conversation so far',
   'prompt.transcript.user': 'User',
   'prompt.transcript.assistant': 'Assistant',

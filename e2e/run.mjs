@@ -956,7 +956,7 @@ try {
     await settings.getByTestId('dialog-close').click()
     await settings.waitFor({ state: 'detached' })
 
-    // ordine B con promemoria: conversazione nuova con un ruolo nel brief
+    // ordine B con promemoria acceso: conversazione nuova con un brief
     const { dialog } = await setContext('B', 'on')
     await dialog.getByTestId('dialog-close').click()
     await dialog.waitFor({ state: 'detached' })
@@ -971,9 +971,11 @@ try {
     await composer.press('Enter')
     await page.getByTestId('message-assistant').first().waitFor()
     const sent = chatRequests()[before].body.messages
+    // Il Brief è la situazione del Generalista, che non ha un ruolo da ricordare: nessun promemoria accanto
+    // alla domanda (con un ruolo vero c'è: lo verificano i test unitari, in attesa della scelta del ruolo).
     assert.deepEqual(sent, [
       { role: 'system', content: '# Ruolo\nSei un tutor' },
-      { role: 'user', content: '[Promemoria del ruolo: Sei un tutor]\n\n# Domanda\nciao' }
+      { role: 'user', content: 'ciao' }
     ])
     // nella chat si vede il testo scritto dall'utente, non il promemoria
     assert.equal(await page.getByTestId('message-user').last().innerText().then((t) => t.includes('Promemoria')), false)

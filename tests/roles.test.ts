@@ -15,9 +15,13 @@ import {
   roleContext,
   roleInstructions,
   roleMind,
+  rolePrompt,
+  roleReminderText,
+  situationLimit,
   validateRole,
   type Role
 } from '../src/shared/roles'
+import { buildSystemPrompt, computeContextUsage } from '../src/shared/prompt'
 import { DEFAULT_CONTEXT_SETTINGS, type ContextSettings } from '../src/shared/types'
 
 const load = (name: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, 'fixtures/roles', name), 'utf8'))
@@ -310,5 +314,48 @@ describe('profili (D28, D29)', () => {
     expect(roleContext({ ...DEFAULT_CONTEXT_SETTINGS, order: 'A', reminder: 'off', shares }, profile)).toEqual({ order: 'A', reminder: false, shares })
     // Con l'ordine C il promemoria non si applica, chiunque lo chieda.
     expect(roleContext({ ...DEFAULT_CONTEXT_SETTINGS, order: 'C' }, profile).reminder).toBe(false)
+  })
+})
+
+describe('il ruolo nel prompt (passo 2.3)', () => {
+  it('istruzioni, poi la situazione con il suo titolo, poi lo stile', () => {
+    const p = rolePrompt(assistente, { roleParams: { formato: 'breve' }, situation: '  Uso la versione 0.1.22  ', style: 'essential' })
+    expect(p.instructions).toBe(roleInstructions(assistente, { formato: 'breve' }))
+    expect(p.situation).toBe('# Situazione\nUso la versione 0.1.22')
+    expect(p.system).toMatch(new RegExp(`^${p.instructions.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\n\n# Situazione\nUso la versione 0\\.1\\.22\n\n# Stile della risposta\nRispondi nel modo più breve possibile`))
+    // Senza situazione non resta un titolo vuoto.
+    expect(rolePrompt(assistente, { roleParams: null, situation: ' ' })).toMatchObject({ situation: '', system: roleInstructions(assistente) })
+  })
+
+  it('Generalista: la situazione senza titolo; una riga non convertita vale il suo Brief', () => {
+    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: 'Contesto mio' })).toEqual({ instructions: '', situation: 'Contesto mio', system: 'Contesto mio' })
+    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: '' }).system).toBe('')
+    const brief = { role: 'Sei un tutor', context: '', goals: 'Spiegare', constraints: '' }
+    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: null, ...brief, style: 'concise' }).system).toBe(buildSystemPrompt(brief, 'concise'))
+    // Una volta convertita, il Brief non conta più.
+    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: 'Altro', ...brief }).system).toBe('Altro')
+  })
+
+  it('promemoria: il campo del ruolo, o la prima frase delle istruzioni', () => {
+    expect(roleReminderText(assistente)).toBe("Sei l'assistente di FastChat.")
+    expect(roleReminderText({ ...assistente, reminder: '  Assistente di FastChat: solo uso dell\'app  ' })).toBe("Assistente di FastChat: solo uso dell'app")
+    expect(roleReminderText({ instructions: 'Sei un tutor paziente\nSpiega con esempi.' })).toBe('Sei un tutor paziente')
+    expect(roleReminderText({ instructions: 'Usa la versione 0.1.22 dell\'app. Poi rispondi.' })).toBe("Usa la versione 0.1.22 dell'app.")
+    expect(roleReminderText(GENERALIST_ROLE)).toBe('')
+  })
+
+  it('limite della situazione: una quota della memoria, in caratteri (D21)', () => {
+    expect(situationLimit(8192)).toBe(1638)
+    expect(situationLimit(8192, 0.05, 4)).toBe(1638)
+    expect(situationLimit(4096, 0.1, 3.5)).toBe(1433)
+    expect(situationLimit(0)).toBe(0)
+  })
+
+  it('indicatore del contesto: istruzioni e situazione sono voci distinte', () => {
+    const base = { brief: { role: 'Vecchio', context: '', goals: '', constraints: '' }, messages: [], numCtx: 4096 }
+    expect(computeContextUsage({ ...base, instructions: 'Sei un tutor.', situation: 'Lezione' }).parts.map((p) => p.key)).toEqual(['instructions', 'situation'])
+    expect(computeContextUsage({ ...base, situation: 'Lezione' }).parts.map((p) => p.key)).toEqual(['situation'])
+    // Senza situazione (riga non convertita) si stima dal Brief, come prima.
+    expect(computeContextUsage(base).parts.map((p) => p.key)).toEqual(['instructions'])
   })
 })

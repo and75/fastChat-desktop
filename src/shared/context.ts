@@ -53,6 +53,8 @@ export interface ChatPartsInput {
   /** Le sue sezioni ('' se assenti): istruzioni (brief o prompt del piano), stile, riassunto, estratti. */
   instructions: string
   style: string
+  /** La situazione scritta dall'utente, com'è nel prompt ('' se assente). */
+  situation?: string
   summary: string
   memory: string
   /** Estratti dei documenti della base di conoscenza ('' se assenti). */
@@ -80,13 +82,15 @@ export function chatParts(input: ChatPartsInput): ContextPart[] {
   const knowledge = input.knowledge ?? ''
   const behavior = input.behavior ?? ''
   const examples = input.examples ?? ''
-  const [ti, ts, tsum, tm, tk, tb, te] = splitTokens(input.system ? estimateTokens(input.system, cpt) : 0, [input.instructions, input.style, input.summary, input.memory, knowledge, behavior, examples])
+  const situation = input.situation ?? ''
+  const [ti, ts, tsum, tm, tk, tb, te, tsit] = splitTokens(input.system ? estimateTokens(input.system, cpt) : 0, [input.instructions, input.style, input.summary, input.memory, knowledge, behavior, examples, situation])
   const last = input.messages.at(-1)
   const question = last?.role === 'user' ? last : null
   const history = question ? input.messages.slice(0, -1) : input.messages
   const historyTokens = history.reduce((n, m) => n + estimateTokens(m.content, cpt), 0)
   return [
     ...(input.instructions.trim() ? [{ key: 'instructions' as const, label: 'instructions', tokens: ti }] : []),
+    ...(situation.trim() ? [{ key: 'situation' as const, label: 'situation', tokens: tsit }] : []),
     ...(input.style ? [{ key: 'style' as const, label: 'style', tokens: ts }] : []),
     ...(input.summary ? [{ key: 'summary' as const, label: 'summary', tokens: tsum, count: input.summaryCount }] : []),
     ...(input.memory ? [{ key: 'memory' as const, label: 'memory', tokens: tm, count: input.memoryCount }] : []),

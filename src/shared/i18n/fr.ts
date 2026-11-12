@@ -619,6 +619,7 @@ export const fr: Record<Key, string> = {
   'prompt.style.concise': 'Va droit au but : ni introduction ni conclusion. Un exemple au plus, quand il éclaire. N\'explique que les étapes non évidentes. {accuracy}',
   'prompt.style.extended': 'Réponds de façon complète : contexte, alternatives, exemples, mises en garde et cas limites. Structure le texte avec des titres et des listes quand cela aide.',
   'prompt.styleHeading': 'Style de la réponse',
+  'prompt.situationHeading': 'Situation',
   'prompt.summaryHeading': 'Résumé de la conversation jusqu\'ici',
   'prompt.transcript.user': 'Utilisateur',
   'prompt.transcript.assistant': 'Assistant',

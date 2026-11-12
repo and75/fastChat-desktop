@@ -1,4 +1,4 @@
-import { buildSystemPrompt, formatPlan } from '@shared/prompt'
+import { briefToSituation, formatPlan } from '@shared/prompt'
 import { sourceLabel } from '@shared/knowledge'
 import { t } from '@shared/i18n'
 import type { Conversation, KnowledgeDocument, Message, Plan } from '@shared/types'
@@ -30,7 +30,8 @@ export function toMarkdown({ conversation: c, messages, plans, documents = [] }:
     ''
   )
 
-  const brief = buildSystemPrompt(c)
+  // La situazione; per le conversazioni nate con il Brief sono i suoi quattro campi con i loro titoli.
+  const brief = c.situation ?? briefToSituation(c)
   if (brief) {
     // Le sezioni del brief scendono di due livelli, sotto "## Brief".
     out.push(`## ${t('md.brief')}`, '', brief.replace(/^# /gm, '### '), '')

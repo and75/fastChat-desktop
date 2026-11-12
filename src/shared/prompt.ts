@@ -42,6 +42,33 @@ export function buildSystemPrompt(brief: Brief, style?: ResponseStyle | null): s
 export const briefToSituation = (brief: Partial<Brief>): string =>
   buildSystemPrompt({ role: brief.role ?? '', context: brief.context ?? '', goals: brief.goals ?? '', constraints: brief.constraints ?? '' })
 
+/** La situazione nel prompt. Con il titolo quando segue le istruzioni di un ruolo, così le due voci restano distinte. */
+export function situationSection(situation: string | null | undefined, titled: boolean): string {
+  const text = situation?.trim() ?? ''
+  return text && titled ? `# ${t('prompt.situationHeading')}\n${text}` : text
+}
+
+export interface RolePromptInput {
+  /** Istruzioni del ruolo con le frasi delle opzioni scelte; '' per il Generalista. */
+  instructions?: string
+  situation?: string | null
+  style?: ResponseStyle | null
+}
+
+/**
+ * System prompt di una conversazione: istruzioni del ruolo, situazione, stile. Per il Generalista la situazione
+ * entra senza titolo: una conversazione nata con il Brief riceve lo stesso prompt di prima.
+ */
+export function buildRolePrompt({ instructions = '', situation, style }: RolePromptInput): string {
+  return joinSections(instructions.trim(), situationSection(situation, !!instructions.trim()), buildStyleSection(style))
+}
+
+/** System prompt per la fase di pianificazione, a partire da quello della conversazione. */
+export const planPrompt = (system: string): string => joinSections(system, t('prompt.plan'))
+
+/** System prompt per l'esecuzione: quello della conversazione più il piano approvato dall'utente. */
+export const executePrompt = (system: string, steps: PlanStep[]): string => joinSections(system, t('prompt.execute', { plan: formatPlan(steps) }))
+
 export interface HistoryMessage {
   /** Id del messaggio (serve per sapere quali sono coperti dal riassunto). */
   id?: string
@@ -307,7 +334,7 @@ export const PLAN_SCHEMA = {
 
 /** System prompt per la fase di pianificazione: brief + stile + istruzioni del piano. */
 export function buildPlanPrompt(brief: Brief, style?: ResponseStyle | null): string {
-  return joinSections(buildSystemPrompt(brief, style), t('prompt.plan'))
+  return planPrompt(buildSystemPrompt(brief, style))
 }
 
 export function formatPlan(steps: PlanStep[]): string {
@@ -321,7 +348,7 @@ export function formatPlan(steps: PlanStep[]): string {
 
 /** System prompt per l'esecuzione: brief + stile + piano approvato dall'utente. */
 export function buildExecutePrompt(brief: Brief, steps: PlanStep[], style?: ResponseStyle | null): string {
-  return joinSections(buildSystemPrompt(brief, style), t('prompt.execute', { plan: formatPlan(steps) }))
+  return executePrompt(buildSystemPrompt(brief, style), steps)
 }
 
 /**
@@ -391,6 +418,9 @@ export interface ContextUsage {
 
 export interface ContextUsageInput {
   brief: Brief
+  /** Con i ruoli: istruzioni del ruolo e situazione. Se la situazione manca si stima dal Brief (righe non convertite). */
+  instructions?: string
+  situation?: string | null
   style?: ResponseStyle | null
   messages: Array<HistoryMessage & { promptEvalCount?: number | null }>
   /** Memoria effettiva della conversazione (num_ctx inviato a Ollama): vedi resolveNumCtx. */
@@ -410,19 +440,22 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage {
   const total = input.numCtx
 
   const { recent: messages, aligned } = historyAfter(input.messages, input.summaryUpTo)
-  const system = withSummary(buildSystemPrompt(input.brief, input.style), aligned ? input.summary : null)
+  const role = input.situation != null ? { instructions: input.instructions ?? '', situation: input.situation } : null
+  const system = withSummary(role ? buildRolePrompt({ ...role, style: input.style }) : buildSystemPrompt(input.brief, input.style), aligned ? input.summary : null)
   const cpt = charsPerToken(input.messages)
   const est = (text: string): number => estimateTokens(text, cpt)
   const systemTokens = system ? est(system) : 0
   const historyTokens = messages.reduce((n, m) => n + est(m.content), 0)
   const estimateAll = systemTokens + historyTokens
   // Voci: il system prompt diviso tra istruzioni, stile e riassunto; poi lo storico non riassunto.
-  const instructions = buildSystemPrompt(input.brief, null)
+  const instructions = role ? role.instructions.trim() : buildSystemPrompt(input.brief, null)
+  const situation = role ? situationSection(role.situation, !!instructions) : ''
   const style = buildStyleSection(input.style)
   const summaryText = aligned ? withSummary('', input.summary) : ''
-  const [ti, ts, tsum] = splitTokens(systemTokens, [instructions, style, summaryText])
+  const [ti, ts, tsum, tsit] = splitTokens(systemTokens, [instructions, style, summaryText, situation])
   const parts: ContextPart[] = [
     ...(instructions ? [{ key: 'instructions' as const, label: 'instructions', tokens: ti }] : []),
+    ...(situation ? [{ key: 'situation' as const, label: 'situation', tokens: tsit }] : []),
     ...(style ? [{ key: 'style' as const, label: 'style', tokens: ts }] : []),
     ...(summaryText ? [{ key: 'summary' as const, label: 'summary', tokens: tsum, count: input.messages.length - messages.length }] : []),
     ...(messages.length ? [{ key: 'history' as const, label: 'history', tokens: historyTokens, count: messages.length }] : [])

@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createChatService } from '../src/main/chat'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { addMessage, createConversation, getConversation, listMessages, updateConversation } from '../src/main/db/repo'
+import { addMessage, createConversation, getConversation, listMessages, saveRole, updateConversation } from '../src/main/db/repo'
 import { createOllamaClient } from '../src/main/ollama'
 import { createSummarizer } from '../src/main/summary'
 import type { Conversation, StreamEvent } from '../src/shared/types'
@@ -99,6 +99,20 @@ describe('summarizer', () => {
     const conv = await seeded(8)
     expect((await s.summarize(conv.id)).outcome).toBe('failed')
     expect((await getConversation(h.db, conv.id))!.summary).toBeNull()
+  })
+})
+
+describe('riassunto e ruolo', () => {
+  it('il prompt del riassunto è nella lingua del ruolo', async () => {
+    await saveRole(h.db, { id: 'tuteur', packageId: null, group: null, language: 'fr', name: 'Tuteur', description: '', version: null, definition: { instructions: 'Tu es un tuteur.' }, origin: 'package' })
+    const s = createSummarizer({ db: h.db, ollama: createOllamaClient(() => fake.url) })
+    const conv = await seeded(4)
+    await updateConversation(h.db, conv.id, { roleId: 'tuteur' })
+    const before = fake.requests.length
+    expect((await s.summarize(conv.id, true)).outcome).toBe('updated')
+    const sent = fake.requests.slice(before).map(firstContent)
+    expect(sent.some((c) => c.startsWith("Tu es l'archiviste"))).toBe(true)
+    expect(sent.some((c) => c.startsWith("Sei l'archivista"))).toBe(false)
   })
 })
 

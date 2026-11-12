@@ -617,6 +617,7 @@ export const it = {
   'prompt.style.concise': 'Vai dritto al punto: niente introduzioni né conclusioni. Al massimo un esempio, quando chiarisce. Spiega solo i passaggi non ovvi. {accuracy}',
   'prompt.style.extended': 'Rispondi in modo completo: contesto, alternative, esempi, avvertenze e casi limite. Struttura il testo con titoli ed elenchi quando aiuta.',
   'prompt.styleHeading': 'Stile della risposta',
+  'prompt.situationHeading': 'Situazione',
   'prompt.summaryHeading': 'Riassunto della conversazione finora',
   'prompt.transcript.user': 'Utente',
   'prompt.transcript.assistant': 'Assistente',

@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import {
-  buildExecutePrompt,
-  buildPlanPrompt,
   buildStyleSection,
-  buildSystemPrompt,
   charsPerToken,
+  executePrompt,
+  planPrompt,
   DEFAULT_HISTORY_LIMITS,
   estimateTokens,
   historyAfter,
@@ -39,6 +38,7 @@ import {
   listPlans,
   removeMessage,
   removePlan,
+  roleOf,
   updateConversation,
   updatePlan
 } from './db/repo'
@@ -51,6 +51,8 @@ import type { ChatMessage, ChatOptions, ChatRequest, OllamaClient } from './olla
 import { memoryBudget, type Memory, type Recall } from './memory'
 import type { Summarizer } from './summary'
 import { knowledgeBudget } from '@shared/knowledge'
+import { GENERALIST_ROLE, rolePrompt, roleReminderText, type Role } from '@shared/roles'
+import { withPromptLanguage } from './promptLocale'
 import type { Knowledge, RoleRecall } from './knowledge'
 import type { Embedder } from './embedder'
 
@@ -126,7 +128,7 @@ export interface Extras {
 export function buildChatMessages(
   conv: Conversation,
   history: Message[],
-  system: string = buildSystemPrompt(conv, conv.style),
+  system: string = rolePrompt(GENERALIST_ROLE, conv).system,
   caps: ModelCapabilities | null = null,
   /** Estratti della memoria della conversazione (sezione già pronta), dopo il riassunto. */
   memory = ''
@@ -141,6 +143,10 @@ export interface ComposeConfig {
   /** Per l'ordine C: le istruzioni senza la situazione, e la situazione da sola (insieme fanno `base`). */
   instructions?: string
   situation?: string
+  /** La situazione com'è dentro `base`, per la sua voce nel monitor. */
+  situationPart?: string
+  /** L'essenziale del ruolo per il promemoria. Se manca si usa il campo Ruolo del Brief (conversazioni non convertite). */
+  reminderText?: string
 }
 
 /** Come buildChatMessages, più le voci per il monitor del contesto e i messaggi rimasti fuori. */
@@ -158,7 +164,7 @@ export function composeChat(
   const knowledge = extras.knowledge ?? ''
   const behavior = extras.behavior ?? ''
   const examples = extras.examples ?? ''
-  const reminder = config.reminder ? roleReminder(conv.role) : ''
+  const reminder = config.reminder ? roleReminder(config.reminderText ?? conv.role) : ''
   // Ordine di lettura: riassunto, memoria della conversazione, tecniche ed esempi del ruolo, documenti (i più
   // vicini alla domanda per ultimi).
   const composed = composeMessages({
@@ -183,9 +189,12 @@ export function composeChat(
   const style = buildStyleSection(conv.style)
   const hasStyle = !!style && base.includes(style)
   const cpt = charsPerToken(history)
+  const situation = config.situationPart && base.includes(config.situationPart) ? config.situationPart : ''
+  const withoutStyle = hasStyle ? base.replace(style, '') : base
   const parts = chatParts({
     system: composed.flat,
-    instructions: hasStyle ? base.replace(style, '') : base,
+    instructions: situation ? withoutStyle.replace(situation, '') : withoutStyle,
+    situation,
     style: hasStyle ? style : '',
     summary,
     memory,
@@ -238,14 +247,16 @@ export function fallbackTitle(question: string): string {
   return line.length > 50 ? line.slice(0, 50).replace(/\s+\S*$/, '') + '…' : line || DEFAULT_TITLE
 }
 
-function systemFor(conv: Conversation, mode: Mode): string {
+/** System prompt della chiamata: istruzioni del ruolo, situazione e stile, più le istruzioni del piano se servono. */
+function systemFor(conv: Conversation, mode: Mode, role: Role = GENERALIST_ROLE): string {
+  const { system } = rolePrompt(role, conv)
   switch (mode.kind) {
     case 'plan':
-      return buildPlanPrompt(conv, conv.style)
+      return planPrompt(system)
     case 'execute':
-      return buildExecutePrompt(conv, mode.plan.steps, conv.style)
+      return executePrompt(system, mode.plan.steps)
     default:
-      return buildSystemPrompt(conv, conv.style)
+      return system
   }
 }
 
@@ -395,9 +406,11 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
   ): Promise<{ request: ChatRequest; start: CallStart }> {
     const history = await listMessages(db, conv.id)
     const context = resolveContext(await getContext?.().catch(() => null))
-    // Ordine C: la «situazione» (oggi il Contesto del brief) resta nel sistema, il resto va con la domanda.
-    const split = context.order === 'C' ? { instructions: systemFor({ ...conv, context: '' }, mode), situation: buildSystemPrompt({ role: '', context: conv.context, goals: '', constraints: '' }) } : {}
-    const composed = composeChat(conv, history, systemFor(conv, mode), caps, extras, { ...context, ...split })
+    const role = (await roleOf(db, conv)).definition
+    const situationPart = rolePrompt(role, conv).situation
+    // Ordine C: la situazione resta nel sistema; istruzioni del ruolo, stile e piano vanno con la domanda.
+    const split = context.order === 'C' ? { instructions: systemFor({ ...conv, situation: '' }, mode, role), situation: situationPart } : {}
+    const composed = composeChat(conv, history, systemFor(conv, mode, role), caps, extras, { ...context, ...split, situationPart, reminderText: roleReminderText(role) })
     const request: ChatRequest = {
       model: conv.model,
       messages: composed.messages,
@@ -532,7 +545,9 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     const active: ActiveStream = { conversationId: original.id, target, controller, done: Promise.resolve() }
     streams.set(streamId, active)
     // Parte al giro successivo: il renderer riceve prima lo streamId, poi gli eventi.
-    active.done = new Promise<void>((resolve) => setImmediate(resolve)).then(run)
+    // I testi che l'app scrive per il modello seguono la lingua del ruolo, per tutta la chiamata.
+    const { language } = await roleOf(db, original)
+    active.done = new Promise<void>((resolve) => setImmediate(resolve)).then(() => withPromptLanguage(language, run))
     return streamId
   }
 

@@ -4,7 +4,6 @@ import { t } from '@shared/i18n'
 // system prompt li sostituisce. Gira dopo ogni risposta, con lo stesso modello e lo stesso num_ctx.
 import {
   buildSummaryRequest,
-  buildSystemPrompt,
   charsPerToken,
   cleanSummary,
   computeContextUsage,
@@ -19,7 +18,9 @@ import {
 import { resolveSettings } from '@shared/settings'
 import type { Conversation, ModelCapabilities } from '@shared/types'
 import type { Db } from './db/client'
-import { getConversation, getModelSetting, listMessages, updateConversation } from './db/repo'
+import { getConversation, getModelSetting, listMessages, roleOf, updateConversation } from './db/repo'
+import { rolePrompt } from '@shared/roles'
+import { withPromptLanguage } from './promptLocale'
 import { callInput, type CallStart, type ContextLog } from './contextLog'
 import type { ChatRequest, ChatResult, OllamaClient } from './ollama'
 
@@ -86,7 +87,10 @@ export function createSummarizer({ db, ollama, contextLog }: SummarizerDeps) {
     let release: () => void = () => undefined
     running.set(conversationId, new Promise<void>((r) => (release = r)))
     try {
-      return await run(conversationId, force, onStart)
+      // Il prompt del riassunto è nella lingua del ruolo, come il resto di ciò che l'app scrive per il modello.
+      const conv = await getConversation(db, conversationId)
+      const language = conv ? (await roleOf(db, conv)).language : null
+      return await withPromptLanguage(language, () => run(conversationId, force, onStart))
     } finally {
       running.delete(conversationId)
       release()
@@ -109,8 +113,11 @@ export function createSummarizer({ db, ollama, contextLog }: SummarizerDeps) {
     const s = resolveSettings(conv, caps)
     const reserveTokens = s.reserveTokens
     // Stesso numero del misuratore: i conteggi reali di Ollama dell'ultimo scambio, quando validi.
+    const prompt = rolePrompt((await roleOf(db, conv)).definition, conv)
     const usage = computeContextUsage({
       brief: conv,
+      instructions: prompt.instructions,
+      situation: conv.situation,
       style: conv.style,
       messages: history,
       numCtx: s.numCtx,
@@ -120,7 +127,7 @@ export function createSummarizer({ db, ollama, contextLog }: SummarizerDeps) {
     })
     const plan = planSummary({
       recent,
-      systemPrompt: withSummary(buildSystemPrompt(conv, conv.style), previous),
+      systemPrompt: withSummary(prompt.system, previous),
       numCtx: s.numCtx,
       measuredTotal: usage.estimated && usage.used === 0 ? null : usage.used,
       force

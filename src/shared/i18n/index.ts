@@ -52,9 +52,28 @@ function fill(text: string, params?: Params): string {
   return text.replace(/\{(\w+)\}/g, (m, name: string) => (name in params ? String(params[name]) : m))
 }
 
+/**
+ * Testi che l'app scrive per il modello (titoli dei blocchi, stile, riassunto, piano, sezioni degli estratti).
+ * Seguono la lingua del ruolo, se il ruolo ne ha una; tutto il resto segue l'interfaccia.
+ */
+const PROMPT_KEY = /^(prompt\.|knowledge\.(section|behavior|examples)\.|memory\.(section|who)\.)/
+let promptLocaleSource: (() => Locale | null | undefined) | null = null
+
+/** Il main indica da dove leggere la lingua dei testi per il modello durante una chiamata (vedi main/promptLocale). */
+export function setPromptLocaleSource(source: (() => Locale | null | undefined) | null): void {
+  promptLocaleSource = source
+}
+
+/** Lingua di un ruolo, se è una di quelle in cui l'app sa scrivere; altrimenti `null` (= segue l'interfaccia). */
+export function toLocale(language: string | null | undefined): Locale | null {
+  const code = (language ?? '').toLowerCase().split(/[-_]/)[0]
+  return (LOCALES as string[]).includes(code) ? (code as Locale) : null
+}
+
 /** Testo nella lingua attiva, con i segnaposto `{nome}` sostituiti. */
 export function t(key: Key, params?: Params): string {
-  return fill(DICTS[current][key] ?? it[key] ?? key, params)
+  const locale = (promptLocaleSource && PROMPT_KEY.test(key) ? promptLocaleSource() : null) ?? current
+  return fill(DICTS[locale][key] ?? it[key] ?? key, params)
 }
 
 /** Chiavi con varianti di plurale: `chiave_one` e `chiave_other`. */

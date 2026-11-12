@@ -1,6 +1,6 @@
 import { normalizeContextSettings } from '@shared/compose'
 import { briefToSituation } from '@shared/prompt'
-import { GENERALIST_ROLE, type RoleChoices } from '@shared/roles'
+import { GENERALIST_ROLE, type Role, type RoleChoices } from '@shared/roles'
 import { randomUUID } from 'node:crypto'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import {
@@ -206,8 +206,16 @@ export async function createConversation(
   return (await getConversation(db, id))!
 }
 
+const BRIEF_FIELDS = ['role', 'context', 'goals', 'constraints'] as const
+
 export async function updateConversation(db: Db, id: string, patch: ConversationPatch): Promise<Conversation> {
   const clean = sanitizePatch(patch)
+  // Transitorio, fino alla scheda «Situazione» (passo 2.5 dei ruoli): la vecchia scheda Brief scrive ancora i
+  // quattro campi, e la situazione li segue. Una situazione scritta esplicitamente vince.
+  if (clean.situation === undefined && BRIEF_FIELDS.some((key) => clean[key] !== undefined)) {
+    const current = await getConversation(db, id)
+    if (current) clean.situation = briefToSituation({ ...current, ...clean })
+  }
   await db
     .update(conversations)
     .set({ ...clean, updatedAt: Date.now() })
@@ -417,6 +425,25 @@ export async function listRoles(db: Db): Promise<RoleRecord[]> {
 export async function getRole(db: Db, id: string): Promise<RoleRecord | null> {
   const [row] = await db.select().from(roles).where(eq(roles.id, id))
   return row ?? null
+}
+
+/** Registra un ruolo installato, o lo aggiorna se c'è già (stesso id). */
+export async function saveRole(db: Db, role: Omit<RoleRecord, 'createdAt'>): Promise<RoleRecord> {
+  const { id, ...fields } = role
+  await db
+    .insert(roles)
+    .values({ ...role, createdAt: Date.now() })
+    .onConflictDoUpdate({ target: roles.id, set: fields })
+  return (await getRole(db, id))!
+}
+
+/**
+ * Il ruolo di una conversazione: definizione e lingua. Un ruolo che non c'è più (pacchetto rimosso) vale il
+ * Generalista: la conversazione resta utilizzabile, con la sua situazione.
+ */
+export async function roleOf(db: Db, conv: { roleId: string | null }): Promise<{ definition: Role; language: string | null }> {
+  const record = conv.roleId && conv.roleId !== GENERALIST_ROLE_ID ? await getRole(db, conv.roleId) : null
+  return { definition: record?.definition ?? GENERALIST_ROLE, language: record?.language ?? null }
 }
 
 /** Il Generalista esiste sempre: nessuna istruzione, nessun parametro, nessuna base. Si crea se manca. */

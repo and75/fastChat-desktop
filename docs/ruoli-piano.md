@@ -1,7 +1,7 @@
 # Ruoli — decisioni e piano di esecuzione
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
-1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1 e 2.2.
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1, 2.2 e 2.3.
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -333,6 +333,7 @@ installare ruoli dallo Store nella propria lingua.
 | 1.8 Chiusura | Fatto | Documentazione e protocollo di prova |
 | 2.1 Il ruolo come dato | Fatto | `src/shared/roles.ts`, `tests/roles.test.ts`, ruoli di prova in `tests/fixtures/roles/` |
 | 2.2 Dati e conversione | Fatto | Migrazione 0016; Generalista e conversione dei Brief all'avvio (`ensureRoles`) |
+| 2.3 Il ruolo nel prompt | Fatto | `rolePrompt`, lingua del ruolo (`src/main/promptLocale.ts`), `linkRole`; un test end-to-end aggiornato |
 
 Scelte fatte nel passo 2.1:
 
@@ -358,11 +359,33 @@ Scelte fatte nel passo 2.2:
   ogni domanda; dopo sono testo dell'utente.
 - **Per il Generalista la situazione entra nel prompt senza un titolo suo**: così il prompt è identico a prima.
   Se metterlo per gli altri ruoli si decide al passo 2.3.
-- **La scheda Brief resta senza effetto dal passo 2.3 al 2.5** (deciso dall'utente: siamo in sviluppo). Nel
-  passo 2.2 il prompt legge ancora i quattro campi; dal 2.3 leggerà la situazione, e la scheda Brief verrà
-  sostituita solo al 2.5. Chi modifica il Brief in quel periodo non cambia il prompt.
+- **Scheda Brief fino al passo 2.5**: l'utente aveva scelto di lasciarla senza effetto. Al passo 2.3 è emerso
+  che l'end-to-end scrive il Brief dalla scheda in molte prove e si ferma al primo errore: senza effetto sarebbe
+  rimasto inutilizzabile per due passi. Per questo `updateConversation` rigenera la situazione quando cambiano
+  i quattro campi (poche righe, marcate «transitorio»). **Da togliere al passo 2.5**, con la scheda Brief.
 - Le conversazioni e i template nuovi nascono sul Generalista; un template salva anche ruolo, scelte, ritocchi
   e situazione.
+
+Scelte fatte nel passo 2.3:
+
+- **Titolo «# Situazione»** solo quando il ruolo ha istruzioni; per il Generalista la situazione entra senza
+  titolo (prompt identico a prima).
+- **La mente non si tocca in questo passo**: temperatura, stile e ragionamento restano quelli salvati nella
+  conversazione. Il ruolo li imposterà alla scelta del ruolo e delle opzioni (passo 2.5).
+- **Lingua del ruolo**: i testi per il modello (chiavi `prompt.*`, sezioni di conoscenza e memoria) seguono la
+  lingua del ruolo per tutta la chiamata, anche con più conversazioni insieme; errori e interfaccia no. Vale
+  anche per riassunto e titolo. Una lingua che l'app non conosce (es. tedesco) usa i testi dell'interfaccia.
+- **Promemoria**: campo `reminder` del ruolo, altrimenti la prima frase delle istruzioni. Il Generalista non ne
+  ha: con il promemoria acceso e un vecchio Brief non compare più nulla accanto alla domanda.
+- **Ordine C con un vecchio Brief**: tutto il Brief è situazione e resta nel sistema (prima Ruolo, Obiettivi e
+  Vincoli andavano accanto alla domanda).
+- **Monitor e indicatore del contesto**: «Istruzioni» e «Situazione» sono voci distinte; il Brief convertito
+  compare come «Situazione».
+- **Un ruolo che non c'è più** (pacchetto rimosso) vale il Generalista: resta la situazione.
+- **Limite della situazione** (`situationLimit`): calcolato, non applicato al prompt. Servirà al contatore della
+  scheda nuova.
+- **Basi del ruolo** (`knowledge.linkRole`): collegate alla creazione della conversazione con il loro tipo;
+  quelle non installate sono restituite, per l'avviso del passo 2.4.
 
 Scoperte durante il lavoro:
 
@@ -410,8 +433,9 @@ Scoperte durante il lavoro:
 
 - **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8). `main` e il branch
   `claude/contesto-parametri-effettivi` coincidono, salvo questo documento.
-- **Seconda consegna** (ruoli): fatti i **passi 2.1** (il ruolo come dato) e **2.2** (dati e conversione dei
-  Brief). Il prompt legge ancora il Brief. Si prosegue dal **passo 2.3**.
+- **Seconda consegna** (ruoli): fatti i **passi 2.1** (il ruolo come dato), **2.2** (dati e conversione dei
+  Brief) e **2.3** (il prompt nasce da ruolo e situazione). Non c'è ancora modo di scegliere un ruolo dall'app.
+  Si prosegue dal **passo 2.4**.
 
 ## Cosa manca dalla prima consegna
 
@@ -447,7 +471,7 @@ Scoperte durante il lavoro:
 | Cosa | Comando |
 |---|---|
 | Typecheck | `npm run typecheck` |
-| Test unitari (315) | `npx vitest run` |
+| Test unitari (329) | `npx vitest run` |
 | End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
 | Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
 | Pacchetti e catalogo dello Store | `npm run packs:build` |
@@ -465,7 +489,8 @@ Scoperte durante il lavoro:
 | `src/shared/roles.ts` | Il ruolo come dato: validazione, istruzioni, mente, profili (passo 2.1) |
 | `src/shared/compose.ts` | Compositore del contesto, ordini, promemoria, rilevamento del posto «sistema» |
 | `src/main/chat.ts` | `composeChat`, `buildRequest`: dove entrano istruzioni, estratti e impostazioni |
-| `src/shared/prompt.ts` | `buildSystemPrompt` dal Brief: è ciò che il ruolo sostituirà |
+| `src/shared/prompt.ts` | `buildRolePrompt` (istruzioni, situazione, stile); `buildSystemPrompt` resta per il Brief e la conversione |
+| `src/main/promptLocale.ts` | Lingua dei testi per il modello durante una chiamata |
 | `src/main/knowledge/index.ts` | `recallAll`, tipi di base (`purpose`), pacchetti |
 | `src/main/knowledge/pack.ts`, `src/main/store.ts`, `src/shared/store.ts` | Formato `.fcpack`, Store, catalogo |
 | `src/renderer/src/components/BriefPanel.tsx`, `ModelSettings.tsx`, `Sidebar.tsx` | Brief, mente, menu dei template |

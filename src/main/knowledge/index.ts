@@ -58,6 +58,7 @@ import {
   linkBase,
   clearBase,
   getBaseByPackage,
+  roleOf,
   listAutoLinkBases,
   listPendingLibraryDocuments,
   listConnections,
@@ -264,6 +265,25 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
   /** Collega alla conversazione (appena creata) le basi segnate «collega alle nuove conversazioni». */
   async function linkDefaults(conv: Conversation): Promise<void> {
     for (const base of await listAutoLinkBases(db)) await linkBase(db, conv.id, base.id)
+  }
+
+  /**
+   * Collega alla conversazione le basi del suo ruolo, ciascuna con il suo tipo (comportamento, esempi, documenti).
+   * Restituisce gli id dei pacchetti che il ruolo chiede e che non sono installati: la conversazione funziona
+   * comunque, senza quelle basi.
+   */
+  async function linkRole(conv: Conversation): Promise<string[]> {
+    const missing: string[] = []
+    for (const wanted of (await roleOf(db, conv)).definition.bases ?? []) {
+      const base = await getBaseByPackage(db, wanted.id)
+      if (!base) {
+        missing.push(wanted.id)
+        continue
+      }
+      await linkBase(db, conv.id, base.id)
+      await setLinkPurpose(db, conv.id, base.id, wanted.purpose)
+    }
+    return missing
   }
 
   // ---- indicizzazione
@@ -816,6 +836,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     link,
     unlink,
     linkDefaults,
+    linkRole,
     inspectPack,
     installPack,
     installBuiltin,

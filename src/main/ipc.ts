@@ -358,6 +358,8 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     const fill = await calibrationPatch(calibrate, conv.model, { ...conv, temperature: init.temperature ?? null }, true)
     // Le basi segnate «collega alle nuove conversazioni» (es. quelle predefinite dell'app) arrivano già collegate.
     await knowledge.linkDefaults(conv).catch(() => undefined)
+    // Le basi del ruolo (comportamento, esempi) fanno parte del ruolo: arrivano con il loro tipo.
+    await knowledge.linkRole(conv).catch(() => undefined)
     return Object.keys(fill).length ? updateConversation(db, conv.id, fill) : conv
   })
 

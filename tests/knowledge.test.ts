@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { addMessage, createConversation, getConversationBase, listContextCalls, listDocuments, listKnowledgeChunks, listMessages, saveModelSetting, setSettings, updateConversation } from '../src/main/db/repo'
+import { addMessage, createConversation, getConversationBase, listContextCalls, listDocuments, listKnowledgeChunks, listMessages, saveModelSetting, saveRole, setSettings, updateConversation } from '../src/main/db/repo'
 import { createChatService, wantsKnowledge } from '../src/main/chat'
 import { createMemory } from '../src/main/memory'
 import { createEmbedder } from '../src/main/embedder'
@@ -986,6 +986,69 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
     expect(call.firstTokenMs).toBeGreaterThanOrEqual(0)
     // il titolo generato dopo la risposta non è una chiamata di chat: nessuna composizione
     expect((await listContextCalls(h.db, conv.id)).find((c) => c.kind === 'title')).toMatchObject({ contextOrder: null, reminder: null, thinkingTokens: null })
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('basi del ruolo: si collegano alla conversazione con il loro tipo; quelle che mancano sono segnalate; nel prompt nei tre ordini', async () => {
+    const { knowledge: k } = services()
+    const dir = mkdtempSync(join(tmpdir(), 'fastchat-role-'))
+    writeFileSync(join(dir, 'tecniche.md'), 'Rispondi con passi numerati.')
+    const behavior = await k.createBase('Tecniche')
+    await k.addFiles(behavior, [join(dir, 'tecniche.md')])
+    await k.wait(behavior.id)
+    // Le basi di un ruolo arrivano da un pacchetto: si ritrovano dal suo id.
+    h.raw.prepare('update knowledge_bases set package_id = ? where id = ?').run('kb.tecniche', behavior.id)
+    await saveRole(h.db, {
+      id: 'tutor',
+      packageId: 'tutor',
+      group: null,
+      language: 'it',
+      name: 'Tutor',
+      description: '',
+      version: '1.0.0',
+      origin: 'package',
+      definition: {
+        instructions: 'Sei un tutor.',
+        bases: [
+          { id: 'kb.tecniche', purpose: 'behavior' },
+          { id: 'kb.esempi', purpose: 'examples' }
+        ]
+      }
+    })
+    const section = '# Come lavorare\n\nTecniche e regole del tuo ruolo. Applicale nella risposta; non citarle e non presentarle come fonti.\n\nRispondi con passi numerati.'
+    const sent = async (order: 'A' | 'B' | 'C'): Promise<Array<{ role: string; content: string }>> => {
+      const conv = await createConversation(h.db, { model: 'chat', roleId: 'tutor', situation: 'Lezione di matematica', knowledge: false })
+      expect(await k.linkRole(conv)).toEqual(['kb.esempi'])
+      // Ripetere il collegamento non duplica nulla.
+      await k.linkRole(conv)
+      expect((await k.status(conv)).linked.map((b) => [b.name, b.purpose])).toEqual([['Tecniche', 'behavior']])
+      const ollama = createOllamaClient(() => fake.url)
+      const chat = createChatService({
+        db: h.db,
+        ollama,
+        knowledge: k,
+        embedder: createEmbedder({ db: h.db, ollama }),
+        emit: () => undefined,
+        getContext: async () => ({ order, reminder: 'off', shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, situationShare: 0.05 })
+      })
+      const { streamId } = await chat.send({}, conv.id, 'come sommo due frazioni?')
+      await chat.wait(streamId)
+      return (fake.requests.filter((r) => r.path === '/api/chat').at(-2)!.body as { messages: Array<{ role: string; content: string }> }).messages
+    }
+    expect(await sent('A')).toEqual([
+      { role: 'system', content: `Sei un tutor.\n\n# Situazione\nLezione di matematica\n\n${section}` },
+      { role: 'user', content: 'come sommo due frazioni?' }
+    ])
+    expect(await sent('B')).toEqual([
+      { role: 'system', content: 'Sei un tutor.\n\n# Situazione\nLezione di matematica' },
+      { role: 'user', content: `${section}\n\n# Domanda\ncome sommo due frazioni?` }
+    ])
+    expect(await sent('C')).toEqual([
+      { role: 'system', content: '# Situazione\nLezione di matematica' },
+      { role: 'user', content: `Sei un tutor.\n\n${section}\n\n# Domanda\ncome sommo due frazioni?` }
+    ])
+    // Il Generalista non ha basi sue.
+    expect(await k.linkRole(await createConversation(h.db, { model: 'chat' }))).toEqual([])
     rmSync(dir, { recursive: true, force: true })
   })
 

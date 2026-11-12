@@ -2,7 +2,18 @@
 // validazione della definizione, istruzioni dalle scelte, calcolo della mente, profilo per il modello in uso.
 // Qui un «ruolo» è il contenuto di `role.json`; nome, lingua e gruppo stanno nel manifesto del pacchetto.
 import { reminderApplies, CONTEXT_ORDERS } from './compose'
-import { BASE_PURPOSES, DEFAULT_CONTEXT_SETTINGS, RESPONSE_STYLES, type BasePurpose, type ContextOrder, type ContextSettings, type ResponseStyle } from './types'
+import { briefToSituation, buildRolePrompt, DEFAULT_CHARS_PER_TOKEN, situationSection } from './prompt'
+import {
+  BASE_PURPOSES,
+  DEFAULT_CONTEXT_SETTINGS,
+  RESPONSE_STYLES,
+  type BasePurpose,
+  type Brief,
+  type ContextOrder,
+  type ContextSettings,
+  type ResponseStyle,
+  type RoleBinding
+} from './types'
 
 // ---------------------------------------------------------------- tipi
 
@@ -440,4 +451,36 @@ export function roleContext(
   const reminder = s.reminder !== 'auto' ? s.reminder === 'on' : ctx?.reminder === true
   const shares = ctx?.shares && sameShares(s.shares, DEFAULT_CONTEXT_SETTINGS.shares) ? ctx.shares : s.shares
   return { order, reminder: reminder && reminderApplies(order), shares }
+}
+
+// ---------------------------------------------------------------- il ruolo nel prompt
+
+/** Ciò che serve di una conversazione per comporre il prompt. I campi del Brief contano solo se la situazione manca. */
+export type RolePromptSource = Pick<RoleBinding, 'roleParams' | 'situation'> & Partial<Brief> & { style?: ResponseStyle | null }
+
+/**
+ * Le voci del system prompt di una conversazione: istruzioni del ruolo (con le frasi delle scelte), situazione
+ * com'è nel prompt (con il titolo se ci sono istruzioni), e il prompt intero con lo stile.
+ * Una riga non ancora convertita (situazione assente) vale il suo Brief.
+ */
+export function rolePrompt(role: Role, conv: RolePromptSource): { instructions: string; situation: string; system: string } {
+  const instructions = roleInstructions(role, conv.roleParams)
+  const text = conv.situation ?? briefToSituation(conv)
+  return { instructions, situation: situationSection(text, !!instructions), system: buildRolePrompt({ instructions, situation: text, style: conv.style }) }
+}
+
+/** L'essenziale del ruolo per il promemoria: il campo `reminder`, o la prima frase delle istruzioni. '' per il Generalista. */
+export function roleReminderText(role: Role): string {
+  const own = role.reminder?.trim()
+  if (own) return own
+  const line = (role.instructions ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? ''
+  return /^.*?[.!?…](?=\s|$)/.exec(line)?.[0] ?? line
+}
+
+/**
+ * Lunghezza massima della situazione, in caratteri (D21): una quota della memoria del modello, convertita con i
+ * caratteri per token stimati dall'app. È un limite per chi scrive: un testo più lungo già salvato resta com'è.
+ */
+export function situationLimit(numCtx: number, share: number = DEFAULT_CONTEXT_SETTINGS.situationShare, charsPerToken: number = DEFAULT_CHARS_PER_TOKEN): number {
+  return Math.max(0, Math.floor(numCtx * share * charsPerToken))
 }

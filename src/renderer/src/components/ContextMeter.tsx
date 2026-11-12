@@ -19,6 +19,8 @@ export function useContextUsage(): ContextUsage | null {
   // Stessa memoria che il main invia a Ollama come num_ctx.
   return computeContextUsage({
     brief: conversation,
+    // Fino alla scelta del ruolo nell'interfaccia le conversazioni sono sul Generalista: nessuna istruzione.
+    situation: conversation.situation,
     style: conversation.style,
     messages: all,
     numCtx: resolveSettings(conversation, caps).numCtx,
