@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { t, tn } from '@shared/i18n'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/types'
 import { useModels } from '../store/useModels'
+import { ContextSettingsPanel } from './ContextSettingsPanel'
 import { DialogClose } from './IconButton'
 import { KnowledgeLibrary } from './KnowledgeLibrary'
 import { ModelManager } from './ModelManager'
 import { OllamaEnvPanel } from './OllamaEnvPanel'
 
-type SettingsTab = 'general' | 'models' | 'ollama' | 'knowledge'
-const TABS: SettingsTab[] = ['general', 'models', 'ollama', 'knowledge']
+type SettingsTab = 'general' | 'models' | 'ollama' | 'knowledge' | 'context'
+const TABS: SettingsTab[] = ['general', 'models', 'ollama', 'knowledge', 'context']
 
 type Check = { state: 'idle' } | { state: 'checking' } | { state: 'ok'; count: number } | { state: 'error'; message: string }
 
@@ -74,7 +75,7 @@ export function SettingsDialog({ onClose, onOpenStore }: { onClose(): void; onOp
       </div>
       {tab !== 'general' && (
         <div className="max-h-[70vh] overflow-y-auto p-5">
-          {tab === 'models' ? <ModelManager /> : tab === 'ollama' ? <OllamaEnvPanel /> : <KnowledgeLibrary onOpenStore={onOpenStore} />}
+          {tab === 'models' ? <ModelManager /> : tab === 'ollama' ? <OllamaEnvPanel /> : tab === 'context' ? <ContextSettingsPanel /> : <KnowledgeLibrary onOpenStore={onOpenStore} />}
         </div>
       )}
       <form

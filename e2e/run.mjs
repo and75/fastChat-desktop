@@ -87,6 +87,8 @@ const app = await electron.launch({
     // Pacchetti: «Esporta…» scrive qui e «Importa pacchetto…» legge lo stesso file, senza dialog.
     FASTCHAT_PACK_EXPORT: join(userData, 'archivio.fcpack'),
     FASTCHAT_PACK_FILE: join(userData, 'archivio.fcpack'),
+    // Monitor del contesto: «Esporta CSV» scrive qui, senza dialog.
+    FASTCHAT_CONTEXT_EXPORT: join(userData, 'contesto.csv'),
     // Base di conoscenza: «Aggiungi documenti» salta il dialog e aggiunge questi file.
     FASTCHAT_KNOWLEDGE_FILES: [join(root, 'tests', 'fixtures', 'relazione.txt'), join(root, 'tests', 'fixtures', 'bilancio.pdf')].join(process.platform === 'win32' ? ';' : ':'),
     // Macchina finta: 16 GB di RAM. Con un modello da 2 GB e 128 KiB per token la memoria suggerita
@@ -902,6 +904,70 @@ try {
     await linked.getByTestId('knowledge-purpose').selectOption('documents')
     await linked.getByTestId('knowledge-unlink').click()
     await linked.waitFor({ state: 'detached' })
+  })
+
+  await step('composizione del contesto: ordine B e promemoria dalle Impostazioni, visibili nel monitor ed esportabili', async () => {
+    const setContext = async (order, reminder) => {
+      await page.getByRole('button', { name: 'Impostazioni' }).click()
+      const dialog = page.getByTestId('settings-dialog')
+      await dialog.getByRole('tab', { name: 'Contesto' }).click()
+      const form = dialog.getByTestId('context-settings')
+      await form.getByTestId('context-order').selectOption(order)
+      await form.getByTestId('context-reminder').selectOption(reminder)
+      await form.getByRole('button', { name: 'Salva' }).click()
+      await form.getByTestId('context-settings-saved').waitFor()
+      return { dialog, form }
+    }
+    // le quote devono sommare a 100: l'errore arriva dal main e nulla viene salvato
+    await page.getByRole('button', { name: 'Impostazioni' }).click()
+    const settings = page.getByTestId('settings-dialog')
+    await settings.getByRole('tab', { name: 'Contesto' }).click()
+    assert.equal(await settings.getByTestId('context-order').inputValue(), 'auto')
+    await settings.getByTestId('context-share-documents').fill('90')
+    await settings.getByTestId('context-shares-total').filter({ hasText: 'Totale: 130%' }).waitFor()
+    await settings.getByTestId('context-settings').getByRole('button', { name: 'Salva' }).click()
+    await settings.getByTestId('context-settings-error').filter({ hasText: 'sommare a 100' }).waitFor()
+    await settings.getByTestId('dialog-close').click()
+    await settings.waitFor({ state: 'detached' })
+
+    // ordine B con promemoria: conversazione nuova con un ruolo nel brief
+    const { dialog } = await setContext('B', 'on')
+    await dialog.getByTestId('dialog-close').click()
+    await dialog.waitFor({ state: 'detached' })
+    await page.getByTestId('new-conversation').click()
+    await page.selectOption('#model-select', 'llama3.2:3b')
+    await openTab('Brief')
+    await page.getByTestId('brief-panel').getByLabel('Ruolo').fill('Sei un tutor')
+    await page.getByTestId('brief-panel').getByTestId('brief-status').filter({ hasText: 'Salvato' }).waitFor()
+    const before = chatRequests().length
+    const composer = page.getByRole('textbox', { name: 'Messaggio' })
+    await composer.fill('ciao')
+    await composer.press('Enter')
+    await page.getByTestId('message-assistant').first().waitFor()
+    const sent = chatRequests()[before].body.messages
+    assert.deepEqual(sent, [
+      { role: 'system', content: '# Ruolo\nSei un tutor' },
+      { role: 'user', content: '[Promemoria del ruolo: Sei un tutor]\n\n# Domanda\nciao' }
+    ])
+    // nella chat si vede il testo scritto dall'utente, non il promemoria
+    assert.equal(await page.getByTestId('message-user').last().innerText().then((t) => t.includes('Promemoria')), false)
+    // monitor: ordine, promemoria, tipo di sistema, tempo al primo frammento
+    await openTab('Modello')
+    const monitor = page.locator('#panel-model').getByTestId('context-monitor')
+    await monitor.getByTestId('context-calls').locator('summary').click()
+    await monitor.getByTestId('context-call-select').selectOption({ index: await monitor.getByTestId('context-call-select').locator('option').evaluateAll((os) => os.findIndex((o) => /chat|Risposta/i.test(o.textContent ?? ''))) })
+    await monitor.getByTestId('context-compose').filter({ hasText: /Ordine B · promemoria del ruolo · sistema: / }).waitFor()
+    await monitor.getByTestId('context-first-token').waitFor()
+    // export CSV: una riga per chiamata, con l'ordine usato
+    await monitor.getByTestId('context-export').click()
+    await monitor.getByTestId('context-exported').filter({ hasText: 'contesto.csv' }).waitFor()
+    const csv = readFileSync(join(userData, 'contesto.csv'), 'utf8').trim().split('\n')
+    assert.match(csv[0], /^time;kind;note;model;num_ctx;order;reminder;system_slot;/)
+    assert.ok(csv.some((l) => /;chat;[^;]*;llama3\.2:3b;\d+;B;1;/.test(l)), 'la chiamata di chat riporta ordine B e promemoria')
+    // si torna al comportamento predefinito per i passi successivi
+    const back = await setContext('auto', 'auto')
+    await back.dialog.getByTestId('dialog-close').click()
+    await back.dialog.waitFor({ state: 'detached' })
   })
 
   await step('store: finestra sopra la chat, quattro categorie, Guida già installata, installa una base e la collega', async () => {

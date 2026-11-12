@@ -673,6 +673,7 @@ export const IPC = {
   /** Evento main → renderer: avanzamento dell'indicizzazione di un documento. */
   knowledgeProgress: 'knowledge:progress',
   contextCalls: 'context:calls',
+  contextExport: 'context:export',
   /** Evento main → renderer: nuova chiamata registrata. */
   contextCallAdded: 'context:call-added',
   modelSettingsList: 'model-settings:list',

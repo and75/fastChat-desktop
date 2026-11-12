@@ -55,6 +55,7 @@ import { electronCipher } from './knowledge/secrets'
 import { PACK_EXTENSION } from './knowledge/pack'
 import { TRUSTED_KEYS } from './knowledge/trust'
 import { createContextLog } from './contextLog'
+import { callsToCsv } from '@shared/context'
 import { validateContextSettings } from '@shared/compose'
 import { isStoreBase } from '@shared/store'
 import { createStore } from './store'
@@ -370,6 +371,17 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     e.returnValue = systemLocale()
   })
   handle(IPC.contextCalls, (_e, id: string) => listContextCalls(db, requireId(id)))
+  /** Le chiamate della conversazione come CSV, per confrontare ordini del contesto e modelli. */
+  handle(IPC.contextExport, async (e, id: string) => {
+    const calls = await listContextCalls(db, requireId(id))
+    const forced = process.env.FASTCHAT_CONTEXT_EXPORT
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const options = { title: t('ctx.export.title'), defaultPath: `fastchat-contesto-${new Date().toISOString().slice(0, 10)}.csv`, filters: [{ name: 'CSV', extensions: ['csv'] }] }
+    const { canceled, filePath } = forced ? { canceled: false, filePath: forced } : win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+    if (canceled || !filePath) return null
+    await writeFile(filePath, callsToCsv(calls), 'utf8')
+    return filePath
+  })
   handle(IPC.memoryStatus, async (_e, id: string) => memory.status(await convOrThrow(id)))
   handle(IPC.memoryRebuild, async (_e, id: string) => {
     const conv = await convOrThrow(id)

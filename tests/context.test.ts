@@ -208,3 +208,21 @@ describe('monitor del contesto: registro', () => {
     expect(failed.promptEvalCount).toBeNull()
   })
 })
+
+// ------------------------------------------------------------------ export CSV
+import { callsToCsv } from '../src/shared/context'
+
+describe('export delle chiamate', () => {
+  it('una riga per chiamata dalla più vecchia, colonne fisse, celle con «;» o virgolette protette', () => {
+    const base = { conversationId: 'c', note: null, numCtx: 4096, droppedMessages: 0, loadMs: 10, promptEvalMs: 20, evalMs: 30, durationMs: 60, doneReason: 'stop', aborted: false, error: null } as const
+    const calls = [
+      { ...base, id: '2', createdAt: 2000, kind: 'chat', model: 'gemma4:e4b', parts: [{ key: 'instructions', label: 'instructions', tokens: 10 }, { key: 'knowledge', label: 'knowledge', tokens: 100, count: 2 }, { key: 'question', label: 'question', tokens: 5 }], promptEvalCount: 40, evalCount: 50, contextOrder: 'B', reminder: true, firstTokenMs: 123, thinkingTokens: 7, systemSlot: 'unknown' },
+      { ...base, id: '1', createdAt: 1000, kind: 'title', model: 'gemma4:e4b', parts: [], promptEvalCount: null, evalCount: null, contextOrder: null, reminder: null, firstTokenMs: null, thinkingTokens: null, systemSlot: null, error: 'errore; con "virgolette"' }
+    ] as unknown as ContextCall[]
+    const lines = callsToCsv(calls).trimEnd().split('\n')
+    expect(lines[0]).toBe('time;kind;note;model;num_ctx;order;reminder;system_slot;sent_estimate;prompt_eval_count;eval_count;thinking_tokens;first_token_ms;load_ms;prompt_eval_ms;eval_ms;duration_ms;done_reason;aborted;dropped_messages;error;part_instructions;part_style;part_situation;part_summary;part_memory;part_behavior;part_examples;part_knowledge;part_reminder;part_history;part_question')
+    expect(lines[1]).toBe('1970-01-01T00:00:01.000Z;title;;gemma4:e4b;4096;;;;0;;;;;10;20;30;60;stop;0;0;"errore; con ""virgolette""";0;0;0;0;0;0;0;0;0;0;0')
+    expect(lines[2]).toBe('1970-01-01T00:00:02.000Z;chat;;gemma4:e4b;4096;B;1;unknown;115;40;50;7;123;10;20;30;60;stop;0;0;;10;0;0;0;0;0;0;100;0;0;5')
+    expect(lines).toHaveLength(3)
+  })
+})

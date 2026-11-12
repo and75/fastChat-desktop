@@ -121,6 +121,8 @@ export interface Api {
     /** Ultime chiamate a Ollama della conversazione, dalla più recente. */
     calls(conversationId: string): Promise<Result<ContextCall[]>>
     onCall(cb: (call: ContextCall) => void): () => void
+    /** Salva le chiamate della conversazione come CSV: chiede dove; restituisce il percorso, o null se annullato. */
+    exportCsv(conversationId: string): Promise<Result<string | null>>
   }
   ollamaEnv: {
     /** Variabili d'ambiente di Ollama: valori attuali (Windows) e se l'app può applicarle da sola. */

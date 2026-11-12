@@ -163,3 +163,48 @@ export function reconcile(
   if (thenAdj || now.adjustment) rows.push({ key: 'ollama', label: 'ollama', then: thenAdj || null, now: now.adjustment || null, delta: now.adjustment - thenAdj })
   return { rows, thenTotal: a.sent + answer + thenAdj, nowTotal: now.used }
 }
+
+// ---------------------------------------------------------------- export per i confronti
+
+const CSV_PARTS: ContextPart['key'][] = ['instructions', 'style', 'situation', 'summary', 'memory', 'behavior', 'examples', 'knowledge', 'reminder', 'history', 'question']
+
+/**
+ * Le chiamate di una conversazione come CSV (separatore «;», una riga per chiamata, dalla più vecchia): serve a
+ * confrontare ordini del contesto e modelli su velocità e occupazione. Le colonne hanno nomi fissi, non tradotti,
+ * così i file di prove diverse si possono affiancare.
+ */
+export function callsToCsv(calls: ReadonlyArray<ContextCall>): string {
+  const cell = (v: unknown): string => {
+    if (v == null) return ''
+    const s = typeof v === 'boolean' ? (v ? '1' : '0') : String(v)
+    return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const header = ['time', 'kind', 'note', 'model', 'num_ctx', 'order', 'reminder', 'system_slot', 'sent_estimate', 'prompt_eval_count', 'eval_count', 'thinking_tokens', 'first_token_ms', 'load_ms', 'prompt_eval_ms', 'eval_ms', 'duration_ms', 'done_reason', 'aborted', 'dropped_messages', 'error', ...CSV_PARTS.map((k) => `part_${k}`)]
+  const rows = [...calls]
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map((c) => [
+      new Date(c.createdAt).toISOString(),
+      c.kind,
+      c.note,
+      c.model,
+      c.numCtx,
+      c.contextOrder,
+      c.reminder,
+      c.systemSlot,
+      c.parts.reduce((n, p) => n + p.tokens, 0),
+      c.promptEvalCount,
+      c.evalCount,
+      c.thinkingTokens,
+      c.firstTokenMs,
+      c.loadMs,
+      c.promptEvalMs,
+      c.evalMs,
+      c.durationMs,
+      c.doneReason,
+      c.aborted,
+      c.droppedMessages,
+      c.error,
+      ...CSV_PARTS.map((k) => c.parts.filter((p) => p.key === k).reduce((n, p) => n + p.tokens, 0))
+    ])
+  return [header, ...rows].map((r) => r.map(cell).join(';')).join('\n') + '\n'
+}

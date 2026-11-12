@@ -91,6 +91,7 @@ function CallDetail({
   selected: string | null
   setSelected: (id: string | null) => void
 }): React.JSX.Element {
+  const [exported, setExported] = useState<string | null>(null)
 
   const index = Math.max(0, selected ? calls.findIndex((c) => c.id === selected) : 0)
   const call = calls[index]
@@ -104,6 +105,21 @@ function CallDetail({
   return (
     <div className="flex flex-col gap-3 text-xs" data-testid="context-call">
       <p className="text-zinc-500">{t('ctx.intro')}</p>
+      <div className="-mt-1 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void window.api.context.exportCsv(call.conversationId).then((res) => setExported(res.ok ? res.data : null))}
+          className="rounded border border-zinc-300 px-1.5 py-0.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          data-testid="context-export"
+        >
+          {t('ctx.export')}
+        </button>
+        {exported && (
+          <span className="min-w-0 truncate text-zinc-500" title={exported} data-testid="context-exported">
+            {t('ctx.export.done', { path: exported })}
+          </span>
+        )}
+      </div>
 
       <div className="flex items-center gap-1.5">
         <button
@@ -143,6 +159,11 @@ function CallDetail({
         {ctx ? t('ctx.numCtx', { n: int(ctx) }) : t('ctx.defaultCtx')}
         {index === 0 ? t('ctx.last') : ''}
       </p>
+      {call.contextOrder && (
+        <p className="-mt-2 text-xs text-zinc-500" data-testid="context-compose">
+          {[t('ctx.compose', { order: call.contextOrder }), call.reminder ? t('ctx.compose.reminder') : null, call.systemSlot ? t(`ctx.compose.system.${call.systemSlot}`) : null].filter(Boolean).join(' · ')}
+        </p>
+      )}
 
       <div>
         <div className="relative flex h-3.5 overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800" aria-hidden>
@@ -256,6 +277,13 @@ function CallDetail({
                   {ctx && <td className="text-right tabular-nums text-zinc-500">{pct(call.evalCount, ctx)}</td>}
                 </tr>
               )}
+              {!!call.thinkingTokens && (
+                <tr className="text-zinc-500" data-testid="context-thinking">
+                  <td className="py-0.5 pl-3.5">{t('ctx.thinking')}</td>
+                  <td className="text-right tabular-nums">≈ {int(call.thinkingTokens)}</td>
+                  {ctx && <td />}
+                </tr>
+              )}
               <tr className="border-t border-zinc-200 font-semibold dark:border-zinc-800">
                 <td className="pt-1">{t('ctx.occupied')}</td>
                 <td className="pt-1 text-right tabular-nums">{int(a.occupied!)}</td>
@@ -283,6 +311,12 @@ function CallDetail({
             </tr>
           </thead>
           <tbody>
+            {call.firstTokenMs != null && (
+              <tr data-testid="context-first-token">
+                <td>{t('ctx.firstToken')}</td>
+                <td className="text-right tabular-nums">{formatElapsed(call.firstTokenMs)}</td>
+              </tr>
+            )}
             {call.loadMs != null && (
               <tr>
                 <td>{t('ctx.loadTime')}</td>

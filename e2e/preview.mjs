@@ -301,6 +301,13 @@ console.log('katex:', await page.locator('.katex').count(), '| display:', await 
 await page.waitForTimeout(400)
 await page.screenshot({ path: out('23-formule.png') })
 
+// impostazioni → Contesto: ordine dei blocchi, promemoria, quote
+await page.getByRole('button', { name: 'Impostazioni' }).click()
+await page.getByTestId('settings-dialog').getByRole('tab', { name: 'Contesto' }).click()
+await page.getByTestId('context-order').selectOption('B')
+await page.waitForTimeout(300)
+await page.screenshot({ path: out('24-impostazioni-contesto.png') })
+
 await app.close()
 await fake.close()
 console.log('ok')
