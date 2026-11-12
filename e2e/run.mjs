@@ -1624,7 +1624,44 @@ try {
       // la topbar resta al suo posto
       const top = await page.locator('header').first().boundingBox()
       assert.equal(Math.round(top.y), 0)
+      // …anche se qualcosa sporge dal fondo della colonna (un tooltip, un pallino): la colonna non scorre
+      const shifted = await page.evaluate(() => {
+        const header = document.querySelector('header')
+        const column = header.parentElement
+        const probe = document.createElement('div')
+        probe.style.cssText = 'position:absolute;left:0;top:100%;width:1px;height:300px'
+        column.querySelector('[data-testid="timeline"]').append(probe)
+        document.querySelector('[data-testid="message-assistant"]').scrollIntoView({ block: 'start' })
+        column.scrollTop = 48
+        const y = [column.scrollTop, Math.round(header.getBoundingClientRect().y)]
+        probe.remove()
+        return y
+      })
+      assert.deepEqual(shifted, [0, 0])
     }
+    await resize(1200, 800)
+    await page.waitForFunction(() => innerWidth === 1200)
+    // Uno scorrimento subito dopo il ridimensionamento non annulla la rimisura della cronologia:
+    // i pallini restano sulla linea (prima restavano alle posizioni della vecchia altezza).
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+    await page.evaluate(() => {
+      const scroller = document.querySelector('[data-testid="messages"]').parentElement
+      // creato dopo quello della cronologia: scatta dopo, nello stesso frame
+      window.__ro = new ResizeObserver(() => scroller.dispatchEvent(new Event('scroll')))
+      for (const el of [scroller, scroller.firstElementChild, document.querySelector('[data-testid="timeline"]').firstElementChild]) window.__ro.observe(el)
+    })
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+    await resize(900, 520)
+    await page.waitForFunction(() => innerHeight === 520)
+    await page.waitForTimeout(150)
+    const rail = await page.evaluate(() => {
+      window.__ro.disconnect()
+      delete window.__ro
+      const line = document.querySelector('[data-testid="timeline"]').getBoundingClientRect()
+      const dots = [...document.querySelectorAll('[data-testid="timeline-dot"]')].map((d) => d.getBoundingClientRect())
+      return { n: dots.length, out: dots.filter((d) => d.top < line.top - 8 || d.bottom > line.bottom + 8).length }
+    })
+    assert.deepEqual(rail, { n: 8, out: 0 })
     await resize(1200, 800)
     await page.waitForFunction(() => innerWidth === 1200)
   })
