@@ -168,6 +168,13 @@ export interface PackInspection {
   modelInstalled: boolean
 }
 
+/**
+ * A cosa serve una base collegata a una conversazione: `documents` sono i contenuti su cui rispondere (opzionali,
+ * con le fonti citate); `behavior` le tecniche del ruolo e `examples` gli esempi da imitare (sempre attivi).
+ */
+export type BasePurpose = 'documents' | 'behavior' | 'examples'
+export const BASE_PURPOSES: BasePurpose[] = ['documents', 'behavior', 'examples']
+
 /** Una base della libreria con i suoi numeri, per gli elenchi. */
 export interface KnowledgeBaseInfo extends KnowledgeBase {
   /** Documenti in tutto e pronti (con pezzi per il modello di embedding attuale). */
@@ -180,6 +187,8 @@ export interface KnowledgeBaseInfo extends KnowledgeBase {
   /** Modello di embedding effettivo (il suo, o quello delle Impostazioni) e se è installato in Ollama. */
   model: string
   modelInstalled: boolean
+  /** Solo per le basi collegate a una conversazione: a cosa servono lì. */
+  purpose?: BasePurpose
 }
 
 /** Un documento di una base di conoscenza. Si salva il testo estratto, non il file. */
@@ -639,6 +648,7 @@ export const IPC = {
   storeRemove: 'store:remove',
   knowledgeLink: 'knowledge:link',
   knowledgeUnlink: 'knowledge:unlink',
+  knowledgeLinkPurpose: 'knowledge:linkPurpose',
   knowledgeConnect: 'knowledge:connect',
   knowledgeRefresh: 'knowledge:refresh',
   knowledgeDisconnect: 'knowledge:disconnect',

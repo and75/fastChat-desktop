@@ -9,6 +9,7 @@ import type {
   KnowledgeProgress,
   KnowledgeSourceInfo,
   KnowledgeStatus,
+  BasePurpose,
   ModelSetting,
   ModelSettingPatch,
   PullProgress,
@@ -102,6 +103,8 @@ export interface Api {
     /** Collega o scollega una base della libreria a una conversazione. */
     link(conversationId: string, baseId: string): Promise<Result<KnowledgeStatus>>
     unlink(conversationId: string, baseId: string): Promise<Result<KnowledgeStatus>>
+    /** A cosa serve una base collegata: documenti su cui rispondere, tecniche da applicare, esempi da imitare. */
+    setPurpose(conversationId: string, baseId: string, purpose: BasePurpose): Promise<Result<KnowledgeStatus>>
     /** Avanzamento dell'indicizzazione dei documenti. */
     onProgress(cb: (p: KnowledgeProgress) => void): () => void
     /** Percorso di un file trascinato nella finestra ('' se non è un file su disco). */

@@ -14,7 +14,8 @@ import type {
   MemoryRef,
   PlanStatus,
   PlanStep,
-  ResponseStyle
+  ResponseStyle,
+  BasePurpose
 } from '@shared/types'
 
 const now = sql`(unixepoch('subsec') * 1000)`
@@ -198,6 +199,8 @@ export const conversationBases = sqliteTable(
     baseId: text('base_id')
       .notNull()
       .references(() => knowledgeBases.id, { onDelete: 'cascade' }),
+    /** A cosa serve la base in questa conversazione: documenti su cui rispondere, tecniche da applicare, esempi da imitare. */
+    purpose: text('purpose').$type<BasePurpose>().notNull().default('documents'),
     createdAt: integer('created_at').notNull().default(now)
   },
   (t) => [primaryKey({ columns: [t.conversationId, t.baseId] })]

@@ -1,0 +1,1 @@
+ALTER TABLE `conversation_bases` ADD `purpose` text DEFAULT 'documents' NOT NULL;

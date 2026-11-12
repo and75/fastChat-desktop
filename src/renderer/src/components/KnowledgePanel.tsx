@@ -3,7 +3,7 @@ import { fmtInt, getLocale, t, tn } from '@shared/i18n'
 import { KNOWLEDGE } from '@shared/knowledge'
 import { DEFAULT_CHARS_PER_TOKEN } from '@shared/prompt'
 import { resolveSettings } from '@shared/settings'
-import { KNOWLEDGE_SHARES, type Conversation, type KnowledgeBaseInfo, type KnowledgeDocument } from '@shared/types'
+import { BASE_PURPOSES, KNOWLEDGE_SHARES, type BasePurpose, type Conversation, type KnowledgeBaseInfo, type KnowledgeDocument } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { useKnowledge } from '../store/useKnowledge'
@@ -343,6 +343,7 @@ function LinkedBases({ conversation }: { conversation: Conversation }): React.JS
   const loadBases = useKnowledge((s) => s.loadBases)
   const link = useKnowledge((s) => s.link)
   const unlink = useKnowledge((s) => s.unlink)
+  const setPurpose = useKnowledge((s) => s.setPurpose)
   const busy = useChat((s) => !!s.streams[conversation.id])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => void loadBases(), [conversation.id])
@@ -359,6 +360,23 @@ function LinkedBases({ conversation }: { conversation: Conversation }): React.JS
                 <div className="truncate font-medium text-zinc-800 dark:text-zinc-200">{baseTitle(b)}</div>
                 <div className="truncate text-xs text-zinc-500">{baseDetail(b)}</div>
                 {!b.modelInstalled && <ModelMissing model={b.model} />}
+                {/* A cosa serve la base in questa conversazione: documenti su cui rispondere (con il bottone libro),
+                    oppure tecniche o esempi del ruolo, sempre attivi e senza fonti. */}
+                <select
+                  value={b.purpose ?? 'documents'}
+                  disabled={busy}
+                  aria-label={t('knowledge.purpose.label', { name: baseTitle(b) })}
+                  onChange={(e) => void setPurpose(conversation.id, b.id, e.target.value as BasePurpose)}
+                  className="mt-1 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                  data-testid="knowledge-purpose"
+                >
+                  {BASE_PURPOSES.map((p) => (
+                    <option key={p} value={p}>
+                      {t(`knowledge.purpose.${p}`)}
+                    </option>
+                  ))}
+                </select>
+                {b.purpose && b.purpose !== 'documents' && <div className="mt-0.5 text-xs text-zinc-500">{t(`knowledge.purpose.hint.${b.purpose}`)}</div>}
               </div>
               <button
                 type="button"

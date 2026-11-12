@@ -877,6 +877,33 @@ try {
     assert.equal(await panel.getByTestId('knowledge-doc').count(), 2, 'i documenti della conversazione restano')
   })
 
+  await step('tipi di base: una base collegata può valere come comportamento del ruolo, sempre attiva e senza fonti', async () => {
+    const panel = page.getByTestId('knowledge-panel')
+    // collega la Guida e usala come «Comportamento»
+    await panel.getByTestId('knowledge-link-select').selectOption({ label: await panel.getByTestId('knowledge-link-select').locator('option').filter({ hasText: 'Guida di FastChat' }).textContent() })
+    const linked = panel.getByTestId('knowledge-linked-base').filter({ hasText: 'Guida di FastChat' })
+    await linked.waitFor()
+    assert.equal(await linked.getByTestId('knowledge-purpose').inputValue(), 'documents')
+    await linked.getByTestId('knowledge-purpose').selectOption('behavior')
+    await linked.getByText('Sempre attiva: tecniche da applicare, senza fonti.').waitFor()
+    // domanda con il libro spento: le tecniche sono nel prompt lo stesso, sotto il loro titolo
+    const book = page.getByTestId('knowledge-button')
+    if ((await book.getAttribute('aria-pressed')) === 'true') await book.click()
+    const before = chatRequests().length
+    const composer = page.getByRole('textbox', { name: 'Messaggio' })
+    await composer.fill('come collego una base?')
+    await composer.press('Enter')
+    await waitUntil(() => chatRequests().length > before)
+    const system = chatRequests()[before].body.messages[0].content
+    assert.match(system, /# Come lavorare\n\nTecniche e regole del tuo ruolo/)
+    assert.doesNotMatch(system, /forniti dall'utente/)
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached', timeout: 30000 }).catch(() => undefined)
+    // si torna a «Documenti» e si scollega, per non toccare i passi successivi
+    await linked.getByTestId('knowledge-purpose').selectOption('documents')
+    await linked.getByTestId('knowledge-unlink').click()
+    await linked.waitFor({ state: 'detached' })
+  })
+
   await step('store: finestra sopra la chat, quattro categorie, Guida già installata, installa una base e la collega', async () => {
     await page.getByTestId('store-open').click()
     const store = page.getByTestId('store-dialog')

@@ -165,9 +165,9 @@ describe('ordini del contesto', () => {
 describe('impostazioni della composizione', () => {
   it('predefinito: automatico, cioè il comportamento storico (ordine A, niente promemoria)', () => {
     expect(DEFAULT_CONTEXT_SETTINGS).toEqual({ order: 'auto', reminder: 'auto', shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, situationShare: 0.05 })
-    expect(resolveContext(DEFAULT_CONTEXT_SETTINGS)).toEqual({ order: 'A', reminder: false })
-    expect(resolveContext(null)).toEqual({ order: 'A', reminder: false })
-    expect(resolveContext({ ...DEFAULT_CONTEXT_SETTINGS, order: 'B', reminder: 'on' })).toEqual({ order: 'B', reminder: true })
+    expect(resolveContext(DEFAULT_CONTEXT_SETTINGS)).toEqual({ order: 'A', reminder: false, shares: DEFAULT_CONTEXT_SETTINGS.shares })
+    expect(resolveContext(null)).toMatchObject({ order: 'A', reminder: false })
+    expect(resolveContext({ ...DEFAULT_CONTEXT_SETTINGS, order: 'B', reminder: 'on' })).toMatchObject({ order: 'B', reminder: true })
   })
 
   it('lettura tollerante: ciò che manca o non vale torna al predefinito', () => {

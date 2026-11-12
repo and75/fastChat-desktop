@@ -126,7 +126,7 @@ export function validateContextSettings(raw: unknown): ContextSettings {
 }
 
 /** Composizione effettiva per una chiamata. «Automatico» oggi vale il comportamento storico: ordine A, niente promemoria. */
-export function resolveContext(settings: ContextSettings | null | undefined): { order: ContextOrder; reminder: boolean } {
+export function resolveContext(settings: ContextSettings | null | undefined): { order: ContextOrder; reminder: boolean; shares: ContextSettings['shares'] } {
   const s = settings ?? DEFAULT_CONTEXT_SETTINGS
-  return { order: s.order === 'auto' ? 'A' : s.order, reminder: s.reminder === 'on' }
+  return { order: s.order === 'auto' ? 'A' : s.order, reminder: s.reminder === 'on', shares: s.shares }
 }

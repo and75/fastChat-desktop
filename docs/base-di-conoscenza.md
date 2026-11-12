@@ -89,6 +89,25 @@ Voce del catalogo:
 
 Altri campi: `builtin` (integrata), `model` (identità: modello consigliato o richiesto), `requires`, `contains` (pacchetti).
 
+## 0.4 Tipi di base in una conversazione
+
+Una base collegata a una conversazione ha un **uso** (`conversation_bases.purpose`):
+
+| Uso | Contenuto | Quando entra nel prompt | Fonti sotto la risposta |
+|---|---|---|---|
+| `documents` (predefinito) | I contenuti su cui rispondere | Solo con la pill o il bottone libro accesi, come sempre | Sì |
+| `behavior` | Tecniche e regole del ruolo | Sempre | No |
+| `examples` | Risposte ben fatte da imitare, ciascuna tra `<esempio>…</esempio>` | Sempre | No |
+
+- I documenti aggiunti alla conversazione sono sempre `documents`.
+- L'uso si sceglie sulla base collegata, nella scheda «Conoscenza». Con i ruoli arriverà dal pacchetto del ruolo.
+- **Quote**: lo spazio della conoscenza (25/50/75% della memoria) si divide tra i tre usi secondo le quote delle
+  Impostazioni (20/20/60 predefinite). Ciò che un uso non consuma passa agli altri, prima ai documenti: con sole
+  basi di tipo `documents` il comportamento è quello di sempre.
+- «Pronti» e il bottone libro contano solo i documenti.
+
+Progetto completo dei ruoli: [`ruoli.md`](ruoli.md) e [`ruoli-piano.md`](ruoli-piano.md).
+
 ## 1. Ingresso: i plugin
 
 - Un plugin (`KnowledgeSource`, in `src/main/knowledge/source.ts`) sa leggere un tipo di sorgente e

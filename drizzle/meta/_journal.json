@@ -99,6 +99,13 @@
       "when": 1794411980433,
       "tag": "0013_knowledge_packs",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1794491230106,
+      "tag": "0014_knowledge_purpose",
+      "breakpoints": true
     }
   ]
 }

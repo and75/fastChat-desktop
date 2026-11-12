@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { KnowledgeBaseInfo, KnowledgeProgress, KnowledgeSourceInfo, KnowledgeStatus, PackInspection } from '@shared/types'
+import type { BasePurpose, KnowledgeBaseInfo, KnowledgeProgress, KnowledgeSourceInfo, KnowledgeStatus, PackInspection } from '@shared/types'
 
 interface KnowledgeState {
   /** Plugin disponibili (etichette, estensioni), caricati una volta. */
@@ -37,6 +37,7 @@ interface KnowledgeState {
   exportBase(baseId: string): Promise<string | null>
   link(conversationId: string, baseId: string): Promise<void>
   unlink(conversationId: string, baseId: string): Promise<void>
+  setPurpose(conversationId: string, baseId: string, purpose: BasePurpose): Promise<void>
   handleProgress(p: KnowledgeProgress): void
   clearError(): void
 }
@@ -215,6 +216,12 @@ export const useKnowledge = create<KnowledgeState>((set, get) => {
       if (!res.ok) return set({ error: res.error })
       apply(conversationId, res.data)
       void get().loadBases()
+    },
+
+    async setPurpose(conversationId, baseId, purpose) {
+      const res = await window.api.knowledge.setPurpose(conversationId, baseId, purpose)
+      if (!res.ok) return set({ error: res.error })
+      apply(conversationId, res.data)
     },
 
     handleProgress(p) {

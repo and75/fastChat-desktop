@@ -53,6 +53,7 @@ const api: Api = {
     exportBase: (baseId) => invoke(IPC.knowledgeBaseExport, baseId),
     link: (id, baseId) => invoke(IPC.knowledgeLink, id, baseId),
     unlink: (id, baseId) => invoke(IPC.knowledgeUnlink, id, baseId),
+    setPurpose: (id, baseId, purpose) => invoke(IPC.knowledgeLinkPurpose, id, baseId, purpose),
     onProgress: (cb) => subscribe<KnowledgeProgress>(IPC.knowledgeProgress, cb),
     pathForFile: (file) => {
       try {

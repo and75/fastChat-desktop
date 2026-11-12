@@ -2,7 +2,7 @@
 // estratti pertinenti, dimensionare il budget e scrivere la sezione del system prompt.
 import { t } from './i18n'
 import { cosine, splitParagraphs } from './memory'
-import type { KnowledgeRef } from './types'
+import type { BasePurpose, KnowledgeRef } from './types'
 
 export const KNOWLEDGE = {
   /** Lunghezza massima di un pezzo, in caratteri (~400 token: sta nel contesto dei modelli di embedding). */
@@ -253,4 +253,53 @@ export function toKnowledgeRefs(whole: ReadonlyArray<SectionItem>, picked: Reado
     ...[...docs.values()].sort((a, b) => a.title.localeCompare(b.title) || a.documentId.localeCompare(b.documentId)).map((p) => ({ documentId: p.documentId, title: p.title, locator: null, score: 1, excerpt: p.text.slice(0, 240), whole: true })),
     ...[...picked].sort((a, b) => b.score - a.score).map((p) => ({ documentId: p.documentId, title: p.title, locator: p.locator, score: Math.round(p.score * 100) / 100, excerpt: p.text.slice(0, 240) }))
   ]
+}
+
+// ---------------------------------------------------------------- tipi di base: comportamento, esempi, documenti
+
+/** I pezzi di una base, messi in ordine di documento e posizione. */
+const ordered = (items: ReadonlyArray<SectionItem>): SectionItem[] =>
+  [...items].sort((a, b) => a.title.localeCompare(b.title) || a.documentId.localeCompare(b.documentId) || (a.part ?? 0) - (b.part ?? 0))
+
+/**
+ * Sezione con le tecniche del ruolo (base di comportamento): da applicare, non da citare. Nessuna fonte: non
+ * sono documenti dell'utente.
+ */
+export function buildBehaviorSection(picked: ReadonlyArray<SectionItem>): string {
+  if (picked.length === 0) return ''
+  return [t('knowledge.behavior.heading'), t('knowledge.behavior.intro'), ...ordered(picked).map((p) => p.text)].join('\n\n')
+}
+
+/**
+ * Sezione con gli esempi del ruolo (few-shot): ognuno tra delimitatori netti, da imitare nella forma e nello
+ * stile, non da copiare né da citare.
+ */
+export function buildExamplesSection(picked: ReadonlyArray<SectionItem>): string {
+  if (picked.length === 0) return ''
+  const tag = t('knowledge.examples.tag')
+  return [t('knowledge.examples.heading'), t('knowledge.examples.intro', { tag }), ...ordered(picked).map((p) => `<${tag}>\n${p.text}\n</${tag}>`)].join('\n\n')
+}
+
+/** Ordine in cui i tipi di base ricevono lo spazio avanzato: prima i documenti dell'utente. */
+const SPARE_ORDER: BasePurpose[] = ['documents', 'examples', 'behavior']
+
+/**
+ * Divide lo spazio della conoscenza (in token) tra i tre tipi di base. Ognuno ha la sua quota; ciò che un tipo
+ * non usa (base assente, piccola, o documenti spenti) passa agli altri, prima ai documenti. Così un ruolo
+ * centrato sui documenti e uno centrato su tecniche ed esempi usano bene lo spazio senza regolazioni.
+ * `needs` dice quanti token servirebbero a ogni tipo per entrare per intero (0 = assente).
+ */
+export function splitKnowledgeBudget(total: number, shares: Record<BasePurpose, number>, needs: Record<BasePurpose, number>): Record<BasePurpose, number> {
+  const out: Record<BasePurpose, number> = { documents: 0, behavior: 0, examples: 0 }
+  if (total <= 0) return out
+  for (const k of SPARE_ORDER) out[k] = Math.min(needs[k], Math.floor(total * shares[k]))
+  let spare = total - out.documents - out.behavior - out.examples
+  for (const k of SPARE_ORDER) {
+    const more = Math.min(needs[k] - out[k], spare)
+    if (more > 0) {
+      out[k] += more
+      spare -= more
+    }
+  }
+  return out
 }

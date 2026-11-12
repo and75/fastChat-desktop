@@ -26,7 +26,8 @@ import {
   type ModelSetting,
   type Plan,
   type PlanStatus,
-  type PlanStep
+  type PlanStep,
+  type BasePurpose
 } from '@shared/types'
 import type { Db } from './client'
 import {
@@ -514,6 +515,16 @@ export async function listLinkedBases(db: Db, conversationId: string): Promise<K
     .where(eq(conversationBases.conversationId, conversationId))
     .orderBy(asc(conversationBases.createdAt), asc(sql`conversation_bases.rowid`))
   return rows.map((r) => r.base)
+}
+
+/** A cosa serve ogni base collegata alla conversazione. */
+export async function listLinkPurposes(db: Db, conversationId: string): Promise<Map<string, BasePurpose>> {
+  const rows = await db.select({ baseId: conversationBases.baseId, purpose: conversationBases.purpose }).from(conversationBases).where(eq(conversationBases.conversationId, conversationId))
+  return new Map(rows.map((r) => [r.baseId, r.purpose]))
+}
+
+export async function setLinkPurpose(db: Db, conversationId: string, baseId: string, purpose: BasePurpose): Promise<void> {
+  await db.update(conversationBases).set({ purpose }).where(and(eq(conversationBases.conversationId, conversationId), eq(conversationBases.baseId, baseId)))
 }
 
 export async function linkBase(db: Db, conversationId: string, baseId: string): Promise<void> {

@@ -14,7 +14,7 @@ import { SourceError, type KnowledgeSource } from '../src/main/knowledge/source'
 import { BUILTIN_SOURCES } from '../src/main/knowledge/sources'
 import { textSource } from '../src/main/knowledge/sources/text'
 import { createOllamaClient } from '../src/main/ollama'
-import { buildDocumentChunks, buildKnowledgeSection, ftsQuery, hybridScores, knowledgeBudget, normalizeText, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs, wholeDocuments } from '../src/shared/knowledge'
+import { buildDocumentChunks, buildKnowledgeSection, splitKnowledgeBudget, ftsQuery, hybridScores, knowledgeBudget, normalizeText, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs, wholeDocuments } from '../src/shared/knowledge'
 import { fromBuffer } from '../src/shared/memory'
 import type { Conversation, KnowledgeProgress, StreamEvent } from '../src/shared/types'
 import { fakeEmbedding, startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
@@ -28,6 +28,20 @@ const convDocs = async (db: DbHandle['db'], conversationId: string) => {
 }
 
 describe('base di conoscenza: funzioni pure', () => {
+  it('quote dei tre tipi di base: ognuno la sua, lo spazio non usato passa agli altri, prima ai documenti', () => {
+    const shares = { behavior: 0.2, examples: 0.2, documents: 0.6 }
+    // tutti e tre ne vogliono più della quota: ognuno la sua
+    expect(splitKnowledgeBudget(1000, shares, { behavior: 900, examples: 900, documents: 900 })).toEqual({ behavior: 200, examples: 200, documents: 600 })
+    // solo documenti: tutto lo spazio è loro (comportamento di sempre)
+    expect(splitKnowledgeBudget(1000, shares, { behavior: 0, examples: 0, documents: 5000 })).toEqual({ behavior: 0, examples: 0, documents: 1000 })
+    expect(splitKnowledgeBudget(1000, shares, { behavior: 0, examples: 0, documents: 300 })).toEqual({ behavior: 0, examples: 0, documents: 300 })
+    // ruolo senza documenti: tecniche ed esempi si dividono lo spazio dei documenti, prima gli esempi
+    expect(splitKnowledgeBudget(1000, shares, { behavior: 900, examples: 900, documents: 0 })).toEqual({ behavior: 200, examples: 800, documents: 0 })
+    // base di comportamento piccola: ciò che avanza va ai documenti
+    expect(splitKnowledgeBudget(1000, shares, { behavior: 50, examples: 0, documents: 5000 })).toEqual({ behavior: 50, examples: 0, documents: 950 })
+    expect(splitKnowledgeBudget(0, shares, { behavior: 50, examples: 50, documents: 50 })).toEqual({ behavior: 0, examples: 0, documents: 0 })
+  })
+
   it('normalizeText: fine riga, spazi in coda, righe vuote multiple', () => {
     expect(normalizeText('a  \r\nb\r\n\r\n\r\n\r\nc\n')).toBe('a\nb\n\nc')
   })
@@ -900,6 +914,74 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
     expect(after.ready).toBe(1)
     expect(await listKnowledgeChunks(h.db, [doc.id], 'embeddinggemma')).toEqual([])
     expect(await k.listBases()).toEqual([])
+  })
+
+  it('tipi di base: comportamento ed esempi entrano sempre e senza fonti, i documenti solo a libro acceso', async () => {
+    const { knowledge: k } = services()
+    const dir = mkdtempSync(join(tmpdir(), 'fastchat-role-'))
+    writeFileSync(join(dir, 'tecniche.md'), 'Rispondi con passi numerati e nomi esatti dei pulsanti.')
+    writeFileSync(join(dir, 'esempi.md'), 'Domanda: come creo una base?\nRisposta: 1. Apri Impostazioni. 2. Scegli Conoscenza.')
+    const behavior = await k.createBase('Tecniche')
+    const examples = await k.createBase('Esempi')
+    await k.addFiles(behavior, [join(dir, 'tecniche.md')])
+    await k.addFiles(examples, [join(dir, 'esempi.md')])
+    await k.wait(behavior.id)
+    await k.wait(examples.id)
+    const conv = await createConversation(h.db, { model: 'chat' })
+    await k.addFiles(conv, [join(fixtures, 'relazione.txt')])
+    await k.wait(conv.id)
+    await k.link(conv, behavior.id)
+    await k.link(conv, examples.id)
+    // appena collegate sono «documenti», come ogni base: nulla cambia finché non si sceglie l'uso
+    expect((await k.status(conv)).linked.map((b) => b.purpose)).toEqual(['documents', 'documents'])
+    expect(await k.hasRole(conv.id)).toBe(false)
+    await k.setPurpose(conv, behavior.id, 'behavior')
+    await k.setPurpose(conv, examples.id, 'examples')
+    await expect(k.setPurpose(conv, behavior.id, 'altro' as never)).rejects.toThrow(/non valido/)
+    await expect(k.setPurpose(conv, 'nope', 'behavior')).rejects.toThrow(/non trovata/)
+    const st = await k.status(conv)
+    expect(st.linked.map((b) => [b.name, b.purpose])).toEqual([['Tecniche', 'behavior'], ['Esempi', 'examples']])
+    // «pronti» conta solo i documenti su cui rispondere: è ciò che abilita il bottone libro
+    expect(st.ready).toBe(1)
+    expect(await k.hasRole(conv.id)).toBe(true)
+
+    const q = { text: 'come si usa?', vector: async () => fakeEmbedding('come si usa?') }
+    const all = await k.recallAll(conv, q, { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: true }, 4)
+    expect(all.behavior).toEqual({ section: '# Come lavorare\n\nTecniche e regole del tuo ruolo. Applicale nella risposta; non citarle e non presentarle come fonti.\n\nRispondi con passi numerati e nomi esatti dei pulsanti.', count: 1 })
+    expect(all.examples.section).toBe('# Esempi\n\nEsempi di risposte ben fatte, ciascuno tra i tag <esempio>. Imitane struttura e stile; non copiarne il contenuto e non citarli.\n\n<esempio>\nDomanda: come creo una base?\nRisposta: 1. Apri Impostazioni. 2. Scegli Conoscenza.\n</esempio>')
+    expect(all.documents.section).toMatch(/^# Base di conoscenza/)
+    // le fonti sono solo quelle dei documenti
+    expect(all.documents.refs.map((r) => r.title)).toEqual(['relazione'])
+    expect(all.documents.section).not.toContain('passi numerati')
+    // libro spento: niente documenti, tecniche ed esempi restano
+    const off = await k.recallAll(conv, q, { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false }, 4)
+    expect(off.documents).toEqual({ section: '', refs: [] })
+    expect(off.behavior.count).toBe(1)
+    expect(off.examples.count).toBe(1)
+    // recall (solo documenti) non vede le basi del ruolo
+    expect((await k.recall(conv, q, 2000, 4)).section).toBe(all.documents.section)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('nella chat: tecniche ed esempi nel prompt anche con la base di conoscenza spenta, senza fonti sotto la risposta; voci nel monitor', async () => {
+    const { knowledge: k, chat } = services()
+    const dir = mkdtempSync(join(tmpdir(), 'fastchat-role-'))
+    writeFileSync(join(dir, 'tecniche.md'), 'Rispondi con passi numerati.')
+    const behavior = await k.createBase('Tecniche')
+    await k.addFiles(behavior, [join(dir, 'tecniche.md')])
+    await k.wait(behavior.id)
+    const conv = await createConversation(h.db, { model: 'chat', knowledge: false })
+    await k.link(conv, behavior.id)
+    await k.setPurpose(conv, behavior.id, 'behavior')
+    const { streamId } = await chat.send({}, conv.id, 'come creo una base?')
+    await chat.wait(streamId)
+    const body = fake.requests.filter((r) => r.path === '/api/chat').at(-2)!.body as { messages: Array<{ role: string; content: string }> }
+    expect(body.messages[0]).toEqual({ role: 'system', content: '# Come lavorare\n\nTecniche e regole del tuo ruolo. Applicale nella risposta; non citarle e non presentarle come fonti.\n\nRispondi con passi numerati.' })
+    const answer = (await listMessages(h.db, conv.id)).at(-1)!
+    expect(answer.knowledgeRefs ?? []).toEqual([])
+    const call = (await listContextCalls(h.db, conv.id)).find((c) => c.kind === 'chat')!
+    expect(call.parts.map((p) => [p.key, p.count])).toEqual([['behavior', 1], ['question', undefined]])
+    rmSync(dir, { recursive: true, force: true })
   })
 
   it('cambio del modello di embedding: ensureModel rifà anche i documenti delle basi collegate', async () => {

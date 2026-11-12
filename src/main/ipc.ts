@@ -7,6 +7,7 @@ import {
   IPC,
   KV_CACHE_TYPES,
   type AppSettings,
+  type BasePurpose,
   type BenchmarkProgress,
   type ModelSettingPatch,
   type PullProgress,
@@ -487,6 +488,11 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   handle(IPC.knowledgeLink, async (_e, id: string, baseId: string) => {
     const conv = await convOrThrow(id)
     await knowledge.link(conv, requireId(baseId))
+    return knowledge.status(conv)
+  })
+  handle(IPC.knowledgeLinkPurpose, async (_e, id: string, baseId: string, purpose: BasePurpose) => {
+    const conv = await convOrThrow(id)
+    await knowledge.setPurpose(conv, requireId(baseId), purpose)
     return knowledge.status(conv)
   })
   handle(IPC.knowledgeUnlink, async (_e, id: string, baseId: string) => {

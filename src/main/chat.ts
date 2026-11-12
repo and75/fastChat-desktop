@@ -51,7 +51,7 @@ import type { ChatMessage, ChatOptions, ChatRequest, OllamaClient } from './olla
 import { memoryBudget, type Memory, type Recall } from './memory'
 import type { Summarizer } from './summary'
 import { knowledgeBudget } from '@shared/knowledge'
-import type { Knowledge, KnowledgeRecall } from './knowledge'
+import type { Knowledge, RoleRecall } from './knowledge'
 import type { Embedder } from './embedder'
 
 /** Destinatario degli eventi di stream (in produzione: il WebContents che ha fatto la richiesta). */
@@ -112,6 +112,11 @@ export interface Extras {
   memoryCount?: number
   knowledge?: string
   knowledgeCount?: number
+  /** Tecniche ed esempi del ruolo (basi di comportamento e di esempi): sempre presenti, senza fonti. */
+  behavior?: string
+  behaviorCount?: number
+  examples?: string
+  examplesCount?: number
 }
 
 /**
@@ -151,8 +156,11 @@ export function composeChat(
   const { recent, aligned } = historyAfter(history, conv.summaryUpTo)
   const memory = extras.memory ?? ''
   const knowledge = extras.knowledge ?? ''
+  const behavior = extras.behavior ?? ''
+  const examples = extras.examples ?? ''
   const reminder = config.reminder ? roleReminder(conv.role) : ''
-  // Ordine di lettura: riassunto, memoria della conversazione, documenti (i più vicini alla domanda per ultimi).
+  // Ordine di lettura: riassunto, memoria della conversazione, tecniche ed esempi del ruolo, documenti (i più
+  // vicini alla domanda per ultimi).
   const composed = composeMessages({
     order: config.order,
     base,
@@ -161,6 +169,8 @@ export function composeChat(
     summary: aligned ? conv.summary : null,
     blocks: [
       { key: 'memory', text: memory },
+      { key: 'behavior', text: behavior },
+      { key: 'examples', text: examples },
       { key: 'knowledge', text: knowledge }
     ],
     reminder,
@@ -179,9 +189,13 @@ export function composeChat(
     style: hasStyle ? style : '',
     summary,
     memory,
+    behavior,
+    examples,
     knowledge,
     summaryCount: summary ? history.length - recent.length : 0,
     memoryCount: extras.memoryCount ?? 0,
+    behaviorCount: extras.behaviorCount ?? 0,
+    examplesCount: extras.examplesCount ?? 0,
     knowledgeCount: extras.knowledgeCount ?? 0,
     messages: picked,
     cpt
@@ -433,14 +447,16 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         //   estratti dei documenti, fino al 25% della memoria;
         // - memoria della conversazione (dopo il primo riassunto): estratti dei messaggi riassunti, nel 12%
         //   dello spazio che resta.
-        let found: KnowledgeRecall = { section: '', refs: [] }
+        let found: RoleRecall = { documents: { section: '', refs: [] }, behavior: { section: '', count: 0 }, examples: { section: '', count: 0 } }
         let recall: Recall = { section: '', refs: [] }
         const history = await listMessages(db, conv.id)
         const question = history.findLast((m) => m.role === 'user') ?? null
         const useKnowledge = !!knowledge && wantsKnowledge(conv, question) && (await knowledge.hasReady(conv.id).catch(() => false))
+        // Tecniche ed esempi del ruolo entrano sempre, anche a libro spento: fanno parte del ruolo.
+        const useRole = !!knowledge && (await knowledge.hasRole(conv.id).catch(() => false))
         const useMemory = !!memory && (await memory.canRecall(conv).catch(() => false))
-        if (useKnowledge || useMemory) {
-          emit(target, { ...base, type: useKnowledge ? 'searching' : 'remembering' })
+        if (useKnowledge || useRole || useMemory) {
+          emit(target, { ...base, type: useKnowledge || useRole ? 'searching' : 'remembering' })
           const s = resolveSettings(conv, caps)
           const cpt = charsPerToken(history)
           const { request: draft } = await buildRequest(conv, mode, caps)
@@ -452,12 +468,15 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
             if (!vectors.has(model)) vectors.set(model, questionEmbedder ? questionEmbedder.embedQuestion(conv, history, model).catch(() => null) : Promise.resolve(null))
             return vectors.get(model)!
           }
-          if (useKnowledge) {
-            found = await knowledge!.recall(conv, { text: question?.content ?? '', vector }, knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), cpt).catch(() => found)
-            if (found.section) used += estimateTokens(found.section, cpt)
+          if (useKnowledge || useRole) {
+            const { shares } = resolveContext(await getContext?.().catch(() => null))
+            found = await knowledge!
+              .recallAll(conv, { text: question?.content ?? '', vector }, { total: knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), shares, documents: useKnowledge }, cpt)
+              .catch(() => found)
+            for (const section of [found.documents.section, found.behavior.section, found.examples.section]) if (section) used += estimateTokens(section, cpt)
           }
           if (useMemory) {
-            if (useKnowledge) emit(target, { ...base, type: 'remembering' })
+            if (useKnowledge || useRole) emit(target, { ...base, type: 'remembering' })
             const query = questionEmbedder ? await vector(await questionEmbedder.model()) : null
             recall = await memory!.recall(conv, memoryBudget(s.numCtx, s.reserveTokens, used), query).catch(() => recall)
           }
@@ -465,8 +484,12 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         const { request, start } = await buildRequest(conv, mode, caps, {
           memory: recall.section,
           memoryCount: recall.refs.length,
-          knowledge: found.section,
-          knowledgeCount: found.refs.length
+          knowledge: found.documents.section,
+          knowledgeCount: found.documents.refs.length,
+          behavior: found.behavior.section,
+          behaviorCount: found.behavior.count,
+          examples: found.examples.section,
+          examplesCount: found.examples.count
         })
         const result = await ollama
           .chatStream(
@@ -482,7 +505,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
             throw err
           })
         await contextLog?.record(callInput(start, result))
-        const done = await finish(conv, mode, result, recall.refs, found.refs)
+        const done = await finish(conv, mode, result, recall.refs, found.documents.refs)
         answered = !!done.message
         emit(target, { ...base, type: 'done', ...done })
       } catch (err) {

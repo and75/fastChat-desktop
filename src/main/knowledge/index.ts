@@ -9,7 +9,10 @@ import { createReadStream } from 'node:fs'
 import { getLocale, t } from '@shared/i18n'
 import {
   buildDocumentChunks,
+  buildBehaviorSection,
+  buildExamplesSection,
   buildKnowledgeSection,
+  splitKnowledgeBudget,
   ftsQuery,
   hybridScores,
   KNOWLEDGE,
@@ -17,10 +20,12 @@ import {
   toKnowledgeRefs,
   totalChars,
   wholeDocuments,
+  type PickedDocumentChunk,
   type SectionItem,
   type StoredDocumentChunk
 } from '@shared/knowledge'
 import { fromBuffer, toBuffer } from '@shared/memory'
+import { BASE_PURPOSES, type BasePurpose } from '@shared/types'
 import type {
   Conversation,
   DocumentRef,
@@ -61,6 +66,8 @@ import {
   listKnowledgeChunks,
   listLibraryBases,
   listLinkedBases,
+  listLinkPurposes,
+  setLinkPurpose,
   searchKnowledgeChunks,
   removeBase,
   removeConnection,
@@ -110,6 +117,13 @@ export interface KnowledgeRecall {
   /** Sezione del system prompt ('' se non c'è nulla di pertinente). */
   section: string
   refs: KnowledgeRef[]
+}
+
+/** Ciò che le basi danno alla risposta, per tipo: documenti (con le fonti), tecniche ed esempi del ruolo (senza). */
+export interface RoleRecall {
+  documents: KnowledgeRecall
+  behavior: { section: string; count: number }
+  examples: { section: string; count: number }
 }
 
 /** Impronta del contenuto di un file (SHA-256, in streaming). */
@@ -391,43 +405,36 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     }
   }
 
-  /** Documenti usabili di tutte le basi della conversazione: pronti, con pezzi, e con il modello di embedding installato. */
+  /**
+   * Documenti usabili delle basi della conversazione (pronti, con pezzi, e con il modello di embedding installato),
+   * ciascuno con l'uso della sua base: i documenti della conversazione sono sempre `documents`; quelli di una base
+   * collegata seguono l'uso scelto per il collegamento.
+   */
   async function readyDocuments(conversationId: string) {
     const { docs, own, linked } = await documentsOf(conversationId)
     const { usable, modelOf } = await measure(docs)
-    return { docs: usable, own, linked, modelOf }
+    const purposes = await listLinkPurposes(db, conversationId)
+    const purposeOf = (d: KnowledgeDocument): BasePurpose => purposes.get(d.baseId) ?? 'documents'
+    return { docs: usable, own, linked, modelOf, purposeOf }
   }
 
-  /** Vero se la conversazione ha almeno un documento usabile (per abilitare il bottone libro). */
+  /** Vero se la conversazione ha almeno un documento usabile su cui rispondere (per abilitare il bottone libro). */
   async function hasReady(conversationId: string): Promise<boolean> {
-    return (await readyDocuments(conversationId)).docs.length > 0
+    const { docs, purposeOf } = await readyDocuments(conversationId)
+    return docs.some((d) => purposeOf(d) === 'documents')
   }
 
-  /**
-   * Documenti per la risposta, da tutte le basi della conversazione, entro `maxTokens`:
-   * 1. se tutti i documenti usabili stanno nel budget, vanno al modello per intero (può contare e sommare):
-   *    non serve nessun embedding della domanda;
-   * 2. altrimenti prima i documenti «fissati» per intero (finché stanno), poi gli estratti scelti con il
-   *    punteggio ibrido (somiglianza semantica + parole esatte) nello spazio che resta.
-   * `question.vector(model)` dà l'embedding della domanda con il modello indicato: le basi possono avere modelli
-   * diversi (quello delle Impostazioni, o quello dichiarato dal loro pacchetto) e i vettori non si mescolano.
-   */
-  async function recall(
-    conv: Conversation,
-    question: { text: string; vector(model: string): Promise<ArrayLike<number> | null> },
-    maxTokens: number,
-    cpt: number
-  ): Promise<KnowledgeRecall> {
-    const empty: KnowledgeRecall = { section: '', refs: [] }
-    if (maxTokens < 64) return empty
-    const { docs, linked, modelOf } = await readyDocuments(conv.id)
-    if (docs.length === 0) return empty
+  /** Vero se la conversazione ha basi di comportamento o di esempi usabili: quelle entrano sempre, anche a libro spento. */
+  async function hasRole(conversationId: string): Promise<boolean> {
+    const { docs, purposeOf } = await readyDocuments(conversationId)
+    return docs.some((d) => purposeOf(d) !== 'documents')
+  }
+
+  type Question = { text: string; vector(model: string): Promise<ArrayLike<number> | null> }
+
+  /** I pezzi dei documenti indicati, per modello di embedding (i vettori di modelli diversi non si mescolano). */
+  async function loadChunks(docs: KnowledgeDocument[], modelOf: (d: KnowledgeDocument) => string): Promise<Map<string, StoredDocumentChunk[]>> {
     const titles = new Map(docs.map((d) => [d.id, d.title]))
-    // Le fonti dicono da quale base della libreria viene il documento.
-    const baseNames = new Map(linked.map((b) => [b.id, b.meta?.i18n?.[getLocale()]?.name ?? b.name]))
-    const baseOf = new Map(docs.map((d) => [d.id, baseNames.get(d.baseId)]))
-    const withBase = (refs: KnowledgeRef[]): KnowledgeRef[] => refs.map((r) => (baseOf.get(r.documentId) ? { ...r, base: baseOf.get(r.documentId) } : r))
-    // Pezzi per modello di embedding.
     const groups = new Map<string, StoredDocumentChunk[]>()
     for (const model of new Set(docs.map(modelOf))) {
       const ids = docs.filter((d) => modelOf(d) === model).map((d) => d.id)
@@ -444,17 +451,21 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
         }))
       )
     }
+    return groups
+  }
+
+  /**
+   * Sceglie cosa dare al modello entro `maxChars`:
+   * 1. se tutto sta nello spazio, i documenti vanno per intero (il modello può contare e sommare): non serve
+   *    nessun embedding della domanda;
+   * 2. altrimenti prima i documenti «fissati» per intero (finché stanno), poi gli estratti scelti con il
+   *    punteggio ibrido (somiglianza semantica + parole esatte) nello spazio che resta.
+   */
+  async function choose(docs: KnowledgeDocument[], groups: Map<string, StoredDocumentChunk[]>, question: Question, maxChars: number): Promise<{ whole: SectionItem[]; picked: PickedDocumentChunk[] }> {
     const chunks = [...groups.values()].flat()
-    const maxChars = maxTokens * cpt
-    // 1. tutto per intero
-    if (totalChars(chunks) <= maxChars) {
-      const items: SectionItem[] = chunks.map((c) => ({ ...c, whole: true }))
-      return { section: buildKnowledgeSection(items), refs: withBase(toKnowledgeRefs(items, [])) }
-    }
-    // 2. i fissati per intero, poi gli estratti
+    if (totalChars(chunks) <= maxChars) return { whole: chunks.map((c) => ({ ...c, whole: true })), picked: [] }
     const pinnedIds = new Set(docs.filter((d) => d.pinned).map((d) => d.id))
     const { picked: whole } = wholeDocuments(chunks, pinnedIds, maxChars)
-    const wholeItems: SectionItem[] = whole.map((c) => ({ ...c, whole: true }))
     const room = maxChars - totalChars(whole)
     // Punteggio ibrido per gruppo (ogni modello con il suo vettore della domanda), poi una sola scelta su tutti.
     const scores = new Map<string, number>()
@@ -471,9 +482,62 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
         rest.push(...candidates)
       }
     }
-    const picked = rest.length ? pickDocumentChunks([], rest, room, { scores }) : []
-    if (wholeItems.length === 0 && picked.length === 0) return empty
-    return { section: buildKnowledgeSection([...wholeItems, ...picked]), refs: withBase(toKnowledgeRefs(wholeItems, picked)) }
+    return { whole: whole.map((c) => ({ ...c, whole: true })), picked: rest.length ? pickDocumentChunks([], rest, room, { scores }) : [] }
+  }
+
+  /**
+   * Ciò che le basi della conversazione danno alla risposta, entro `total` token divisi in quote per tipo:
+   * - `documents`: i contenuti su cui rispondere, con le fonti; solo se `documents` è vero (pill e bottone libro);
+   * - `behavior` ed `examples`: tecniche ed esempi del ruolo, sempre, senza fonti.
+   * Lo spazio che un tipo non usa passa agli altri. `question.vector(model)` dà l'embedding della domanda con il
+   * modello indicato: le basi possono avere modelli diversi e i vettori non si mescolano.
+   */
+  async function recallAll(
+    conv: Conversation,
+    question: Question,
+    budget: { total: number; shares?: Record<BasePurpose, number>; documents?: boolean },
+    cpt: number
+  ): Promise<RoleRecall> {
+    const out: RoleRecall = { documents: { section: '', refs: [] }, behavior: { section: '', count: 0 }, examples: { section: '', count: 0 } }
+    if (budget.total < 64) return out
+    const { docs: all, linked, modelOf, purposeOf } = await readyDocuments(conv.id)
+    const of = (purpose: BasePurpose): KnowledgeDocument[] => (purpose === 'documents' && budget.documents === false ? [] : all.filter((d) => purposeOf(d) === purpose))
+    const docs = { documents: of('documents'), behavior: of('behavior'), examples: of('examples') }
+    if (all.length === 0 || BASE_PURPOSES.every((k) => docs[k].length === 0)) return out
+    const groups = { documents: await loadChunks(docs.documents, modelOf), behavior: await loadChunks(docs.behavior, modelOf), examples: await loadChunks(docs.examples, modelOf) }
+    const need = (k: BasePurpose): number => Math.ceil(totalChars([...groups[k].values()].flat()) / cpt)
+    const tokens = splitKnowledgeBudget(budget.total, budget.shares ?? { documents: 1, behavior: 0, examples: 0 }, { documents: need('documents'), behavior: need('behavior'), examples: need('examples') })
+
+    for (const k of ['behavior', 'examples'] as const) {
+      if (docs[k].length === 0 || tokens[k] <= 0) continue
+      const { whole, picked } = await choose(docs[k], groups[k], question, tokens[k] * cpt)
+      const items = [...whole, ...picked]
+      out[k] = { section: k === 'behavior' ? buildBehaviorSection(items) : buildExamplesSection(items), count: items.length }
+    }
+    if (docs.documents.length && tokens.documents > 0) {
+      // Le fonti dicono da quale base della libreria viene il documento.
+      const baseNames = new Map(linked.map((b) => [b.id, b.meta?.i18n?.[getLocale()]?.name ?? b.name]))
+      const baseOf = new Map(docs.documents.map((d) => [d.id, baseNames.get(d.baseId)]))
+      const withBase = (refs: KnowledgeRef[]): KnowledgeRef[] => refs.map((r) => (baseOf.get(r.documentId) ? { ...r, base: baseOf.get(r.documentId) } : r))
+      const { whole, picked } = await choose(docs.documents, groups.documents, question, tokens.documents * cpt)
+      if (whole.length || picked.length) out.documents = { section: buildKnowledgeSection([...whole, ...picked]), refs: withBase(toKnowledgeRefs(whole, picked)) }
+    }
+    return out
+  }
+
+  /** I soli documenti su cui rispondere, entro `maxTokens` (senza le basi di comportamento e di esempi). */
+  async function recall(conv: Conversation, question: Question, maxTokens: number, cpt: number): Promise<KnowledgeRecall> {
+    const { docs, purposeOf } = await readyDocuments(conv.id)
+    // Solo i documenti: lo spazio è tutto loro, e le basi del ruolo non lo consumano.
+    if (!docs.some((d) => purposeOf(d) === 'documents')) return { section: '', refs: [] }
+    return (await recallAll(conv, question, { total: maxTokens, shares: { documents: 1, behavior: 0, examples: 0 }, documents: true }, cpt)).documents
+  }
+
+  /** Cambia l'uso di una base collegata alla conversazione. */
+  async function setPurpose(conv: Conversation, baseId: string, purpose: BasePurpose): Promise<void> {
+    if (!BASE_PURPOSES.includes(purpose)) throw new Error(t('err.knowledge.purpose'))
+    if (!(await listLinkedBases(db, conv.id)).some((b) => b.id === baseId)) throw new Error(t('err.knowledge.baseNotFound'))
+    await setLinkPurpose(db, conv.id, baseId, purpose)
   }
 
   /** «Intero» sì/no per un documento. */
@@ -704,7 +768,9 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     const own = isBase(owner) ? owner : await getConversationBase(db, owner.id)
     const linked = isBase(owner) ? [] : await listLinkedBases(db, owner.id)
     const documents = own ? await listDocuments(db, own.id) : []
-    const all = [...documents, ...(await listDocuments(db, linked.map((b) => b.id)))]
+    const purposes = isBase(owner) ? new Map<string, BasePurpose>() : await listLinkPurposes(db, owner.id)
+    // «Pronti» e dimensioni riguardano i documenti su cui rispondere: le basi di comportamento e di esempi sono a parte.
+    const all = [...documents, ...(await listDocuments(db, linked.filter((b) => (purposes.get(b.id) ?? 'documents') === 'documents').map((b) => b.id)))]
     const { counts, usable: ready, chars, models, installed } = await measure(all)
     const model = (own && models.get(own.id)) || (own?.embeddingModel ?? (await embedder.model()))
     let chunks = 0
@@ -719,7 +785,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
       baseId: own?.id ?? null,
       documents,
       connections: own ? (await listConnections(db, own.id)).map(masked) : [],
-      linked: await describe(linked),
+      linked: (await describe(linked)).map((b) => ({ ...b, purpose: purposes.get(b.id) ?? 'documents' })),
       chunks,
       pending,
       ready: ready.length,
@@ -766,7 +832,10 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     disconnect,
     ensureModel,
     hasReady,
+    hasRole,
     recall,
+    recallAll,
+    setPurpose,
     status,
     wait,
     isMissingModel: (err: unknown) => err instanceof OllamaError && err.code === 'model'
