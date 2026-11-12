@@ -51,6 +51,7 @@ arriva già calibrato e porta con sé ciò che gli serve per comportarsi bene.
 | 10 | Lingue | Un ruolo è **pensato in una lingua**, coerente con le sue basi. Lo stesso ruolo esiste in più lingue come **varianti**. |
 | 11 | Store | **Scheda unica** per ruolo o base con scelta della lingua; **ricerca per titolo in tutte le lingue**; **filtro per lingua**. |
 | 13 | Interfaccia | **Semplice e guidata** per chi non è esperto, con tutto ciò che serve a chi vuole regolare: quattro sezioni di parametri sempre visibili, sotto i controlli del modello. |
+| 14 | Modelli | L'**app resta universale**: nessuna regola legata a un modello nel codice. È il **ruolo** a dichiarare, per uno o più modelli, come va composto il contesto e con quali valori (profili per modello, §3.5). I profili nascono da **valutazioni** fatte da chi crea il ruolo. |
 | 12 | Ruoli di base | **Assistente di FastChat** (documentazione dell'app) ed **Esperto di prompt engineering**, in **italiano e francese**; più il Generalista. |
 
 ---
@@ -210,6 +211,52 @@ Stesso `.fcpack` delle basi, con `type: "identity"`. Stesse regole di firma e im
   ]
 }
 ```
+
+### 3.5 Profili per modello
+
+L'app non contiene regole legate a un modello specifico. Ciò che funziona meglio con un certo modello lo
+dichiara **il ruolo**, perché chi lo crea lo ha provato.
+
+Un ruolo può portare uno o più **profili**, ciascuno valido per un modello o una famiglia:
+
+```json
+"profiles": [
+  {
+    "models": ["gemma4:*"],
+    "verified": true,
+    "mind": { "temperature": 0.4 },
+    "context": { "order": "B", "reminder": true, "shares": { "behavior": 0.25, "examples": 0.25, "documents": 0.5 } }
+  },
+  {
+    "models": ["llama3.2:*", "qwen3:*"],
+    "verified": true,
+    "context": { "order": "A", "reminder": false }
+  }
+]
+```
+
+| Campo | Significato |
+|---|---|
+| `models` | Nomi o famiglie a cui il profilo si applica (`gemma4:*`, `gemma4:e4b`) |
+| `verified` | Il ruolo è stato valutato con questi modelli |
+| `mind` | Valori della mente che sostituiscono quelli base del ruolo per questi modelli |
+| `context` | Composizione del contesto: ordine (A/B/C), promemoria, quote dei tre blocchi |
+
+Regole:
+
+- **Precedenza** per ogni valore: scelta forzata dall'utente nelle Impostazioni (per i test) → profilo del
+  ruolo per il modello in uso → valori base del ruolo → predefiniti dell'app.
+- Nelle Impostazioni, ordine e quote hanno il valore **«Automatico (decide il ruolo)»**, predefinito; scegliere
+  un valore esplicito lo impone a tutte le conversazioni ed è lo strumento per fare i confronti.
+- Se il modello in uso **non ha un profilo**, valgono i valori base del ruolo e compare un avviso non bloccante:
+  «Ruolo non verificato con questo modello».
+- Il profilo più specifico vince (`gemma4:e4b` su `gemma4:*`).
+- Il Generalista non ha profili: usa i predefiniti dell'app e del modello.
+
+**Da dove vengono i profili.** Da valutazioni fatte da chi crea il ruolo: stesse domande, modelli e
+composizioni diverse, confronto di qualità e velocità. Gli strumenti della prima consegna (ordine
+parametrizzabile, monitor, export) sono il banco di prova manuale; un sistema di valutazione vero e proprio
+(insieme di domande del ruolo, criteri, confronto automatico) arriva con l'editor dei ruoli.
 
 ---
 
@@ -597,6 +644,9 @@ fino alla seconda consegna (i quattro campi si leggono e scrivono come sezioni d
 
 #### Fase 5 · Pacchetti e Store
 
+- Profili per modello (§3.5): lettura dal pacchetto, scelta del profilo per il modello in uso, precedenza,
+  avviso «non verificato»; valore «Automatico (decide il ruolo)» nelle Impostazioni.
+
 - `pack.ts`: lettura e scrittura del tipo `identity` (`role.json`), campo `group`, verifica delle basi
   richieste.
 - Installazione: ruolo + basi richieste; rimozione con controllo d'uso delle basi.
@@ -639,7 +689,8 @@ fino alla seconda consegna (i quattro campi si leggono e scrivono come sezioni d
 | Contenuti in più lingue | Ogni lingua è una copia da mantenere | Accettato per semplicità; istruzioni condivise rimandate |
 | Qualità dei ruoli di base | Dipende dai testi, non dal codice | Bozze da rileggere prima della release |
 
-Rimandati a fasi successive: editor dei ruoli, ruoli creati dall'utente, pagamenti e licenze, plugin connettori
+Rimandati a fasi successive: sistema di valutazione dei ruoli (domande di prova, criteri, confronto tra modelli
+e composizioni), editor dei ruoli, ruoli creati dall'utente, pagamenti e licenze, plugin connettori
 esterni.
 
 ---
