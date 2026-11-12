@@ -1,6 +1,7 @@
 # Ruoli: idea e piano di realizzazione
 
-Stato: **progetto approvato, codice non ancora scritto.** Questo documento fissa l'idea, le decisioni prese e
+Stato: **progetto in valutazione, codice non ancora scritto.** La struttura dei parametri (§3.2) è la
+proposta corrente, scelta tra tre alternative messe a confronto (Appendice A); va ancora confermata. Questo documento fissa l'idea, le decisioni prese e
 il piano di lavoro. Va aggiornato man mano che le fasi vengono realizzate.
 
 Documenti collegati: [`base-di-conoscenza.md`](base-di-conoscenza.md) (basi, pacchetti, Store).
@@ -38,8 +39,8 @@ arriva già calibrato e porta con sé ciò che gli serve per comportarsi bene.
 
 | # | Tema | Decisione |
 |---|---|---|
-| 1 | Parametri | Ogni ruolo definisce **i suoi**, consolidati per quel mestiere. Non esiste un elenco comune. |
-| 2 | Effetto di un'opzione | Ogni opzione porta una **frase di istruzione** e può anche **modificare la mente** (es. temperatura). |
+| 1 | Parametri | Ogni ruolo definisce **i suoi**, consolidati per quel mestiere. Non esiste un elenco comune. I **gruppi** in cui stanno sono invece fissi e uguali per tutti i ruoli (§3.2, proposta da confermare). |
+| 2 | Effetto di un'opzione | Ogni opzione porta una **frase di istruzione** e può anche **modificare la mente** (es. temperatura). Due opzioni attive insieme **non toccano mai la stessa impostazione**. |
 | 3 | Brief | Diventa **Situazione**: un solo campo libero, con limite di caratteri legato al contesto del modello. |
 | 4 | Brief esistenti | **Convertiti** in Situazione (i quattro campi con i loro titoli), sul ruolo Generalista. |
 | 5 | Ordine del contesto | **Parametrizzabile** nelle Impostazioni (tre ordini), per fare test di qualità e velocità. |
@@ -68,37 +69,69 @@ L'utente può sempre regolarle a mano, come oggi.
 
 ### 3.2 Parametri
 
-Ogni parametro è definito dentro il ruolo:
+I parametri sono ciò che oggi l'utente scrive a mano nel Brief (Ruolo, Obiettivi, Vincoli), trasformato in
+**scelte guidate**. Il Contesto del Brief non entra qui: diventa la Situazione (§4.1).
+
+#### Gruppi fissi, contenuto proprio del ruolo
+
+I **gruppi sono gli stessi per tutti i ruoli**; i **parametri e le opzioni dentro ogni gruppo li scrive il
+ruolo**. Un ruolo usa solo i gruppi che gli servono: quelli vuoti non si vedono.
+
+| Gruppo | Risponde a | Dal Brief | Impostazioni della mente di sua proprietà |
+|---|---|---|---|
+| **1. Identità** | Chi è, in cosa è specializzato | Ruolo | — |
+| **2. Obiettivi** | Cosa deve ottenere | Obiettivi | — |
+| **3. Vincoli · Pubblico** | Per chi scrive o parla | Vincoli | — |
+| **3. Vincoli · Formato** | Che forma ha la risposta | Vincoli | Lunghezza della risposta (`style`) |
+| **3. Vincoli · Tono** | Con che registro | Vincoli | Temperatura, top-p |
+| **3. Vincoli · Fonti** | Da dove prende ciò che dice | Vincoli | — |
+| **3. Vincoli · Limiti** | Cosa non fa, cosa fa quando non sa | Vincoli | — |
+| **4. Metodo** | Come procede prima di rispondere | (nuovo) | Ragionamento (`think`), plan mode |
+
+Perché gruppi fissi:
+
+- **Interfaccia coerente**: l'utente ritrova la stessa struttura in ogni ruolo, con contenuti diversi.
+- **Nessun conflitto sulla mente, per costruzione**: ogni impostazione ha **un solo gruppo proprietario**. Solo
+  i parametri di quel gruppo possono toccarla.
+- **Ordine naturale nel prompt**: le frasi seguono l'ordine dei gruppi — identità, obiettivi, vincoli, metodo.
+
+#### Definizione di un parametro
 
 | Campo | Significato |
 |---|---|
 | `id` | Identificatore stabile (per salvare la scelta) |
+| `group` | `identity` · `goals` · `audience` · `format` · `tone` · `sources` · `limits` · `method` |
 | `label` | Nome mostrato all'utente, nella lingua del ruolo |
 | `type` | `single` (scelta singola), `multi` (scelta multipla), `toggle` (sì/no) |
 | `options[]` | Le opzioni proposte |
 | `options[].label` | Nome dell'opzione |
 | `options[].instruction` | Frase che entra nelle istruzioni del ruolo quando l'opzione è scelta |
-| `options[].mind` | Facoltativo: valori della mente che l'opzione imposta (es. `{ "temperature": 0.4 }`) |
+| `options[].mind` | Facoltativo: valori della mente che l'opzione imposta, solo tra quelli di proprietà del gruppo |
 | `default` | Opzione o opzioni preselezionate |
 
-Regole:
+#### Regole
 
-- Le istruzioni del ruolo sono: testo fisso del ruolo (`instructions`) + le frasi delle opzioni scelte,
-  nell'ordine dei parametri.
-- Un'opzione che tocca la mente lo **dichiara** nell'interfaccia («imposta la temperatura a 0,4»).
-- **Vince l'ultima azione**: se l'utente sposta a mano un valore dopo aver scelto l'opzione, vale il suo; se
-  poi cambia opzione, vale quello dell'opzione.
-- **Nessun conflitto possibile**: due opzioni che possono essere attive insieme non toccano mai la stessa
-  impostazione della mente. In pratica ogni impostazione (es. `temperature`) appartiene al massimo a **un**
-  parametro del ruolo, e in un parametro a scelta multipla al massimo a **una** opzione. Le opzioni alternative
-  di una scelta singola possono impostare lo stesso valore, perché ne è attiva una sola.
-  Il controllo si fa quando il pacchetto viene costruito e quando viene installato: un ruolo che viola la
-  regola è rifiutato.
+- **Istruzioni del ruolo** = testo fisso del ruolo (`instructions`) + frasi delle opzioni scelte, nell'ordine
+  dei gruppi e, dentro il gruppo, dei parametri.
+- **Proprietà della mente**: un'opzione può impostare solo le impostazioni del suo gruppo (tabella sopra).
+  Dentro un gruppo, ogni impostazione appartiene al massimo a **un** parametro, e in una scelta multipla al
+  massimo a **una** opzione. Le opzioni alternative di una scelta singola possono impostare lo stesso valore,
+  perché ne è attiva una sola. Un ruolo che viola la regola è rifiutato alla costruzione del pacchetto e
+  all'installazione.
 - **Calcolo della mente**: valori base del ruolo (`mind`) → effetti delle opzioni scelte → ritocchi manuali
-  dell'utente. Deselezionando un'opzione il valore torna a quello base del ruolo. Un ritocco manuale decade
-  quando l'utente cambia l'opzione che governa quello stesso valore.
-- Un `toggle` è trattato come un `single` con due opzioni (`on`/`off`): anche lo stato spento può avere la sua
-  frase e il suo effetto sulla mente.
+  dell'utente. Deselezionando un'opzione il valore torna a quello base del ruolo.
+- **Vince l'ultima azione**: un ritocco manuale vale finché l'utente non cambia l'opzione che governa quello
+  stesso valore.
+- Un'opzione che tocca la mente lo **dichiara** nell'interfaccia («imposta la temperatura a 0,3»).
+- Un `toggle` è un `single` con due opzioni (`on`/`off`): anche lo stato spento può avere frase ed effetto.
+- **Limite noto**: la struttura protegge le *impostazioni*, non le *frasi*. Due frasi di gruppi diversi possono
+  contraddirsi se il ruolo è scritto male. Per ora è responsabilità dell'autore; le dipendenze tra parametri
+  («visibile solo se…») sono rimandate finché i ruoli veri non ne mostrano il bisogno.
+
+#### Nell'interfaccia
+
+Scheda del modello, sotto i controlli della mente: una sezione per gruppo, con menu a tendina (scelta singola),
+caselle (scelta multipla), interruttore (sì/no).
 
 ### 3.3 Basi del ruolo
 
@@ -131,32 +164,34 @@ Stesso `.fcpack` delle basi, con `type: "identity"`. Stesse regole di firma e im
 }
 ```
 
-`role.json` (dentro il pacchetto):
+`role.json` (dentro il pacchetto; estratto, i ruoli completi sono in §7):
 
 ```json
 {
-  "instructions": "Sei un esperto di prompt engineering per modelli linguistici locali…",
+  "instructions": "Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive.",
   "mind": { "model": "gemma3:12b", "temperature": 0.6, "think": true, "style": "normal" },
   "parameters": [
     {
-      "id": "target",
-      "label": "Modello di destinazione",
-      "type": "single",
-      "default": "small",
+      "id": "specializzazione", "group": "identity", "label": "Specializzazione", "type": "single", "default": "piccoli",
       "options": [
-        { "id": "small", "label": "Piccolo, locale", "instruction": "Scrivi prompt brevi e diretti: una istruzione per riga, niente premesse." },
-        { "id": "large", "label": "Grande", "instruction": "Puoi usare istruzioni articolate, con ruolo, contesto e criteri di qualità." }
+        { "id": "piccoli", "label": "Modelli locali piccoli", "instruction": "Scrivi per modelli piccoli: una istruzione per riga, niente premesse." },
+        { "id": "grandi", "label": "Modelli grandi", "instruction": "Puoi usare istruzioni articolate, con contesto e criteri di qualità." }
       ]
     },
     {
-      "id": "intervento",
-      "label": "Intervento",
-      "type": "single",
-      "default": "migliora",
+      "id": "stile", "group": "tone", "label": "Stile del prompt", "type": "single", "default": "asciutto",
       "options": [
-        { "id": "scrive", "label": "Scrive da zero", "instruction": "Chiedi l'obiettivo se manca, poi scrivi il prompt completo." },
-        { "id": "migliora", "label": "Migliora", "instruction": "Riscrivi il prompt dell'utente e spiega in tre punti cosa hai cambiato." },
-        { "id": "spiega", "label": "Spiega cosa non va", "instruction": "Non riscrivere: elenca i problemi del prompt in ordine di gravità.", "mind": { "temperature": 0.3 } }
+        { "id": "asciutto", "label": "Asciutto", "instruction": "Usa frasi brevi e imperative.", "mind": { "temperature": 0.3 } },
+        { "id": "dettagliato", "label": "Dettagliato", "instruction": "Motiva ogni istruzione in una riga.", "mind": { "temperature": 0.6 } }
+      ]
+    },
+    {
+      "id": "tecniche", "group": "sources", "label": "Tecniche da usare", "type": "multi", "default": ["ruolo", "formato"],
+      "options": [
+        { "id": "ruolo", "label": "Ruolo esplicito", "instruction": "Apri il prompt dichiarando chi deve essere il modello." },
+        { "id": "esempi", "label": "Esempi nel prompt", "instruction": "Inserisci uno o due esempi di risposta attesa." },
+        { "id": "formato", "label": "Formato di uscita", "instruction": "Specifica il formato esatto della risposta." },
+        { "id": "passi", "label": "Passi numerati", "instruction": "Chiedi al modello di procedere per passi numerati." }
       ]
     }
   ],
@@ -328,29 +363,116 @@ Il Generalista non ha lingua propria e continua a seguire l'interfaccia.
 
 ## 7. Ruoli di base (inclusi nell'app)
 
-### Generalista
-Nessuna istruzione, nessun parametro, nessuna base. Segue la lingua dell'interfaccia.
+I testi (istruzioni, frasi delle opzioni, manuali, esempi, traduzioni francesi) nascono come **bozza** e vanno
+riletti: sono ciò che l'utente percepisce come qualità. ✓ indica l'opzione preselezionata.
 
-### Assistente di FastChat (IT, FR)
-| | |
-|---|---|
-| **Scopo** | Rispondere a domande sull'uso dell'app |
-| **Comportamento** | Come si risponde a una domanda d'uso: passi numerati, nomi esatti di schede e pulsanti, dire quando una funzione non esiste |
-| **Documenti** | «Guida di FastChat», ampliata (Store, ruoli, Situazione); in francese va tradotta |
-| **Parametri** | Livello: primo utilizzo · esperto — Formato: passo-passo · risposta breve |
-| **Mente** | Temperatura bassa, risposte sintetiche |
+### 7.1 Generalista
 
-### Esperto di prompt engineering (IT, FR)
-| | |
-|---|---|
-| **Scopo** | Scrivere, migliorare e spiegare prompt |
-| **Comportamento** | «Scrivere buoni prompt», ampliata con le tecniche |
-| **Esempi** | Coppie «prompt debole → prompt migliorato» |
-| **Parametri** | Modello di destinazione: piccolo locale · grande — Intervento: scrive da zero · migliora · spiega cosa non va — Formato: solo il prompt · prompt con spiegazione |
-| **Mente** | Temperatura media, ragionamento attivo se il modello lo supporta |
+Nessuna istruzione, nessun parametro, nessuna base. Segue la lingua dell'interfaccia. È l'app di oggi.
 
-I testi (istruzioni, frasi dei parametri, manuali, esempi, traduzioni francesi) nascono come **bozza** e vanno
-riletti: sono ciò che l'utente percepisce come qualità.
+### 7.2 Assistente di FastChat (IT, FR)
+
+- **Scopo**: rispondere a domande sull'uso dell'app.
+- **Mente di partenza**: `gemma3:4b` consigliato · temperatura 0,2 · ragionamento spento · lunghezza «Sintetico».
+- **Istruzione fissa**: «Sei l'assistente di FastChat. Rispondi solo a domande sull'uso dell'app, usando la
+  documentazione fornita. Usa i nomi esatti di schede e pulsanti. Se una funzione non esiste, dillo.»
+- **Basi**: comportamento «Come rispondere a una domanda d'uso» · documenti «Guida di FastChat» (ampliata con
+  Store, ruoli, Situazione; in francese va tradotta).
+
+| Gruppo | Parametro | Tipo | Opzione | Frase per il modello | Mente |
+|---|---|---|---|---|---|
+| **Obiettivi** | Scopo della risposta | Singola | Far fare ✓ | «Guida l'utente a compiere l'azione.» | — |
+| | | | Far capire | «Spiega come funziona e perché, prima dei passi.» | — |
+| **Vincoli · Pubblico** | Livello | Singola | Primo utilizzo ✓ | «Spiega ogni termine la prima volta e non dare nulla per scontato.» | — |
+| | | | Utente esperto | «Vai dritto al punto, senza concetti di base.» | — |
+| **Vincoli · Formato** | Formato atteso | Singola | Passo-passo ✓ | «Rispondi con passi numerati, un'azione per passo.» | lunghezza «Normale» |
+| | | | Risposta breve | «Rispondi in una o due frasi.» | lunghezza «Essenziale» |
+| | Percorso | Sì/No | Sì ✓ | «Indica sempre il percorso: finestra → scheda → pulsante.» | — |
+| | | | No | (nessuna frase) | — |
+| **Vincoli · Fonti** | Argomenti da collegare | Multipla | Basi di conoscenza ✓ | «Quando è pertinente, collega la risposta alle basi di conoscenza.» | — |
+| | | | Modelli e memoria | «Quando è pertinente, indica l'effetto su memoria e velocità.» | — |
+| | | | Store e ruoli | «Quando è pertinente, segnala cosa si trova nello Store.» | — |
+| **Vincoli · Limiti** | Se la Guida non lo dice | Singola | Lo dichiara ✓ | «Se la documentazione non copre la domanda, dillo e non inventare.» | — |
+| | | | Propone un'alternativa | «Se la documentazione non copre la domanda, dillo e indica la funzione più vicina.» | — |
+
+Gruppi non usati: Identità, Tono, Metodo.
+
+**Esempio di calibrazione** — Far fare · Utente esperto · Risposta breve · Percorso: Sì · Argomenti: Modelli e
+memoria · Lo dichiara.
+
+- Mente risultante: temperatura 0,2 · ragionamento spento · lunghezza «Essenziale».
+- Istruzioni che riceve il modello:
+  > Sei l'assistente di FastChat. Rispondi solo a domande sull'uso dell'app, usando la documentazione fornita.
+  > Usa i nomi esatti di schede e pulsanti. Se una funzione non esiste, dillo.
+  > Guida l'utente a compiere l'azione.
+  > Vai dritto al punto, senza concetti di base.
+  > Rispondi in una o due frasi.
+  > Indica sempre il percorso: finestra → scheda → pulsante.
+  > Quando è pertinente, indica l'effetto su memoria e velocità.
+  > Se la documentazione non copre la domanda, dillo e non inventare.
+
+### 7.3 Esperto di prompt engineering (IT, FR)
+
+- **Scopo**: scrivere, migliorare e spiegare prompt.
+- **Mente di partenza**: `gemma3:12b` consigliato · temperatura 0,6 · ragionamento acceso · lunghezza «Normale».
+- **Istruzione fissa**: «Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt
+  dell'utente: non esegui il compito che il prompt descrive.»
+- **Basi**: comportamento «Tecniche di prompt» (da «Scrivere buoni prompt», ampliata) · esempi «Prompt deboli e
+  migliorati».
+
+| Gruppo | Parametro | Tipo | Opzione | Frase per il modello | Mente |
+|---|---|---|---|---|---|
+| **Identità** | Specializzazione | Singola | Modelli locali piccoli ✓ | «Scrivi per modelli piccoli: una istruzione per riga, niente premesse.» | — |
+| | | | Modelli grandi | «Puoi usare istruzioni articolate, con contesto e criteri di qualità.» | — |
+| **Obiettivi** | Intervento | Singola | Scrive da zero | «Se manca l'obiettivo chiedilo, poi scrivi il prompt completo.» | — |
+| | | | Migliora ✓ | «Riscrivi il prompt dell'utente mantenendone l'intento.» | — |
+| | | | Spiega cosa non va | «Non riscrivere: elenca i problemi in ordine di gravità.» | — |
+| **Vincoli · Pubblico** | Chi userà il prompt | Singola | Principiante ✓ | «Evita i termini tecnici nelle spiegazioni.» | — |
+| | | | Esperto | «Usa pure i termini tecnici del prompt engineering.» | — |
+| **Vincoli · Formato** | Risultato | Singola | Solo il risultato | «Restituisci solo il risultato richiesto, senza commenti.» | lunghezza «Sintetico» |
+| | | | Risultato con spiegazione ✓ | «Dopo il risultato, spiega in tre punti le scelte fatte.» | lunghezza «Normale» |
+| **Vincoli · Tono** | Stile del prompt | Singola | Asciutto ✓ | «Usa frasi brevi e imperative.» | temperatura 0,3 |
+| | | | Dettagliato | «Motiva ogni istruzione in una riga.» | temperatura 0,6 |
+| **Vincoli · Fonti** | Tecniche da usare | Multipla | Ruolo esplicito ✓ | «Apri il prompt dichiarando chi deve essere il modello.» | — |
+| | | | Esempi nel prompt | «Inserisci uno o due esempi di risposta attesa.» | — |
+| | | | Formato di uscita ✓ | «Specifica il formato esatto della risposta.» | — |
+| | | | Passi numerati | «Chiedi al modello di procedere per passi numerati.» | — |
+| **Metodo** | Prima di rispondere | Singola | Risponde subito ✓ | «Rispondi direttamente.» | ragionamento acceso |
+| | | | Fa domande di chiarimento | «Se l'obiettivo non è chiaro, fai al massimo due domande prima di rispondere.» | ragionamento acceso |
+
+Gruppo non usato: Limiti.
+
+**Esempio di calibrazione** — Modelli locali piccoli · Spiega cosa non va · Esperto · Solo il risultato ·
+Asciutto · Tecniche: Formato di uscita + Passi numerati · Risponde subito.
+
+- Mente risultante: temperatura 0,3 · ragionamento acceso · lunghezza «Sintetico».
+- Istruzioni che riceve il modello:
+  > Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il
+  > compito che il prompt descrive.
+  > Scrivi per modelli piccoli: una istruzione per riga, niente premesse.
+  > Non riscrivere: elenca i problemi in ordine di gravità.
+  > Usa pure i termini tecnici del prompt engineering.
+  > Restituisci solo il risultato richiesto, senza commenti.
+  > Usa frasi brevi e imperative.
+  > Specifica il formato esatto della risposta.
+  > Chiedi al modello di procedere per passi numerati.
+  > Rispondi direttamente.
+
+Nota: con «Spiega cosa non va» le frasi del gruppo Fonti («Specifica il formato…») valgono per i prompt da
+scrivere, non per un elenco di problemi. È un esempio del limite noto sulle frasi (§3.2).
+
+### 7.4 Lo stesso schema su ruoli non inclusi (per verificarne la tenuta)
+
+| Gruppo | Assistente alla scrittura | Programmatore |
+|---|---|---|
+| **Identità** | Specializzazione: Giornalistica · Tecnica · Commerciale · Narrativa | Ambito: Web · Dati · Sistemi · Mobile |
+| **Obiettivi** | Intervento: Scrive da zero · Riscrive · Corregge soltanto — Priorità (multipla): Chiarezza · Sintesi · Persuasione · Precisione | Intervento: Scrive codice · Rivede · Spiega · Trova l'errore |
+| **Vincoli · Pubblico** | Generalista · Esperti · Studenti | Programmatori · Commerciali · Direttore tecnico · CTO |
+| **Vincoli · Formato** | Articolo · Email · Post · Relazione — Lunghezza: Breve · Media · Estesa | Solo codice · Codice commentato · Spiegazione passo-passo |
+| **Vincoli · Tono** | Formale · Colloquiale · Divulgativo — Cosa evitare (multipla): Gergo · Frasi fatte · Superlativi · Anglicismi | Asciutto · Didattico |
+| **Vincoli · Fonti** | Solo i documenti · Documenti e conoscenza propria | Solo il codice fornito · Anche librerie note |
+| **Vincoli · Limiti** | Quando non sa: Lo dichiara · Chiede chiarimenti | Non inventa API · Segnala ciò che non ha potuto provare |
+| **Metodo** | Scrive subito · Propone una scaletta | Risponde subito · Prima il piano, poi il codice |
 
 ---
 
@@ -386,7 +508,9 @@ La seconda introduce i ruoli.
 - Conversione dei dati: i quattro campi del Brief confluiscono in `situation` con i loro titoli
   (`# Ruolo`, `# Contesto`…), conversazioni e template passano al Generalista. I vecchi campi restano nel
   database per una versione, non più letti, così la conversione è reversibile.
-- Tipi condivisi: `Role`, `RoleParameter`, `RoleOption`, `RoleMind` in `src/shared/roles.ts`.
+- Tipi condivisi: `Role`, `RoleParameter`, `RoleOption`, `RoleMind`, `RoleGroup` in `src/shared/roles.ts`, con le
+  funzioni pure: validazione del ruolo (gruppi, proprietà della mente), calcolo della mente, composizione delle
+  istruzioni dalle scelte.
 - Ruolo Generalista creato all'avvio se manca.
 - **Test**: conversione di Brief pieni, parziali e vuoti; template; migrazione su database esistente.
 
@@ -432,8 +556,8 @@ fino alla seconda consegna (i quattro campi si leggono e scrivono come sezioni d
 #### Fase 4 · Interfaccia
 
 - Barra laterale: menu **«Parla con un…»** (ruoli, poi template).
-- Scheda «Modello»: intestazione con il ruolo; controlli della mente; sotto, i **parametri del ruolo** generati
-  dalla definizione (select, scelta multipla, interruttore). Un'opzione che tocca la mente lo dichiara.
+- Scheda «Modello»: intestazione con il ruolo; controlli della mente; sotto, i **parametri del ruolo**, una sezione
+  per gruppo, generati dalla definizione (select, scelta multipla, interruttore). Un'opzione che tocca la mente lo dichiara.
 - Scheda «Brief» → **«Situazione»**: un campo, contatore dei caratteri, anteprima delle istruzioni che il
   modello riceverà (ruolo + situazione).
 - Cambio ruolo: libero se la conversazione è vuota; altrimenti finestra «Nuova conversazione con…» che porta il
@@ -486,3 +610,46 @@ fino alla seconda consegna (i quattro campi si leggono e scrivono come sezioni d
 
 Rimandati a fasi successive: editor dei ruoli, ruoli creati dall'utente, pagamenti e licenze, plugin connettori
 esterni.
+
+---
+
+## Appendice A — Struttura dei parametri: tre alternative a confronto
+
+Le tre alternative sono state applicate allo stesso ruolo (Assistente alla scrittura).
+
+**A — I gruppi del Brief.** Tre gruppi: Ruolo, Obiettivi, Vincoli. Tutti i vincoli (pubblico, formato,
+registro, lunghezza, fonti, cosa evitare) in un unico gruppo.
+
+**B — I gruppi dei vincoli.** Niente Ruolo e Obiettivi: solo tipi di vincolo (Pubblico, Formato, Tono, Fonti,
+Limiti, Metodo), ciascuno con le sue impostazioni della mente.
+
+**C — Identità, Obiettivi, Vincoli per gruppo, Metodo.** I livelli del Brief, con i Vincoli divisi nei loro
+gruppi e il Metodo separato. È lo schema di §3.2.
+
+| Criterio | A | B | C |
+|---|---|---|---|
+| Conserva Ruolo e Obiettivi del Brief | Sì | No | Sì |
+| Rispetta i gruppi dei vincoli | No | Sì | Sì |
+| Ogni impostazione della mente ha un solo gruppo proprietario | No | Sì | Sì |
+| Stessa struttura in tutti i ruoli, contenuto diverso | In parte | Sì | Sì |
+| Ordine naturale nel prompt (identità → obiettivi → vincoli → metodo) | Sì | No | Sì |
+| Semplicità per l'utente | Alta | Media | Media |
+
+**Scelta proposta: C.** È la più completa; il suo costo è il numero di gruppi, mitigato dal fatto che un ruolo
+mostra solo quelli che usa.
+
+## Appendice B — Domande aperte per chi valuta
+
+1. **Gruppi**: gli otto gruppi di §3.2 sono quelli giusti? Ne manca uno, o due andrebbero fusi (es. Fonti e
+   Limiti)?
+2. **Proprietà della mente**: l'assegnazione Formato → lunghezza, Tono → temperatura e top-p, Metodo →
+   ragionamento e plan mode è sensata? Altre impostazioni (es. quota della conoscenza per il gruppo Fonti)
+   dovrebbero avere un proprietario?
+3. **Frasi in contraddizione**: basta la responsabilità dell'autore, o servono subito le dipendenze tra
+   parametri?
+4. **Quantità**: quanti parametri regge un modello piccolo prima che le istruzioni si diluiscano? I ruoli di
+   §7 producono 8–9 frasi: è già troppo?
+5. **Ordine del contesto** (§5.3): l'ordine B con promemoria è il candidato migliore per i modelli piccoli?
+6. **Quote** (§5.4): 20/20/60 tra comportamento, esempi e documenti è un buon punto di partenza?
+7. **Misura del riuso** (§8, fase 3): `prompt_eval_count` di Ollama conta solo i token nuovi o tutto il prompt?
+
