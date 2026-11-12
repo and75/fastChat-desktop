@@ -368,3 +368,77 @@ Scoperte durante il lavoro:
 | Il risparmio dell'ordine B non si verifica con il modello reale | 1.7 | Si misura prima di costruirci sopra i profili |
 | Interfaccia dei ruoli troppo carica | 2.5 | Controllo 3 sulle schermate |
 | Qualità dei testi dei ruoli | 2.7 | Controllo 4 |
+
+---
+
+# Parte 3 — Passaggio di consegne (per riprendere in una nuova sessione)
+
+## Dove siamo
+
+- **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8). `main` e il branch
+  `claude/contesto-parametri-effettivi` coincidono, salvo questo documento.
+- **Seconda consegna** (ruoli): non iniziata. Si parte dal **passo 2.1** di questo piano.
+
+## Cosa manca dalla prima consegna
+
+- **Prova con Ollama vero** (passo 1.7): l'utente deve eseguire `node scripts/cache-probe.mjs --model gemma4:e4b`
+  e riportare la tabella. Dice se `prompt_eval_count` conta solo i token nuovi e quanto si risparmia con
+  l'ordine B. Finché non c'è, i predefiniti restano: ordine A, promemoria spento, quote 20/20/60, situazione 5%.
+- **Trascinamento dei bordi** della barra della memoria: verificato solo da tastiera nei test automatici.
+- **Test instabile** «finestra piccola» dell'end-to-end: fallisce circa una volta su dieci (topbar a −48 px dopo
+  la rotella). Non dipende dai ruoli; potrebbe essere un vero difetto di impaginazione. Da indagare a parte.
+
+## Punti ancora da confermare con l'utente
+
+- Tag del modello consigliato per l'Esperto di prompt engineering (`gemma4:12b` non verificato; l'utente ha
+  `gemma4:e4b`).
+- Promemoria del ruolo: nelle prove brevi con Gemma 4 il ruolo regge senza. Decidere dopo prove lunghe se
+  tenerlo nell'interfaccia.
+- Riga «Riassunto di una conversazione avuta con: *ruolo precedente*» al cambio di ruolo: opzione da provare.
+
+## Come lavora l'utente (preferenze espresse)
+
+- Scrive in italiano; vuole risposte **schematiche e brevi**.
+- **Il piano prima del codice.** Per le decisioni: **una domanda per volta**, con una raccomandazione.
+- **Non contraddire un comportamento esistente senza chiederlo prima.** Ogni novità parte spenta o identica al
+  comportamento attuale, e va dichiarata.
+- Per l'interfaccia: **anteprima prima di realizzare**; interfaccia semplice e guidata, compatta, senza
+  scorrimento dove si può.
+- Bozze dei contenuti (testi dei ruoli, francese) vanno fatte rileggere.
+- **Nessuna release senza conferma esplicita. Nessuna pull request se non richiesta.**
+- Le chiavi private di firma dei pacchetti non vanno mai nel repository.
+
+## Comandi
+
+| Cosa | Comando |
+|---|---|
+| Typecheck | `npm run typecheck` |
+| Test unitari (279) | `npx vitest run` |
+| End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
+| Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
+| Pacchetti e catalogo dello Store | `npm run packs:build` |
+| Nuova migrazione | `npx drizzle-kit generate --name <nome> < /dev/null` |
+
+- Commit in italiano, uno per passo del piano.
+- Release: push del branch su `main` in fast-forward, poi workflow `release.yml` con l'input `version`.
+- Variabili per i test: `FASTCHAT_KNOWLEDGE_FILES`, `FASTCHAT_PACK_FILE`, `FASTCHAT_PACK_EXPORT`,
+  `FASTCHAT_CONTEXT_EXPORT`, `FASTCHAT_LANG`, `FASTCHAT_USER_DATA`, `OLLAMA_URL`.
+
+## File da conoscere per la seconda consegna
+
+| File | Cosa contiene |
+|---|---|
+| `src/shared/compose.ts` | Compositore del contesto, ordini, promemoria, rilevamento del posto «sistema» |
+| `src/main/chat.ts` | `composeChat`, `buildRequest`: dove entrano istruzioni, estratti e impostazioni |
+| `src/shared/prompt.ts` | `buildSystemPrompt` dal Brief: è ciò che il ruolo sostituirà |
+| `src/main/knowledge/index.ts` | `recallAll`, tipi di base (`purpose`), pacchetti |
+| `src/main/knowledge/pack.ts`, `src/main/store.ts`, `src/shared/store.ts` | Formato `.fcpack`, Store, catalogo |
+| `src/renderer/src/components/BriefPanel.tsx`, `ModelSettings.tsx`, `Sidebar.tsx` | Brief, mente, menu dei template |
+| `src/renderer/src/components/ContextSettingsPanel.tsx` | Scheda Impostazioni → Contesto |
+| `tests/compose.test.ts` | Fotografie dei messaggi: devono restare verdi |
+
+## Messaggio di apertura suggerito per la nuova sessione
+
+> Riprendiamo il progetto dei ruoli di FastChat. Leggi `docs/ruoli.md` e `docs/ruoli-piano.md` (soprattutto la
+> Parte 3). La prima consegna è rilasciata; partiamo dalla seconda, passo 2.1. Prima di scrivere codice dimmi in
+> breve cosa farai nel passo e aspetta il mio ok.
