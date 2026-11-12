@@ -50,7 +50,11 @@ export function SettingsDialog({ onClose, onOpenStore }: { onClose(): void; onOp
       aria-label={t('settings.title')}
       data-testid="settings-dialog"
       onClose={onClose}
-      className="m-auto w-[40rem] max-w-[92vw] rounded-xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-black/40 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+      // La scheda «Contesto» ha tre schede affiancate e la barra della memoria: le serve più larghezza.
+      className={
+        'm-auto max-w-[94vw] rounded-xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-black/40 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 ' +
+        (tab === 'context' ? 'w-[58rem]' : 'w-[40rem]')
+      }
     >
       <div className="flex items-center gap-4 border-b border-zinc-200 px-5 pt-5 dark:border-zinc-800">
         <h2 className="text-lg font-semibold">{t('settings.title')}</h2>

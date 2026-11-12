@@ -132,6 +132,24 @@ all'editor dei ruoli. Non crea intestazioni.
   formato.
 - I parametri **non** accendono né spengono le basi e non toccano le quote della conoscenza (§3.3).
 
+#### Come scrivere le frasi (lezioni dalle prove con Gemma 4)
+
+Con il ruolo nel messaggio di sistema dall'inizio della conversazione, Gemma 4 lo tiene con forza. Tre regole
+per chi scrive le istruzioni e le frasi delle opzioni:
+
+1. **Scrivi il comportamento, non il procedimento.** Un'istruzione come «Determina sempre quale tono è
+   richiesto» viene eseguita ad alta voce: ogni risposta si apre con «(Analisi del tono richiesto: …)». Meglio
+   «Adatta il tono al contesto, senza dichiararlo».
+2. **Il registro si cambia con un parametro, non discutendo.** Un ruolo forte è rigido: chiedere in chat «sii più
+   diplomatica» o «sei troppo distaccata» produce risposte che *parlano* del cambiamento restando identiche. Ciò
+   che l'utente vorrà regolare (registro, calore, lunghezza) deve essere un'opzione.
+3. **Prevedi come suona un «no».** I vincoli modellano anche i rifiuti: con un vincolo del tipo «riporta la
+   discussione al principio X», il rifiuto esce lungo, in personaggio, e rilancia con una proposta. Scrivi il
+   vincolo pensando al testo del rifiuto che ne verrà.
+
+Nota sul promemoria del ruolo (§5.3): nelle prove brevi con Gemma 4 il ruolo regge senza. Resta spento come
+predefinito; va verificato su conversazioni lunghe e su altri modelli prima di decidere se tenerlo.
+
 #### Nell'interfaccia
 
 Scheda del modello: in alto il ruolo e i controlli della mente, come oggi; sotto, le quattro sezioni con menu a

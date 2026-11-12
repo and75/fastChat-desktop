@@ -214,3 +214,21 @@ describe('posto «sistema» del modello, dal template di Ollama', () => {
     expect(detectSystemSlot('{{ .Prompt }} qualcosa')).toBe('unknown')
   })
 })
+
+// ------------------------------------------------------------------ disegno dell'ordine
+import { orderLayout, reminderApplies } from '../src/shared/compose'
+
+describe('disegno dell\'ordine e promemoria', () => {
+  it('lo schema corrisponde a ciò che il compositore produce', () => {
+    expect(orderLayout('A', false)).toEqual({ system: ['instructions', 'summary', 'memory', 'behavior', 'examples', 'knowledge'], conversation: ['history'], user: ['question'], reuse: 'none' })
+    expect(orderLayout('B', true)).toEqual({ system: ['instructions', 'summary'], conversation: ['history'], user: ['memory', 'behavior', 'examples', 'knowledge', 'reminder', 'question'], reuse: 'previous' })
+    expect(orderLayout('C', true)).toEqual({ system: ['situation', 'summary'], conversation: ['history'], user: ['instructions', 'memory', 'behavior', 'examples', 'knowledge', 'question'], reuse: 'previous' })
+  })
+
+  it('con l\'ordine C il promemoria non si applica: le istruzioni sono già accanto alla domanda', () => {
+    expect(reminderApplies('A')).toBe(true)
+    expect(reminderApplies('C')).toBe(false)
+    expect(resolveContext({ ...DEFAULT_CONTEXT_SETTINGS, order: 'C', reminder: 'on' })).toMatchObject({ order: 'C', reminder: false })
+    expect(resolveContext({ ...DEFAULT_CONTEXT_SETTINGS, order: 'A', reminder: 'on' })).toMatchObject({ order: 'A', reminder: true })
+  })
+})

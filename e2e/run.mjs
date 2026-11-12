@@ -907,26 +907,52 @@ try {
   })
 
   await step('composizione del contesto: ordine B e promemoria dalle Impostazioni, visibili nel monitor ed esportabili', async () => {
-    const setContext = async (order, reminder) => {
+    const openContext = async () => {
       await page.getByRole('button', { name: 'Impostazioni' }).click()
       const dialog = page.getByTestId('settings-dialog')
       await dialog.getByRole('tab', { name: 'Contesto' }).click()
-      const form = dialog.getByTestId('context-settings')
-      await form.getByTestId('context-order').selectOption(order)
-      await form.getByTestId('context-reminder').selectOption(reminder)
+      return { dialog, form: dialog.getByTestId('context-settings') }
+    }
+    const setContext = async (order, reminder) => {
+      const { dialog, form } = await openContext()
+      if (order === 'auto') await form.getByTestId('context-mode-auto').click()
+      else {
+        await form.getByTestId('context-mode-manual').click()
+        await form.getByTestId(`context-order-${order}`).click()
+      }
+      await form.getByTestId(`context-reminder-${reminder}`).click()
       await form.getByRole('button', { name: 'Salva' }).click()
       await form.getByTestId('context-settings-saved').waitFor()
       return { dialog, form }
     }
-    // le quote devono sommare a 100: l'errore arriva dal main e nulla viene salvato
-    await page.getByRole('button', { name: 'Impostazioni' }).click()
-    const settings = page.getByTestId('settings-dialog')
-    await settings.getByRole('tab', { name: 'Contesto' }).click()
-    assert.equal(await settings.getByTestId('context-order').inputValue(), 'auto')
-    await settings.getByTestId('context-share-documents').fill('90')
-    await settings.getByTestId('context-shares-total').filter({ hasText: 'Totale: 130%' }).waitFor()
-    await settings.getByTestId('context-settings').getByRole('button', { name: 'Salva' }).click()
-    await settings.getByTestId('context-settings-error').filter({ hasText: 'sommare a 100' }).waitFor()
+    // in automatico le schede mostrano l'ordine in uso (A) e non si possono scegliere
+    const { dialog: settings, form } = await openContext()
+    assert.equal(await form.getByTestId('context-mode-auto').getAttribute('aria-checked'), 'true')
+    assert.equal(await form.getByTestId('context-orders').getAttribute('data-order'), 'A')
+    assert.equal(await form.getByTestId('context-order-B').isDisabled(), true)
+    // il disegno: con A gli estratti sono nel sistema, con B accanto alla domanda
+    const blocks = (order, slot) => form.getByTestId(`context-order-${order}`).locator(`[data-slot="${slot}"] [data-block]`).evaluateAll((els) => els.map((e) => e.dataset.block))
+    assert.deepEqual(await blocks('A', 'system'), ['instructions', 'summary', 'memory', 'behavior', 'examples', 'knowledge'])
+    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'question'])
+    // «Scelgo io» + promemoria acceso: il blocco compare accanto alla domanda in A e B; con C non serve
+    await form.getByTestId('context-mode-manual').click()
+    await form.getByTestId('context-reminder-on').click()
+    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'reminder', 'question'])
+    assert.deepEqual(await blocks('C', 'user'), ['instructions', 'memory', 'behavior', 'examples', 'knowledge', 'question'])
+    await form.getByTestId('context-order-C').click()
+    assert.equal(await form.getByTestId('context-reminder-on').isDisabled(), true)
+    // barra della memoria: i bordi si spostano con le frecce, a passi; la somma resta 100
+    await form.getByTestId('context-legend-behavior').filter({ hasText: 'Comportamento · 20%' }).waitFor()
+    await form.getByTestId('context-handle-behavior').press('ArrowRight')
+    await form.getByTestId('context-legend-behavior').filter({ hasText: 'Comportamento · 25%' }).waitFor()
+    await form.getByTestId('context-legend-examples').filter({ hasText: 'Esempi · 15%' }).waitFor()
+    await form.getByTestId('context-legend-documents').filter({ hasText: 'Documenti · 60%' }).waitFor()
+    await form.getByTestId('context-handle-situation').press('ArrowRight')
+    await form.getByTestId('context-legend-situation').filter({ hasText: 'Situazione · 6%' }).waitFor()
+    // «Ripristina» torna ai predefiniti senza salvare
+    await form.getByTestId('context-reset').click()
+    await form.getByTestId('context-legend-behavior').filter({ hasText: 'Comportamento · 20%' }).waitFor()
+    assert.equal(await form.getByTestId('context-mode-auto').getAttribute('aria-checked'), 'true')
     await settings.getByTestId('dialog-close').click()
     await settings.waitFor({ state: 'detached' })
 

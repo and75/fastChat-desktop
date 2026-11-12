@@ -128,7 +128,8 @@ export function validateContextSettings(raw: unknown): ContextSettings {
 /** Composizione effettiva per una chiamata. «Automatico» oggi vale il comportamento storico: ordine A, niente promemoria. */
 export function resolveContext(settings: ContextSettings | null | undefined): { order: ContextOrder; reminder: boolean; shares: ContextSettings['shares'] } {
   const s = settings ?? DEFAULT_CONTEXT_SETTINGS
-  return { order: s.order === 'auto' ? 'A' : s.order, reminder: s.reminder === 'on', shares: s.shares }
+  const order = s.order === 'auto' ? 'A' : s.order
+  return { order, reminder: s.reminder === 'on' && reminderApplies(order), shares: s.shares }
 }
 
 // ---------------------------------------------------------------- posto «sistema» del modello
@@ -156,4 +157,24 @@ export function detectSystemSlot(template: unknown, modelfile?: unknown): System
   if (MERGED.some((re) => re.test(tpl))) return 'merged'
   if (DEDICATED.some((re) => re.test(tpl))) return 'dedicated'
   return 'unknown'
+}
+
+// ---------------------------------------------------------------- disegno dell'ordine
+
+/** Un blocco del contesto, per i disegni dell'interfaccia. */
+export type ContextBlock = 'instructions' | 'situation' | 'summary' | 'memory' | 'behavior' | 'examples' | 'knowledge' | 'reminder' | 'history' | 'question'
+
+/** Con l'ordine C le istruzioni complete sono già accanto alla domanda: il promemoria non aggiunge nulla. */
+export const reminderApplies = (order: ContextOrder): boolean => order !== 'C'
+
+/**
+ * Dove finisce ogni blocco con un dato ordine: nel messaggio di sistema, nella conversazione, o nel messaggio
+ * dell'utente con la domanda. È la stessa disposizione che produce composeMessages, in forma di schema.
+ */
+export function orderLayout(order: ContextOrder, reminder: boolean): { system: ContextBlock[]; conversation: ContextBlock[]; user: ContextBlock[]; reuse: 'none' | 'previous' } {
+  const dynamic: ContextBlock[] = ['memory', 'behavior', 'examples', 'knowledge']
+  const rem: ContextBlock[] = reminder && reminderApplies(order) ? ['reminder'] : []
+  if (order === 'A') return { system: ['instructions', 'summary', ...dynamic], conversation: ['history'], user: [...rem, 'question'], reuse: 'none' }
+  if (order === 'B') return { system: ['instructions', 'summary'], conversation: ['history'], user: [...dynamic, ...rem, 'question'], reuse: 'previous' }
+  return { system: ['situation', 'summary'], conversation: ['history'], user: ['instructions', ...dynamic, 'question'], reuse: 'previous' }
 }
