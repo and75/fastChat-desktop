@@ -53,14 +53,17 @@ function Segmented<T extends string>({ value, options, onChange, disabled, testi
 /** Una scheda con il disegno di dove finiscono i blocchi con quell'ordine. */
 function OrderCard({ order, reminder, active, locked, onPick }: { order: ContextOrder; reminder: boolean; active: boolean; locked: boolean; onPick(): void }): React.JSX.Element {
   const layout = orderLayout(order, reminder)
+  // Compatto: ogni posto su una riga, con i blocchi come etichette affiancate.
   const slot = (name: 'system' | 'conversation' | 'user', blocks: ContextBlock[]): React.JSX.Element => (
-    <div className="mb-1.5 rounded-lg border border-dashed border-zinc-300 p-1.5 dark:border-zinc-700" data-slot={name}>
-      <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-400">{t(`settings.context.slot.${name}` as Key)}</div>
-      {blocks.map((b) => (
-        <div key={b} className={'mb-0.5 rounded px-2 py-0.5 text-[11px] ' + BLOCK[b]} data-block={b}>
-          {t(`settings.context.block.${b}` as Key)}
-        </div>
-      ))}
+    <div className="flex items-start gap-1.5 border-t border-dashed border-zinc-200 py-1 first:border-t-0 dark:border-zinc-800" data-slot={name}>
+      <span className="w-[5.7rem] shrink-0 pt-0.5 text-[10px] uppercase tracking-wide text-zinc-400">{t(`settings.context.slot.${name}` as Key)}</span>
+      <span className="flex min-w-0 flex-wrap gap-0.5">
+        {blocks.map((b) => (
+          <span key={b} className={'rounded px-1.5 py-px text-[10.5px] leading-4 ' + BLOCK[b]} data-block={b}>
+            {t(`settings.context.block.${b}` as Key)}
+          </span>
+        ))}
+      </span>
     </div>
   )
   return (
@@ -70,17 +73,17 @@ function OrderCard({ order, reminder, active, locked, onPick }: { order: Context
       disabled={locked}
       onClick={onPick}
       className={
-        'flex flex-col rounded-xl border-2 p-2.5 text-left ' +
+        'flex flex-col rounded-xl border-2 px-2.5 py-2 text-left ' +
         (active ? 'border-brand-600 bg-brand-50 ring-2 ring-brand-100 dark:bg-brand-950/30 dark:ring-brand-900' : 'border-zinc-200 dark:border-zinc-800 ' + (locked ? 'opacity-60' : 'hover:border-brand-300'))
       }
       data-testid={`context-order-${order}`}
     >
-      <span className="text-sm font-semibold">{t(`settings.context.card.${order}` as Key)}</span>
-      <span className="mb-2 text-xs text-zinc-500">{t(`settings.context.card.${order}.sub` as Key)}</span>
+      <span className="text-[13px] font-semibold leading-tight">{t(`settings.context.card.${order}` as Key)}</span>
+      <span className="mb-1 text-[11px] text-zinc-500">{t(`settings.context.card.${order}.sub` as Key)}</span>
       {slot('system', layout.system)}
       {slot('conversation', layout.conversation)}
       {slot('user', layout.user)}
-      <span className={'mt-1 text-[11px] ' + (layout.reuse === 'none' ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400')}>
+      <span className={'mt-auto pt-1 text-[11px] ' + (layout.reuse === 'none' ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400')}>
         {layout.reuse === 'none' ? '↻ ' : '✓ '}
         {t(`settings.context.reuse.${layout.reuse}` as Key)}
       </span>
@@ -213,17 +216,15 @@ export function ContextSettingsPanel(): React.JSX.Element {
 
   return (
     <form
-      className="flex flex-col gap-4 text-sm"
+      className="flex flex-col gap-3 text-sm"
       data-testid="context-settings"
       onSubmit={(e) => {
         e.preventDefault()
         void save()
       }}
     >
-      <p className="text-zinc-600 dark:text-zinc-300">{t('settings.context.intro')}</p>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-1" title={t('settings.context.mode.hint')}>
           <span className="font-medium">{t('settings.context.order')}</span>
           <Segmented
             testid="context-mode"
@@ -234,9 +235,8 @@ export function ContextSettingsPanel(): React.JSX.Element {
             ]}
             onChange={(v) => change({ order: v === 'auto' ? 'auto' : effective.order })}
           />
-          <span className="text-xs text-zinc-500">{t('settings.context.mode.hint')}</span>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1" title={t('settings.context.reminder.hint')}>
           <span className="font-medium">{t('settings.context.reminder')}</span>
           <Segmented
             testid="context-reminder"
@@ -249,24 +249,23 @@ export function ContextSettingsPanel(): React.JSX.Element {
             ]}
             onChange={(v) => change({ reminder: v })}
           />
-          <span className="text-xs text-zinc-500">{t('settings.context.reminder.hint')}</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-testid="context-orders" data-order={effective.order}>
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3" data-testid="context-orders" data-order={effective.order}>
         {CONTEXT_ORDERS.map((o) => (
           <OrderCard key={o} order={o} reminder={draft.reminder === 'on' && reminderApplies(o)} active={effective.order === o} locked={auto} onPick={() => change({ order: o })} />
         ))}
       </div>
 
-      <div className="flex flex-col gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+      <div className="flex flex-col gap-1.5 border-t border-zinc-200 pt-3 dark:border-zinc-800">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="font-medium">{t('settings.context.memory')}</span>
           <span className="rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-300" data-testid="context-example">
             {conv?.model ? t('settings.context.memory.example', { model: conv.model, tokens: fmtInt(numCtx) }) : t('settings.context.memory.exampleNone', { tokens: fmtInt(numCtx) })}
           </span>
         </div>
-        <div ref={bar} className="flex h-9 select-none rounded-lg border border-zinc-200 text-white dark:border-zinc-800" data-testid="context-bar">
+        <div ref={bar} className="flex h-8 select-none rounded-lg border border-zinc-200 text-white dark:border-zinc-800" data-testid="context-bar">
           {segment('rounded-l-lg bg-brand-700', INSTRUCTIONS_SHARE, t('settings.context.bar.instructions'))}
           {segment('bg-brand-400', situation, t('settings.context.bar.situation'), handle('situation', situation, 1, 25, 1))}
           {segment('bg-teal-500', widths.behavior, t('settings.context.block.behavior'), handle('behavior', behavior, 0, behavior + examples, 5))}
@@ -275,23 +274,18 @@ export function ContextSettingsPanel(): React.JSX.Element {
           {segment('bg-brand-200 text-brand-900', history, t('settings.context.bar.history'))}
           {segment('rounded-r-lg bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300', reserve, t('settings.context.bar.reserve'))}
         </div>
-        <span className="text-xs text-zinc-500">{t('settings.context.memory.hint', { share: knowledgeShare })}</span>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4" title={t('settings.context.memory.spare')}>
           {legend.map((l) => (
-            <div key={l.key} className="rounded-lg border border-zinc-200 p-2 text-xs dark:border-zinc-800" data-testid={`context-legend-${l.key}`}>
+            <div key={l.key} className="text-xs leading-snug" data-testid={`context-legend-${l.key}`}>
               <div className="font-semibold">
                 <i className={`mr-1.5 inline-block h-2 w-2 rounded-sm ${l.dot}`} />
                 {l.title}
               </div>
-              {l.lines.map((line) => (
-                <div key={line} className="text-zinc-600 dark:text-zinc-400">
-                  {line}
-                </div>
-              ))}
+              <div className="text-zinc-600 dark:text-zinc-400">{l.lines.join(' · ')}</div>
             </div>
           ))}
         </div>
-        <span className="text-xs text-zinc-500">{t('settings.context.memory.spare')}</span>
+        <span className="text-xs text-zinc-500">{t('settings.context.memory.hint', { share: knowledgeShare })}</span>
       </div>
 
       {error && (

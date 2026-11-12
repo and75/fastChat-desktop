@@ -759,7 +759,7 @@ export const fr: Record<Key, string> = {
   'settings.context.memory': 'Comment se répartit la mémoire du modèle',
   'settings.context.memory.example': 'Exemple avec {model} · {tokens} tokens',
   'settings.context.memory.exampleNone': 'Exemple avec une mémoire de {tokens} tokens',
-  'settings.context.memory.hint': 'Faites glisser les bords blancs (ou utilisez les flèches) pour régler la Situation et la répartition entre les trois types de connaissances. L\'espace total des connaissances (ici {share} %) se choisit par conversation.',
+  'settings.context.memory.hint': 'Faites glisser les bords blancs (ou utilisez les flèches). L\'espace des connaissances ({share} %) se choisit par conversation ; ce qu\'un type n\'utilise pas passe aux autres.',
   'settings.context.memory.spare': 'Ce qu\'un type n\'utilise pas passe aux autres, d\'abord aux documents.',
   'settings.context.bar.instructions': 'Instr.',
   'settings.context.bar.situation': 'Sit.',

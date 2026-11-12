@@ -758,7 +758,7 @@ export const it = {
   'settings.context.memory': 'Come si divide la memoria del modello',
   'settings.context.memory.example': 'Esempio con {model} · {tokens} token',
   'settings.context.memory.exampleNone': 'Esempio con una memoria di {tokens} token',
-  'settings.context.memory.hint': 'Trascina i bordi bianchi (o usa le frecce) per regolare la Situazione e la divisione tra i tre tipi di conoscenza. Lo spazio totale della conoscenza (qui {share}%) si sceglie per conversazione.',
+  'settings.context.memory.hint': 'Trascina i bordi bianchi (o usa le frecce). Lo spazio della conoscenza ({share}%) si sceglie per conversazione; ciò che un tipo non usa passa agli altri.',
   'settings.context.memory.spare': 'Ciò che un tipo non usa passa agli altri, prima ai documenti.',
   'settings.context.bar.instructions': 'Istr.',
   'settings.context.bar.situation': 'Sit.',

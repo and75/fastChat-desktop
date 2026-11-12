@@ -759,7 +759,7 @@ export const en: Record<Key, string> = {
   'settings.context.memory': 'How the model\'s memory is divided',
   'settings.context.memory.example': 'Example with {model} · {tokens} tokens',
   'settings.context.memory.exampleNone': 'Example with a memory of {tokens} tokens',
-  'settings.context.memory.hint': 'Drag the white edges (or use the arrow keys) to adjust the Situation and the split between the three types of knowledge. The total knowledge space (here {share}%) is chosen per conversation.',
+  'settings.context.memory.hint': 'Drag the white edges (or use the arrow keys). The knowledge space ({share}%) is chosen per conversation; what one type does not use goes to the others.',
   'settings.context.memory.spare': 'What one type does not use goes to the others, documents first.',
   'settings.context.bar.instructions': 'Instr.',
   'settings.context.bar.situation': 'Sit.',
