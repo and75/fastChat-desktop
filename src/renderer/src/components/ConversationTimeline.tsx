@@ -54,7 +54,9 @@ export function ConversationTimeline({ items, scroller }: Props): React.JSX.Elem
   })
   const [active, setActive] = useState(-1)
   const [hover, setHover] = useState<number | null>(null)
-  const frame = useRef(0)
+  // Due richieste distinte: lo scorrimento non deve annullare una rimisura in attesa (vedi sotto).
+  const measureFrame = useRef(0)
+  const activeFrame = useRef(0)
 
   const anchors = useCallback((): (HTMLElement | null)[] => {
     const el = scroller.current
@@ -112,22 +114,38 @@ export function ConversationTimeline({ items, scroller }: Props): React.JSX.Elem
     const el = scroller.current
     if (!el) return
     const schedule = (): void => {
-      cancelAnimationFrame(frame.current)
-      frame.current = requestAnimationFrame(measure)
+      // la rimisura aggiorna anche il pallino attivo: un aggiornamento in attesa diventa superfluo
+      cancelAnimationFrame(activeFrame.current)
+      activeFrame.current = 0
+      cancelAnimationFrame(measureFrame.current)
+      measureFrame.current = requestAnimationFrame(() => {
+        measureFrame.current = 0
+        measure()
+      })
     }
     const ro = new ResizeObserver(schedule)
     ro.observe(el)
     if (el.firstElementChild) ro.observe(el.firstElementChild)
     if (rail.current) ro.observe(rail.current)
     const onScroll = (): void => {
-      cancelAnimationFrame(frame.current)
-      frame.current = requestAnimationFrame(updateActive)
+      // Con una rimisura in attesa non si tocca nulla: annullarla (come accadeva con un solo frame
+      // condiviso) lasciava i pallini alle posizioni della vecchia altezza, fuori dalla linea, quando
+      // uno scorrimento arrivava subito dopo il ridimensionamento della finestra.
+      if (measureFrame.current) return
+      cancelAnimationFrame(activeFrame.current)
+      activeFrame.current = requestAnimationFrame(() => {
+        activeFrame.current = 0
+        updateActive()
+      })
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => {
       ro.disconnect()
       el.removeEventListener('scroll', onScroll)
-      cancelAnimationFrame(frame.current)
+      cancelAnimationFrame(measureFrame.current)
+      cancelAnimationFrame(activeFrame.current)
+      measureFrame.current = 0
+      activeFrame.current = 0
     }
   }, [measure, updateActive, scroller])
 

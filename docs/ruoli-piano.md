@@ -566,8 +566,9 @@ Scoperte durante il lavoro:
   e riportare la tabella. Dice se `prompt_eval_count` conta solo i token nuovi e quanto si risparmia con
   l'ordine B. Finché non c'è, i predefiniti restano: ordine A, promemoria spento, quote 20/20/60, situazione 5%.
 - **Trascinamento dei bordi** della barra della memoria: verificato solo da tastiera nei test automatici.
-- **Test instabile** «finestra piccola» dell'end-to-end: fallisce circa una volta su dieci (topbar a −48 px dopo
-  la rotella). Non dipende dai ruoli; potrebbe essere un vero difetto di impaginazione. Da indagare a parte.
+- **Test instabile** «finestra piccola» dell'end-to-end (topbar a −48 px dopo la rotella): era un vero difetto di
+  impaginazione, corretto il 12 novembre sul branch `claude/beautiful-curie-qcqkm6` e mai unito. Portato in
+  `claude/vibrant-hopper-v149tl` dopo la 0.2.2: non rilasciato.
 
 ## Diagnostica e affidabilità (branch `claude/vibrant-hopper-v149tl`)
 
