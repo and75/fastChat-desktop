@@ -131,6 +131,8 @@ all'editor dei ruoli. Non crea intestazioni.
   specifica il formato esatto…» invece di «Specifica il formato esatto…»). Niente dipendenze tra parametri nel
   formato.
 - I parametri **non** accendono né spengono le basi e non toccano le quote della conoscenza (§3.3).
+- **Temperatura indipendente dalla lunghezza della risposta**: un parametro che imposta lo stile (lunghezza)
+  non può impostare anche la temperatura. Un ruolo che lo fa è rifiutato.
 
 #### Come scrivere le frasi (lezioni dalle prove con Gemma 4)
 
@@ -497,7 +499,7 @@ Nessuna istruzione, nessun parametro, nessuna base. Segue la lingua dell'interfa
 ### 7.2 Assistente di FastChat (IT, FR)
 
 - **Scopo**: rispondere a domande sull'uso dell'app.
-- **Mente di partenza**: `gemma4:e4b` consigliato · temperatura 0,2 · ragionamento spento · lunghezza «Sintetico».
+- **Mente di partenza**: `gemma4:e4b` consigliato · temperatura 0,2 · ragionamento spento · lunghezza «Conciso».
 - **Istruzione fissa**: «Sei l'assistente di FastChat. Rispondi solo a domande sull'uso dell'app, usando la
   documentazione fornita. Usa i nomi esatti di schede e pulsanti. Se una funzione non esiste, dillo.»
 - **Basi**: comportamento «Come rispondere a una domanda d'uso» · documenti «Guida di FastChat» (ampliata con
@@ -553,7 +555,7 @@ memoria · Lo dichiara.
 | | | | Spiega cosa non va | «Non riscrivere: elenca i problemi in ordine di gravità.» | — |
 | **Stile e formato** | Chi userà il prompt | Singola | Principiante ✓ | «Evita i termini tecnici nelle spiegazioni.» | — |
 | | | | Esperto | «Usa pure i termini tecnici del prompt engineering.» | — |
-| | Risultato | Singola | Solo il risultato | «Restituisci solo il risultato richiesto, senza commenti.» | lunghezza «Sintetico» |
+| | Risultato | Singola | Solo il risultato | «Restituisci solo il risultato richiesto, senza commenti.» | lunghezza «Conciso» |
 | | | | Risultato con spiegazione ✓ | «Dopo il risultato, spiega in tre punti le scelte fatte.» | lunghezza «Normale» |
 | | Stile del prompt | Singola | Asciutto ✓ | «Usa frasi brevi e imperative.» | temperatura 0,3 |
 | | | | Dettagliato | «Motiva ogni istruzione in una riga.» | temperatura 0,6 |
@@ -569,7 +571,7 @@ Documenti spenti in partenza: l'utente li accende quando vuole lavorare sui prop
 **Esempio di calibrazione** — Modelli locali piccoli · Spiega cosa non va · Esperto · Solo il risultato ·
 Asciutto · Tecniche: Formato di uscita + Passi numerati · Risponde subito.
 
-- Mente risultante: temperatura 0,3 · ragionamento acceso · lunghezza «Sintetico».
+- Mente risultante: temperatura 0,3 · ragionamento acceso · lunghezza «Conciso».
 - Istruzioni che riceve il modello:
   > Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il
   > compito che il prompt descrive.
@@ -585,7 +587,7 @@ Asciutto · Tecniche: Formato di uscita + Passi numerati · Risponde subito.
 Le frasi delle tecniche sono in forma condizionale: con «Spiega cosa non va» non entrano in conflitto.
 
 Valori della mente da provare: Gemma 4 ha temperatura predefinita 1; i valori più bassi scelti qui sono
-un'ipotesi. Con il ragionamento acceso il modello può pensare a lungo anche con risposta «Sintetico»: da
+un'ipotesi. Con il ragionamento acceso il modello può pensare a lungo anche con risposta «Conciso»: da
 verificare se le opzioni di risposta breve debbano spegnerlo.
 
 ### 7.4 Lo stesso schema su ruoli non inclusi (per verificarne la tenuta)

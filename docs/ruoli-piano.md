@@ -1,7 +1,7 @@
 # Ruoli — decisioni e piano di esecuzione
 
-Stato: **prima consegna realizzata sul branch** (passi 1.0–1.8), non rilasciata. Manca solo la prova con Ollama
-vero (passo 1.7), che va eseguita sul computer dell'utente. La seconda consegna non è iniziata.
+Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatto il passo 2.1.
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -35,6 +35,7 @@ vero (passo 1.7), che va eseguita sul computer dell'utente. La seconda consegna 
 | D13 | Calcolo della mente: valori base del ruolo → effetti delle opzioni → ritocchi manuali dell'utente. Vince l'ultima azione. |
 | D14 | Le frasi che potrebbero contraddirsi si scrivono **in forma condizionale**. Niente dipendenze tra parametri nel formato. |
 | D15 | I parametri **non** accendono né spengono le basi e non toccano le quote. |
+| D37 | **La temperatura è indipendente dalla lunghezza della risposta**: un parametro che imposta lo stile (lunghezza) non può impostare anche la temperatura. Un ruolo che lo fa è rifiutato. Nessuna regola automatica nell'app lega i due valori. |
 
 ## 1.3 Basi di conoscenza
 
@@ -330,6 +331,23 @@ installare ruoli dallo Store nella propria lingua.
 | 1.6 Interfaccia | Fatto | Impostazioni → Contesto; monitor; export CSV |
 | 1.7 Prova con Ollama | **Da eseguire dall'utente** | `node scripts/cache-probe.mjs --model gemma4:e4b` |
 | 1.8 Chiusura | Fatto | Documentazione e protocollo di prova |
+| 2.1 Il ruolo come dato | Fatto | `src/shared/roles.ts`, `tests/roles.test.ts`, ruoli di prova in `tests/fixtures/roles/` |
+
+Scelte fatte nel passo 2.1:
+
+- **Un «ruolo» nel codice è il contenuto di `role.json`**; nome, lingua e gruppo stanno nel manifesto del
+  pacchetto (passo 2.4).
+- **Lunghezza della risposta**: i valori sono quelli dell'app (Essenziale, Conciso, Normale, Esteso). Dove
+  `ruoli.md` diceva «Sintetico» ora dice «Conciso».
+- **Vince l'ultima azione**: i ritocchi manuali vincono sempre nel calcolo; quando l'utente cambia la scelta di
+  un parametro, decadono i ritocchi sulle impostazioni che quel parametro governa (`releaseOverrides`, da
+  chiamare nell'interfaccia al passo 2.5).
+- **Profilo e opzioni**: la mente del profilo sostituisce i valori base del ruolo; le opzioni scelte vincono sul
+  profilo.
+- **Un'opzione può toccare** temperatura, top-p, ragionamento, plan mode, stile, memoria. Non il modello né la
+  pill dei documenti (D15).
+- **Quote del profilo**: nelle Impostazioni le quote non hanno ancora il valore «Automatico». Per ora valgono
+  quelle del profilo finché nelle Impostazioni restano le predefinite (20/20/60). Da rivedere con l'interfaccia.
 
 Scoperte durante il lavoro:
 
@@ -377,7 +395,8 @@ Scoperte durante il lavoro:
 
 - **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8). `main` e il branch
   `claude/contesto-parametri-effettivi` coincidono, salvo questo documento.
-- **Seconda consegna** (ruoli): non iniziata. Si parte dal **passo 2.1** di questo piano.
+- **Seconda consegna** (ruoli): fatto il **passo 2.1** (il ruolo come dato, non ancora usato dall'app). Si
+  prosegue dal **passo 2.2**.
 
 ## Cosa manca dalla prima consegna
 
@@ -413,7 +432,7 @@ Scoperte durante il lavoro:
 | Cosa | Comando |
 |---|---|
 | Typecheck | `npm run typecheck` |
-| Test unitari (279) | `npx vitest run` |
+| Test unitari (306) | `npx vitest run` |
 | End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
 | Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
 | Pacchetti e catalogo dello Store | `npm run packs:build` |
@@ -428,6 +447,7 @@ Scoperte durante il lavoro:
 
 | File | Cosa contiene |
 |---|---|
+| `src/shared/roles.ts` | Il ruolo come dato: validazione, istruzioni, mente, profili (passo 2.1) |
 | `src/shared/compose.ts` | Compositore del contesto, ordini, promemoria, rilevamento del posto «sistema» |
 | `src/main/chat.ts` | `composeChat`, `buildRequest`: dove entrano istruzioni, estratti e impostazioni |
 | `src/shared/prompt.ts` | `buildSystemPrompt` dal Brief: è ciò che il ruolo sostituirà |
