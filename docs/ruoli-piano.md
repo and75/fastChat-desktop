@@ -1,7 +1,7 @@
 # Ruoli — decisioni e piano di esecuzione
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
-1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1–2.6. Controllo 3 superato.
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1–2.6; 2.7 in corso (testi scritti, ⏸ Controllo 4: rilettura dell'utente).
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -458,6 +458,24 @@ Scelte fatte nel passo 2.6:
 - **I due ruoli in bozza** sono nel catalogo come «inclusi nell'app»: installati, non rimovibili.
 - **«Altri ruoli nello Store…»** apre lo Store sulla scheda dei ruoli.
 - **Da fare al 2.7**: le varianti francesi non esistono ancora; la scelta della lingua mostra solo «Italiano».
+
+Passo 2.7, in corso (⏸ Controllo 4: l'utente rilegge i testi):
+
+- **Testi scritti, non ancora nei pacchetti**: `roles/{assistente,prompt}.{it,fr}.json` e, in `store/sources/`,
+  `assistente-comportamento`, `prompt-tecniche`, `prompt-esempi`, `manuale` (ciascuno `.it.md` e `.fr.md`).
+  `tests/roles-content.test.ts` controlla che i ruoli siano validi e che le due lingue abbiano la stessa struttura.
+- **Da rileggere** nel documento «FastChat — testi dei ruoli da rileggere»
+  (https://claude.ai/artifact/DFpEFA1e8fuKhFMh2QcnJ6). Il francese lo rilegge l'utente. Le correzioni fatte nel
+  documento vanno riportate nei file sorgente.
+- **Deciso**: modello consigliato `gemma4:e4b` per entrambi i ruoli. Senza profili per modello finché l'utente
+  non esegue la prova con Ollama.
+- **Dopo l'ok**: `scripts/build-packs.mjs` deve costruire ruoli e basi nelle due lingue (id delle basi:
+  `app.fastchat.kb.assistente.{it,fr}`, `app.fastchat.kb.prompt-tecniche.{it,fr}`,
+  `app.fastchat.kb.prompt-esempi.{it,fr}`, Guida francese `app.fastchat.guida.fr`), togliere «(bozza)», aggiornare
+  il catalogo; il manuale italiano si aggiunge alla Guida di oggi. **Non eseguire `npm run packs:build` prima**:
+  i ruoli italiani in `roles/` puntano già alle basi nuove, che ancora non esistono come pacchetti.
+- Rispetto a `ruoli.md` §7: le opzioni di «Prima di rispondere» non impostano più il ragionamento (già acceso
+  nella mente di partenza); le frasi di «Stile del prompt» dicono «nei prompt che scrivi».
 
 Scoperte durante il lavoro:
 

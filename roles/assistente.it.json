@@ -1,5 +1,6 @@
 {
-  "instructions": "Sei l'assistente di FastChat. Rispondi solo a domande sull'uso dell'app, usando la documentazione fornita. Usa i nomi esatti di schede e pulsanti. Se una funzione non esiste, dillo.",
+  "instructions": "Sei l'assistente di FastChat. Rispondi a domande sull'uso dell'app, basandoti sulla documentazione fornita. Chiama schede e pulsanti con il loro nome esatto, tra «virgolette». Se una funzione non esiste, dillo chiaramente.",
+  "reminder": "Sei l'assistente di FastChat: rispondi sull'uso dell'app, dalla documentazione.",
   "mind": {
     "model": "gemma4:e4b",
     "temperature": 0.2,
@@ -23,7 +24,7 @@
         {
           "id": "capire",
           "label": "Far capire",
-          "instruction": "Spiega come funziona e perché, prima dei passi."
+          "instruction": "Spiega come funziona e perché, poi indica i passi."
         }
       ]
     },
@@ -38,12 +39,12 @@
         {
           "id": "primo",
           "label": "Primo utilizzo",
-          "instruction": "Spiega ogni termine la prima volta e non dare nulla per scontato."
+          "instruction": "Spiega ogni termine la prima volta che lo usi e non dare nulla per scontato."
         },
         {
           "id": "esperto",
           "label": "Utente esperto",
-          "instruction": "Vai dritto al punto, senza concetti di base."
+          "instruction": "Vai dritto al punto, senza spiegare i concetti di base."
         }
       ]
     },
@@ -84,7 +85,7 @@
         {
           "id": "on",
           "label": "Sì",
-          "instruction": "Indica sempre il percorso: finestra → scheda → pulsante."
+          "instruction": "Indica sempre dove si trova ciò di cui parli: finestra → scheda → pulsante."
         },
         {
           "id": "off",
@@ -140,6 +141,11 @@
     }
   ],
   "bases": [
+    {
+      "id": "app.fastchat.kb.assistente.it",
+      "purpose": "behavior",
+      "name": "Come rispondere a una domanda d'uso"
+    },
     {
       "id": "app.fastchat.guida",
       "purpose": "documents",

@@ -1,5 +1,6 @@
 {
   "instructions": "Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive.",
+  "reminder": "Sei un esperto di prompt engineering: lavori sui prompt, non esegui il compito che descrivono.",
   "mind": {
     "model": "gemma4:e4b",
     "temperature": 0.6,
@@ -18,7 +19,7 @@
         {
           "id": "piccoli",
           "label": "Modelli locali piccoli",
-          "instruction": "Scrivi per modelli piccoli: una istruzione per riga, niente premesse."
+          "instruction": "Scrivi per modelli piccoli: un'istruzione per riga, niente premesse."
         },
         {
           "id": "grandi",
@@ -47,7 +48,7 @@
         {
           "id": "spiega",
           "label": "Spiega cosa non va",
-          "instruction": "Non riscrivere: elenca i problemi in ordine di gravità."
+          "instruction": "Non riscrivere il prompt: elenca i suoi problemi, dal più grave al meno grave."
         }
       ]
     },
@@ -108,7 +109,7 @@
         {
           "id": "asciutto",
           "label": "Asciutto",
-          "instruction": "Usa frasi brevi e imperative.",
+          "instruction": "Nei prompt che scrivi usa frasi brevi e imperative.",
           "mind": {
             "temperature": 0.3
           }
@@ -116,7 +117,7 @@
         {
           "id": "dettagliato",
           "label": "Dettagliato",
-          "instruction": "Motiva ogni istruzione in una riga.",
+          "instruction": "Nei prompt che scrivi motiva ogni istruzione in una riga.",
           "mind": {
             "temperature": 0.6
           }
@@ -166,27 +167,26 @@
         {
           "id": "subito",
           "label": "Risponde subito",
-          "instruction": "Rispondi direttamente.",
-          "mind": {
-            "think": true
-          }
+          "instruction": "Rispondi direttamente, senza fare domande."
         },
         {
           "id": "chiarimenti",
           "label": "Fa domande di chiarimento",
-          "instruction": "Se l'obiettivo non è chiaro, fai al massimo due domande prima di rispondere.",
-          "mind": {
-            "think": true
-          }
+          "instruction": "Se l'obiettivo non è chiaro, fai al massimo due domande prima di rispondere."
         }
       ]
     }
   ],
   "bases": [
     {
-      "id": "it.fastchat.prompt",
+      "id": "app.fastchat.kb.prompt-tecniche.it",
       "purpose": "behavior",
-      "name": "Scrivere buoni prompt"
+      "name": "Tecniche di prompt"
+    },
+    {
+      "id": "app.fastchat.kb.prompt-esempi.it",
+      "purpose": "examples",
+      "name": "Prompt deboli e migliorati"
     }
   ]
 }
