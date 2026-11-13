@@ -11,8 +11,8 @@ Riferimento del meccanismo, allineato al codice (`src/main/knowledge/`, `src/sha
   che l'utente aggiunge dalla scheda «Conoscenza». Nasce al primo documento e viene eliminata con la conversazione.
 - **Basi della libreria** (`origin: 'local'`, e `'package'` per quelle installate da un pacchetto): si creano
   e si gestiscono in Impostazioni → Conoscenza, e si **collegano** a quante conversazioni si vuole
-  (`conversation_bases`). I documenti si indicizzano una volta sola. Un'identità del modello potrà portare
-  con sé le sue basi collegandole alla conversazione.
+  (`conversation_bases`). I documenti si indicizzano una volta sola. Un ruolo porta con sé le sue basi: arrivano
+  già collegate alle conversazioni che lo usano (vedi 0.4).
 - Una conversazione usa **l'unione**: la sua base più quelle collegate. Ricerca, budget e documenti interi
   valgono sull'insieme; le fonti riportano il nome della base quando il documento viene dalla libreria.
 - Dalla conversazione le basi collegate si collegano e scollegano soltanto: documenti, «Intero» e sorgenti si
@@ -40,9 +40,10 @@ Il formato con cui una base si esporta, si installa e si distribuirà dallo stor
 
 | File | Contenuto |
 |---|---|
-| `manifest.json` | id, tipo (`knowledge`; `identity` e `bundle` sono riservati), nome, versione, autore, lingua, licenza, **modello di embedding dichiarato** (nome, dimensioni, impronta), impronta SHA-256 di ogni file |
+| `manifest.json` | id, tipo (`knowledge` per una base, `identity` per un ruolo; `bundle` è riservato), gruppo delle varianti per lingua, nome, versione, autore, lingua, licenza, **modello di embedding dichiarato** (nome, dimensioni, impronta), impronta SHA-256 di ogni file |
 | `knowledge.json` | documenti e pezzi con locatore: il testo c'è sempre (fonti, ricerca a parole) |
 | `vectors.bin` | vettori float32 dei pezzi, nell'ordine dei pezzi; assente nei pacchetti di solo testo |
+| `role.json` | definizione di un ruolo (pacchetti `identity`): istruzioni, impostazioni del modello, parametri, basi richieste |
 | `signature.json` | firma Ed25519 del manifest, che fissa l'impronta degli altri file |
 
 - **Con i vettori** (il caso normale, modello predefinito `embeddinggemma`): all'installazione i pezzi sono
@@ -58,7 +59,11 @@ Il formato con cui una base si esporta, si installa e si distribuirà dallo stor
 - **Esporta** (Impostazioni → Conoscenza): solo basi locali con tutti i documenti pronti; il pacchetto porta i
   vettori del modello della base, dichiarato nel manifest con dimensioni e impronta.
 - **Pacchetti integrati**: i file in `packs/` vengono installati o aggiornati all'avvio (`npm run packs:build`
-  li rigenera dalla documentazione). Oggi: «Guida di FastChat», di solo testo.
+  li rigenera dalla documentazione). Oggi: «Guida di FastChat», di solo testo, e i ruoli inclusi nell'app.
+- **Ruoli**: un pacchetto `identity` si installa con le basi che il ruolo richiede (altri pacchetti, cercati
+  accanto al file o nel catalogo dello Store). Se una base manca il ruolo funziona comunque, e la scheda
+  «Conoscenza» lo segnala. Rimuovendo il ruolo, le basi arrivate con lui se ne vanno solo se nessun altro
+  ruolo le richiede.
 - **Collega alle nuove conversazioni**: opzione per base della libreria; le nuove conversazioni la trovano già
   collegata.
 - Firmare: `node scripts/pack-keys.mjs <id>` genera la coppia di chiavi; la pubblica va in `trust.ts`, la
@@ -68,12 +73,13 @@ Il formato con cui una base si esporta, si installa e si distribuirà dallo stor
 
 Finestra sopra la chat, aperta dal bottone «Store» nella barra laterale (sopra la riga con le impostazioni).
 
-- **Categorie**, in ordine: Identità, Basi di conoscenza, Plugin, Pacchetti (riuniscono più voci).
+- **Categorie**, in ordine: Ruoli, Basi di conoscenza, Plugin, Pacchetti (riuniscono più voci).
 - **Stati**: Installato · Aggiornamento disponibile · Disponibile · Presto disponibile. La Guida integrata risulta installata all'apertura.
-- **Oggi si installano le basi di conoscenza**; identità e plugin sono in catalogo ma non installabili. Un pacchetto installa le basi che contiene.
-- **Titoli e descrizioni nella lingua dell'interfaccia** (it/en/fr): nel catalogo (`name`, `summary` per lingua) e nel manifest del pacchetto (`i18n`), così valgono anche in libreria, basi collegate e fonti. Il contenuto resta nella lingua del pacchetto.
+- **Si installano basi di conoscenza e ruoli**; i plugin sono in catalogo ma non installabili. Un ruolo si installa con le basi che richiede, prese dallo stesso catalogo. Un pacchetto installa ciò che contiene.
+- **Lingue**: le voci con lo stesso `group` sono una scheda sola, con «Disponibile in:» per scegliere la variante. La ricerca guarda titolo e descrizione di tutte le varianti; accanto alla ricerca c'è il filtro per lingua.
+- **Titoli e descrizioni delle basi nella lingua dell'interfaccia** (it/en/fr): nel catalogo (`name`, `summary` per lingua) e nel manifest del pacchetto (`i18n`), così valgono anche in libreria, basi collegate e fonti. Il contenuto resta nella lingua del pacchetto. Un ruolo è scritto in una lingua sola: titolo e descrizione sono in quella.
 - **Catalogo**: se «Repository dello store» (Impostazioni → Generale) è vuoto si usa quello incluso nell'app (`store/catalog.json`, generato da `npm run packs:build`); altrimenti `GET {url}/catalog.json` e `GET {url}/{file}`. Se il repository non risponde si mostra il catalogo locale con il motivo.
-- **Chi gestisce cosa**: ciò che è dello Store (voci del catalogo, base integrata) si installa, si aggiorna e si rimuove solo dallo Store. In Impostazioni → Conoscenza quelle basi mostrano «Gestisci nello Store» al posto di «Elimina», e «Importa pacchetto…» rifiuta un file con l'id di una voce dello Store. Le Impostazioni gestiscono le basi create dall'utente e i pacchetti importati da file.
+- **Chi gestisce cosa**: ciò che è dello Store (voci del catalogo, base e ruoli integrati) si installa, si aggiorna e si rimuove solo dallo Store. In Impostazioni → Conoscenza quelle basi mostrano «Gestisci nello Store» al posto di «Elimina», e «Importa pacchetto…» rifiuta un file con l'id di una voce dello Store. Le Impostazioni gestiscono le basi create dall'utente e i pacchetti importati da file.
 - **Sicurezza**: impronta SHA-256 del file confrontata con il catalogo; dal repository si installano solo pacchetti con firma riconosciuta; quelli del catalogo incluso nell'app sono fidati come la Guida.
 
 Voce del catalogo:
@@ -87,7 +93,7 @@ Voce del catalogo:
   "file": "items/it.fastchat.prompt/1.0.0.fcpack", "sha256": "…", "size": 2341 }
 ```
 
-Altri campi: `builtin` (integrata), `model` (identità: modello consigliato o richiesto), `requires`, `contains` (pacchetti).
+Altri campi: `builtin` (integrata), `group` (varianti per lingua), `model` (ruoli: modello consigliato o richiesto), `requires`, `contains` (pacchetti).
 
 ## 0.4 Tipi di base in una conversazione
 
@@ -95,12 +101,14 @@ Una base collegata a una conversazione ha un **uso** (`conversation_bases.purpos
 
 | Uso | Contenuto | Quando entra nel prompt | Fonti sotto la risposta |
 |---|---|---|---|
-| `documents` (predefinito) | I contenuti su cui rispondere | Solo con la pill o il bottone libro accesi, come sempre | Sì |
+| `documents` (predefinito) | I contenuti su cui rispondere | Solo con l'interruttore o il bottone libro accesi, come sempre | Sì |
 | `behavior` | Tecniche e regole del ruolo | Sempre | No |
 | `examples` | Risposte ben fatte da imitare, ciascuna tra `<esempio>…</esempio>` | Sempre | No |
 
 - I documenti aggiunti alla conversazione sono sempre `documents`.
-- L'uso si sceglie sulla base collegata, nella scheda «Conoscenza». Con i ruoli arriverà dal pacchetto del ruolo.
+- Le basi di un ruolo arrivano con il loro uso, dichiarato dal ruolo. Nella scheda «Conoscenza» stanno a parte,
+  sotto «Del ruolo», in sola lettura e senza «Scollega».
+- Per le altre basi collegate l'uso si sceglie sulla base, nella scheda «Conoscenza».
 - **Quote**: lo spazio della conoscenza (25/50/75% della memoria) si divide tra i tre usi secondo le quote delle
   Impostazioni (20/20/60 predefinite). Ciò che un uso non consuma passa agli altri, prima ai documenti: con sole
   basi di tipo `documents` il comportamento è quello di sempre.
@@ -148,7 +156,7 @@ Progetto completo dei ruoli: [`ruoli.md`](ruoli.md) e [`ruoli-piano.md`](ruoli-p
 
 A ogni domanda, se valgono entrambe le condizioni:
 
-- la **pill** «Usa la base di conoscenza» della conversazione è accesa, **oppure** il **bottone libro**
+- l'**interruttore** «Usa la base di conoscenza» della conversazione è acceso, **oppure** il **bottone libro**
   accanto a «Invia» è acceso per questa domanda (la scelta sulla domanda vince su quella della conversazione);
 - c'è almeno un documento `ready` con pezzi per il modello di embedding attuale, nella base della
   conversazione o in una base collegata.
@@ -159,7 +167,7 @@ La scelta del bottone libro si salva sul messaggio dell'utente: «Rigenera» la 
 
 ```
 budget = min( quota × num_ctx ,
-              num_ctx − riserva per la risposta (20%) − brief − stile − riassunto − storico recente − domanda )
+              num_ctx − riserva per la risposta (20%) − istruzioni del ruolo − situazione − stile − riassunto − storico recente − domanda )
 ```
 
 - **Quota** per conversazione, nella scheda «Conoscenza»: 25 %, **50 % (predefinito)**, 75 %.
@@ -187,12 +195,13 @@ budget = min( quota × num_ctx ,
 
 ## 6. Nel prompt
 
-- Sezione `# Base di conoscenza`, nel system prompt dopo brief, stile, riassunto e memoria della conversazione.
+- Sezione `# Base di conoscenza`, nel system prompt dopo istruzioni del ruolo, situazione, stile, riassunto e memoria
+  della conversazione. Prima vengono, se ci sono, le tecniche (`# Come lavorare`) e gli esempi (`# Esempi`) del ruolo.
 - Introduzione per «documenti completi» o per «estratti» (e una frase di raccordo quando ci sono entrambi);
   poi ogni voce come `[Titolo, p. N]` seguita dal testo.
 - Istruzioni al modello: rispondere dai documenti quando riguardano la domanda, citare la fonte tra
   parentesi quadre, dire chiaramente quando l'informazione non c'è.
-- Testi nella lingua dell'interfaccia (italiano, inglese, francese).
+- Testi nella lingua del ruolo; per il Generalista, in quella dell'interfaccia (italiano, inglese, francese).
 
 ## 7. Dopo la risposta
 
@@ -206,8 +215,8 @@ budget = min( quota × num_ctx ,
 
 - **Impostazioni → Conoscenza**: libreria delle basi (crea, rinomina, elimina) e documenti di ogni base, con
   gli stessi comandi della scheda.
-- Scheda **«Conoscenza»** nel pannello laterale: pill, selettore dello spazio, «Basi collegate» (collega,
-  scollega), aggiunta file e drag&drop,
+- Scheda **«Conoscenza»** nel pannello laterale: basi «Del ruolo», interruttore «Usa la base di conoscenza»,
+  selettore dello spazio, «Basi collegate» (collega, scollega), aggiunta file e drag&drop,
   «Collega: …» per le sorgenti collegate, elenco documenti con stato, «Intero», «Riprova», rimozione;
   riga di stato con pezzi indicizzati e modello; riga che dice se i documenti stanno nello spazio riservato
   e, se no, quanta memoria servirebbe.

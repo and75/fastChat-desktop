@@ -467,6 +467,11 @@ Passo 2.7, in corso (⏸ Controllo 4: l'utente rilegge i testi):
 - **Da rileggere** nel documento «FastChat — testi dei ruoli da rileggere»
   (https://claude.ai/artifact/DFpEFA1e8fuKhFMh2QcnJ6). Il francese lo rilegge l'utente. Le correzioni fatte nel
   documento vanno riportate nei file sorgente.
+- **Guida in tre documenti, uguali nelle due lingue** (deciso dall'utente): presentazione dell'app, basi di
+  conoscenza, manuale d'uso. Italiano: `README.md`, `docs/base-di-conoscenza.md`, `store/sources/manuale.it.md`.
+  Francese: `docs/fr/README.md`, `docs/fr/base-de-connaissances.md`, `store/sources/manuale.fr.md`. I due
+  documenti italiani sono stati aggiornati ai ruoli (niente più Brief) prima della traduzione: ogni modifica a
+  uno dei due va riportata nella versione francese.
 - **Deciso**: modello consigliato `gemma4:e4b` per entrambi i ruoli. Senza profili per modello finché l'utente
   non esegue la prova con Ollama.
 - **Dopo l'ok**: `scripts/build-packs.mjs` deve costruire ruoli e basi nelle due lingue (id delle basi:
