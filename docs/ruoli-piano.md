@@ -1,7 +1,7 @@
 # Ruoli — decisioni e piano di esecuzione
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
-1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1–2.4.
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1–2.5 (⏸ Controllo 3: schermate da far vedere all'utente).
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -335,6 +335,7 @@ installare ruoli dallo Store nella propria lingua.
 | 2.2 Dati e conversione | Fatto | Migrazione 0016; Generalista e conversione dei Brief all'avvio (`ensureRoles`) |
 | 2.3 Il ruolo nel prompt | Fatto | `rolePrompt`, lingua del ruolo (`src/main/promptLocale.ts`), `linkRole`; un test end-to-end aggiornato |
 | 2.4 Pacchetti | Fatto | `role.json` nel `.fcpack`; `installRole`, `removeRole`, `roleHealth`; ruoli integrati all'avvio |
+| 2.5 Interfaccia dei ruoli | Fatto · ⏸ Controllo 3 | «Parla con un…», parametri, Situazione, cambio di ruolo, basi del ruolo; due ruoli in bozza in `packs/` |
 
 Scelte fatte nel passo 2.1:
 
@@ -403,6 +404,37 @@ Scelte fatte nel passo 2.4:
   file, l'elenco dei ruoli e l'avviso per ruolo o base mancante (`roleHealth`) si collegano al passo 2.5.
 - Il ruolo installato non registra ancora fiducia e provenienza dallo Store: servirà una colonna al passo 2.6.
 
+Scelte fatte nel passo 2.5:
+
+- **Ordine nella scheda Modello** (deciso dall'utente): ruolo in testa, poi i parametri nelle quattro sezioni,
+  poi i gruppi tecnici (richiudibili, chiusi in partenza come prima).
+- **La mente resta scritta nelle impostazioni della conversazione**; il ruolo la riscrive in quattro momenti
+  (`src/main/roleSession.ts`): creazione con un ruolo, scelta di un'opzione, cambio di modello, «Tutti i valori
+  suggeriti». I valori toccati a mano si registrano come ritocchi (`mind_overrides`) solo per le conversazioni
+  con un ruolo; decadono quando cambia l'opzione che li governa.
+- **Modello alla scelta del ruolo**: quello consigliato dal ruolo, se è installato; altrimenti quello
+  predefinito, con l'avviso «non verificato».
+- **Cambio di ruolo con riassunto**: la nuova conversazione riceve come riassunto quello della precedente
+  (aggiornato al momento) più gli ultimi messaggi non coperti, entro 2.400 caratteri. Se il riassunto non
+  riesce (Ollama spento) si portano solo gli ultimi messaggi. La riga «Riassunto di una conversazione avuta
+  con…» non è stata aggiunta: resta un'opzione da provare.
+- **Cambio di ruolo a conversazione vuota**: scelte, ritocchi e mente ripartono dal nuovo ruolo; la situazione
+  resta; le basi del ruolo precedente si scollegano.
+- **Limite della Situazione**: oltre il limite si può solo accorciare; un testo già più lungo (Brief convertito)
+  resta e viene inviato per intero, con un avviso.
+- **Barra laterale**: il ruolo compare sotto il titolo solo quando non è il Generalista (nell'anteprima c'era
+  sempre), per non allungare l'elenco.
+- **Plan mode e «Salva come template»** restano nella scheda Situazione, dov'erano nel Brief.
+- **Scheda predefinita del pannello**: Modello (prima era Brief), perché lì c'è il ruolo.
+- **Base del ruolo mancante**: il ruolo può dichiarare il nome della base (`bases[].name`), mostrato nell'avviso
+  al posto dell'id del pacchetto.
+- **Ruoli in bozza** (`roles/*.json` → `packs/ruolo-*.fcpack`, costruiti da `npm run packs:build`): servono a
+  provare l'interfaccia; nome con «(bozza)». I testi definitivi e le basi vere sono il passo 2.7.
+- **Installare un ruolo da file**: da Impostazioni → Conoscenza → importa pacchetto, come le basi.
+- **Tolti**: la scheda Brief e le righe transitorie del passo 2.3. I quattro campi restano nel database.
+- **Non fatto**: rimozione di un ruolo dall'interfaccia (arriva con lo Store, passo 2.6); `README.md` e la
+  Guida parlano ancora del Brief (passo 2.8).
+
 Scoperte durante il lavoro:
 
 - **Riuso con l'ordine B**: non è «solo l'ultima domanda». Gli estratti viaggiano con la domanda corrente; alla
@@ -450,8 +482,9 @@ Scoperte durante il lavoro:
 - **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8). `main` e il branch
   `claude/contesto-parametri-effettivi` coincidono, salvo questo documento.
 - **Seconda consegna** (ruoli): fatti i **passi 2.1** (il ruolo come dato), **2.2** (dati e conversione dei
-  Brief) e **2.3** (il prompt nasce da ruolo e situazione) e **2.4** (pacchetti dei ruoli). Non c'è ancora modo di
-  scegliere o installare un ruolo dall'app. Si prosegue dal **passo 2.5** (interfaccia: prima le anteprime).
+  Brief) e **2.3** (il prompt nasce da ruolo e situazione), **2.4** (pacchetti dei ruoli) e **2.5** (interfaccia). I ruoli
+  si scelgono e si regolano dall'app; ce ne sono due in bozza. Si prosegue dal **passo 2.6** (Store), dopo il
+  riscontro dell'utente sulle schermate (Controllo 3).
 
 ## Cosa manca dalla prima consegna
 
@@ -487,7 +520,7 @@ Scoperte durante il lavoro:
 | Cosa | Comando |
 |---|---|
 | Typecheck | `npm run typecheck` |
-| Test unitari (336) | `npx vitest run` |
+| Test unitari (351) | `npx vitest run` |
 | End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
 | Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
 | Pacchetti e catalogo dello Store | `npm run packs:build` |
@@ -509,7 +542,8 @@ Scoperte durante il lavoro:
 | `src/main/promptLocale.ts` | Lingua dei testi per il modello durante una chiamata |
 | `src/main/knowledge/index.ts` | `recallAll`, tipi di base (`purpose`), pacchetti |
 | `src/main/knowledge/pack.ts`, `src/main/store.ts`, `src/shared/store.ts` | Formato `.fcpack`, Store, catalogo |
-| `src/renderer/src/components/BriefPanel.tsx`, `ModelSettings.tsx`, `Sidebar.tsx` | Brief, mente, menu dei template |
+| `src/renderer/src/components/ConversationPanel.tsx`, `RolePanel.tsx`, `ModelSettings.tsx`, `Sidebar.tsx` | Pannello (Modello, Situazione, Conoscenza), ruolo e parametri, mente, menu «Parla con un…» |
+| `src/main/roleSession.ts` | Quando il ruolo riscrive la mente; cambio di ruolo; riassunto portato |
 | `src/renderer/src/components/ContextSettingsPanel.tsx` | Scheda Impostazioni → Contesto |
 | `tests/compose.test.ts` | Fotografie dei messaggi: devono restare verdi |
 

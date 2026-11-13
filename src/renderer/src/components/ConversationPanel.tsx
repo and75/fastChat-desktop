@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { t } from '@shared/i18n'
-import { buildSystemPrompt } from '@shared/prompt'
-import { DEFAULT_TITLE, type Brief, type Conversation } from '@shared/types'
+import { fmtInt, t } from '@shared/i18n'
+import { buildStyleSection, charsPerToken, situationSection } from '@shared/prompt'
+import { roleInstructions, situationLimit } from '@shared/roles'
+import { resolveSettings } from '@shared/settings'
+import { DEFAULT_CONTEXT_SETTINGS, DEFAULT_TITLE, type Conversation } from '@shared/types'
+import { useChat } from '../store/useChat'
+import { useModels } from '../store/useModels'
+import { definitionOf, useRoles } from '../store/useRoles'
 import { useConversations } from '../store/useConversations'
 import { useTemplates } from '../store/useTemplates'
 import { registerPendingSave } from '../store/pendingSaves'
@@ -9,13 +14,7 @@ import { documentCount, useKnowledge } from '../store/useKnowledge'
 import { BookOpenIcon, BrainIcon, IdCardIcon } from './icons'
 import { KnowledgePanel } from './KnowledgePanel'
 import { ModelSettings, PlanModeToggle } from './ModelSettings'
-
-const FIELDS: Array<{ key: keyof Brief; rows: number }> = [
-  { key: 'role', rows: 2 },
-  { key: 'context', rows: 4 },
-  { key: 'goals', rows: 3 },
-  { key: 'constraints', rows: 3 }
-]
+import { RolePanel } from './RolePanel'
 
 /** "Salva come template": nome inline (window.prompt non esiste in Electron). */
 function SaveAsTemplate({ conversation, beforeSave }: { conversation: Conversation; beforeSave(): Promise<void> }): React.JSX.Element {
@@ -75,18 +74,19 @@ function SaveAsTemplate({ conversation, beforeSave }: { conversation: Conversati
   )
 }
 
-type PanelTab = 'model' | 'brief' | 'knowledge'
-const PANEL_TABS: PanelTab[] = ['model', 'brief', 'knowledge']
+type PanelTab = 'model' | 'situation' | 'knowledge'
+const PANEL_TABS: PanelTab[] = ['model', 'situation', 'knowledge']
 const TAB_KEY = 'fastchat.panelTab'
 
 /** Scheda del pannello, ricordata tra una conversazione e l'altra e dopo il riavvio. */
 function usePanelTab(): [PanelTab, (t: PanelTab) => void] {
   const [tab, setTab] = useState<PanelTab>(() => {
     try {
-      const saved = localStorage.getItem(TAB_KEY) as PanelTab | null
-      return saved && PANEL_TABS.includes(saved) ? saved : 'brief'
+      // «brief» è il nome che la scheda Situazione aveva prima dei ruoli.
+      const saved = localStorage.getItem(TAB_KEY)?.replace(/^brief$/, 'situation') as PanelTab | undefined
+      return saved && PANEL_TABS.includes(saved) ? saved : 'model'
     } catch {
-      return 'brief'
+      return 'model'
     }
   })
   const choose = (t: PanelTab): void => {
@@ -100,38 +100,104 @@ function usePanelTab(): [PanelTab, (t: PanelTab) => void] {
   return [tab, choose]
 }
 
-const pickBrief = (c: Conversation): Brief => ({
-  role: c.role,
-  context: c.context,
-  goals: c.goals,
-  constraints: c.constraints
-})
+/**
+ * Scheda «Situazione»: il contesto di questa conversazione, scritto dall'utente. Si salva da sola (debounce) e
+ * vale dal messaggio successivo. Il limite è una quota della memoria del modello (D21): un testo già più lungo
+ * resta com'è, ma non si può allungare.
+ */
+function SituationTab({ conversation, draft, saved, onChange, onFlush }: { conversation: Conversation; draft: string; saved: boolean; onChange(value: string): void; onFlush(): Promise<void> }): React.JSX.Element {
+  const caps = useModels((s) => s.capabilities[conversation.model])
+  const share = useModels((s) => s.settings?.context?.situationShare ?? DEFAULT_CONTEXT_SETTINGS.situationShare)
+  const messages = useChat((s) => s.messages)
+  const roles = useRoles((s) => s.roles)
+  const limit = situationLimit(resolveSettings(conversation, caps).numCtx, share, charsPerToken(messages))
+  const over = draft.length > limit
 
-/** Pannello del brief: le modifiche si salvano da sole (debounce) e valgono dal messaggio successivo. */
-export function BriefPanel({ conversation }: { conversation: Conversation }): React.JSX.Element {
+  const instructions = roleInstructions(definitionOf(roles, conversation), conversation.roleParams)
+  const situation = situationSection(draft, !!instructions)
+  // Ciò che segue le istruzioni del ruolo nel prompt: la situazione, poi lo stile della risposta.
+  const rest = [situation, buildStyleSection(conversation.style)].filter(Boolean).join('\n\n')
+
+  return (
+    <>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <p className="text-xs leading-snug text-zinc-500">{t('situation.intro')}</p>
+        <span className="shrink-0 text-xs text-zinc-400" data-testid="situation-status">
+          {saved ? t('brief.saved') : t('brief.saving')}
+        </span>
+      </div>
+      <textarea
+        rows={8}
+        aria-label={t('situation.title')}
+        value={draft}
+        placeholder={t('situation.placeholder')}
+        onChange={(e) => {
+          // Oltre il limite si può solo accorciare.
+          const next = e.target.value
+          if (next.length <= limit || next.length < draft.length) onChange(next)
+        }}
+        onBlur={() => void onFlush()}
+        className="w-full resize-y rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        data-testid="situation-text"
+      />
+      <div className="mt-1.5 h-1 overflow-hidden rounded bg-zinc-200 dark:bg-zinc-800" aria-hidden>
+        <div className={'h-full ' + (over ? 'bg-red-600' : 'bg-brand-600')} style={{ width: `${Math.min(100, limit > 0 ? (draft.length / limit) * 100 : 0)}%` }} />
+      </div>
+      <div className={'mt-1 flex justify-between text-xs ' + (over ? 'text-red-700 dark:text-red-400' : 'text-zinc-500')}>
+        <span data-testid="situation-count">{t('situation.count', { used: fmtInt(draft.length), limit: fmtInt(limit) })}</span>
+        <span>{t('situation.share', { share: Math.round(share * 100) })}</span>
+      </div>
+      {over && (
+        <p className="mt-1 text-xs leading-snug text-red-700 dark:text-red-400" data-testid="situation-over">
+          {t('situation.over')}
+        </p>
+      )}
+
+      <div className="mt-4 flex flex-col gap-1 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+        <PlanModeToggle conversation={conversation} />
+        <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">{t('brief.planMode.hint')}</span>
+      </div>
+      <SaveAsTemplate conversation={conversation} beforeSave={onFlush} />
+
+      <details className="mt-4 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-800" open>
+        <summary className="cursor-pointer text-[13px] font-semibold">{t('situation.preview')}</summary>
+        <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-zinc-100 p-2 text-xs dark:bg-zinc-900" data-testid="system-preview">
+          {instructions && <span className="text-brand-700 dark:text-brand-300">{instructions}</span>}
+          {instructions && rest ? '\n\n' : ''}
+          {rest}
+          {!instructions && !rest && t('brief.preview.empty')}
+        </pre>
+        {instructions && <p className="mt-1 text-xs leading-snug text-zinc-500">{t('situation.preview.hint')}</p>}
+      </details>
+    </>
+  )
+}
+
+/** Pannello della conversazione: Modello (ruolo, parametri, mente), Situazione, Conoscenza. */
+export function ConversationPanel({ conversation }: { conversation: Conversation }): React.JSX.Element {
   const update = useConversations((s) => s.update)
-  const [draft, setDraft] = useState<Brief>(() => pickBrief(conversation))
+  const [draft, setDraft] = useState<string>(() => conversation.situation ?? '')
   const [saved, setSaved] = useState(true)
-  const dirty = useRef<Partial<Brief>>({})
+  const dirty = useRef<string | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const convId = conversation.id
 
   const flushRef = useRef<() => Promise<void>>(async () => undefined)
   const flush = async (): Promise<void> => {
     clearTimeout(timer.current)
-    const patch = dirty.current
-    dirty.current = {}
-    if (Object.keys(patch).length === 0) return
-    await update(convId, patch)
+    const situation = dirty.current
+    dirty.current = null
+    if (situation === null) return
+    await update(convId, { situation })
     setSaved(true)
   }
   flushRef.current = flush
 
-  // Cambio conversazione: salva le modifiche in sospeso della precedente e ricarica il brief.
+  // Cambio conversazione: salva le modifiche in sospeso della precedente e ricarica la situazione.
   useEffect(() => {
-    setDraft(pickBrief(conversation))
+    setDraft(conversation.situation ?? '')
     setSaved(true)
-    // Le modifiche al brief vanno scritte anche prima di un invio immediato.
+    // La situazione va scritta anche prima di un invio immediato.
     const unregister = registerPendingSave(() => flushRef.current())
     return () => {
       unregister()
@@ -140,30 +206,25 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convId])
 
-  const change = (key: keyof Brief, value: string): void => {
-    setDraft((d) => ({ ...d, [key]: value }))
-    dirty.current[key] = value
+  const change = (value: string): void => {
+    setDraft(value)
+    dirty.current = value
     setSaved(false)
     clearTimeout(timer.current)
     timer.current = setTimeout(flush, 500)
   }
 
-  const preview = buildSystemPrompt(draft, conversation.style)
   const [tab, setTab] = usePanelTab()
   const documents = useKnowledge((s) => documentCount(s.status[conversation.id]))
 
   const tabs: Array<{ id: PanelTab; label: string; icon: React.ReactNode; filled?: boolean }> = [
     { id: 'model', label: t('brief.tab.model'), icon: <BrainIcon /> },
-    { id: 'brief', label: t('brief.tab.brief'), icon: <IdCardIcon />, filled: preview !== '' },
+    { id: 'situation', label: t('situation.title'), icon: <IdCardIcon />, filled: draft.trim() !== '' },
     { id: 'knowledge', label: t('brief.tab.knowledge'), icon: <BookOpenIcon />, filled: documents > 0 }
   ]
 
   return (
-    <aside
-      id="conversation-panel"
-      className="flex w-80 shrink-0 flex-col border-l border-zinc-200 dark:border-zinc-800"
-      data-testid="brief-panel"
-    >
+    <aside id="conversation-panel" className="flex w-80 shrink-0 flex-col border-l border-zinc-200 dark:border-zinc-800" data-testid="conversation-panel">
       <div
         role="tablist"
         aria-label={t('brief.panel')}
@@ -191,7 +252,7 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
               tabIndex={active ? 0 : -1}
               onClick={() => setTab(tab_.id)}
               className={
-                '-mb-px flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2.5 text-sm font-medium transition-colors ' +
+                '-mb-px flex min-w-0 flex-auto items-center justify-center gap-1 border-b-2 px-1 py-2.5 text-[13px] font-medium transition-colors ' +
                 (active
                   ? 'border-brand-600 text-brand-700 dark:border-brand-400 dark:text-brand-300'
                   : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200')
@@ -199,7 +260,7 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
             >
               {tab_.icon}
               <span className="truncate">{tab_.label}</span>
-              {tab_.filled && <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-brand-500" data-testid="brief-filled" />}
+              {tab_.filled && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" data-testid="tab-filled" />}
             </button>
           )
         })}
@@ -213,50 +274,18 @@ export function BriefPanel({ conversation }: { conversation: Conversation }): Re
         hidden={tab !== 'model'}
         className="relative min-h-0 flex-1 overflow-y-auto p-4"
       >
+        <RolePanel conversation={conversation} />
         <ModelSettings conversation={conversation} />
       </div>
 
       <div
         role="tabpanel"
-        id="panel-brief"
-        aria-labelledby="panel-tab-brief"
-        hidden={tab !== 'brief'}
+        id="panel-situation"
+        aria-labelledby="panel-tab-situation"
+        hidden={tab !== 'situation'}
         className="relative min-h-0 flex-1 overflow-y-auto p-4"
       >
-        <div className="mb-3 flex items-baseline justify-between">
-          <p className="text-xs text-zinc-500">{t('brief.sentAsSystem')}</p>
-          <span className="text-xs text-zinc-400" data-testid="brief-status">
-            {saved ? t('brief.saved') : t('brief.saving')}
-          </span>
-        </div>
-        <div className="flex flex-col gap-3">
-          {FIELDS.map((f) => (
-            <label key={f.key} className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-zinc-700 dark:text-zinc-300">{t(`brief.${f.key}`)}</span>
-              <textarea
-                rows={f.rows}
-                value={draft[f.key]}
-                placeholder={t(`brief.${f.key}.placeholder`)}
-                onChange={(e) => change(f.key, e.target.value)}
-                onBlur={() => void flush()}
-                className="resize-y rounded-lg border border-zinc-300 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900"
-              />
-            </label>
-          ))}
-        </div>
-        <div className="mt-4 flex flex-col gap-1 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-          <PlanModeToggle conversation={conversation} />
-          <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">
-            {t('brief.planMode.hint')}
-          </span>
-        </div>
-        <SaveAsTemplate conversation={conversation} beforeSave={flush} />
-        <details className="mt-4 text-sm">
-          <summary className="cursor-pointer text-zinc-500">{t('brief.preview')}</summary>
-          <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-zinc-100 p-2 text-xs dark:bg-zinc-900" data-testid="system-preview">
-            {preview || t('brief.preview.empty')}
-          </pre>
-        </details>
+        <SituationTab conversation={conversation} draft={draft} saved={saved} onChange={change} onFlush={flush} />
       </div>
 
       <div

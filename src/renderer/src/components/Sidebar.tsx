@@ -1,54 +1,111 @@
 import { useEffect, useRef, useState } from 'react'
-import { displayTitle, localeTag, t } from '@shared/i18n'
+import { displayTitle, localeTag, t, tn } from '@shared/i18n'
 import type { Conversation } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
+import { findRole, languageTag, roleDescription, roleName, useRoles } from '../store/useRoles'
 import { useTemplates } from '../store/useTemplates'
 import { IconButton } from './IconButton'
 import { AppLogo, ChevronDownIcon, PanelLeftIcon, PlusIcon, SettingsIcon, StoreIcon } from './icons'
 import { isMac } from './WindowControls'
 
-/** Elenco dei template: un clic crea una conversazione con quel brief e quelle impostazioni. */
-function TemplateMenu({ onDone }: { onDone(): void }): React.JSX.Element {
+/**
+ * «Parla con un…»: i ruoli installati, poi i template. Un clic crea una conversazione con quel ruolo, o con il
+ * ruolo, le scelte e la situazione salvati nel template.
+ */
+function RoleMenu({ onDone, onOpenStore }: { onDone(): void; onOpenStore(): void }): React.JSX.Element {
   const { templates, refresh, remove } = useTemplates()
+  const roles = useRoles((s) => s.roles)
+  const refreshRoles = useRoles((s) => s.refresh)
   const create = useConversations((s) => s.create)
   useEffect(() => {
     void refresh()
-  }, [refresh])
+    void refreshRoles()
+  }, [refresh, refreshRoles])
+
+  const heading = 'px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400'
+  const row = 'rounded hover:bg-brand-50 focus-within:bg-brand-50 dark:hover:bg-brand-950/60 dark:focus-within:bg-brand-950/60'
 
   return (
     <div
-      data-testid="template-menu"
-      className="flex flex-col gap-0.5 rounded-lg border border-zinc-200 bg-white p-1 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+      role="menu"
+      data-testid="role-menu"
+      className="flex max-h-[70vh] w-72 flex-col overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
     >
-      {templates.length === 0 && (
-        <p className="px-2 py-2 text-zinc-500">{t('sidebar.noTemplates')}</p>
-      )}
-      {templates.map((tpl) => (
-        <div key={tpl.id} className="group flex items-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
+      <p className={heading}>{t('role.talkTo')}</p>
+      {roles.map((role) => {
+        const tag = languageTag(roles, role)
+        return (
           <button
+            key={role.id}
             type="button"
-            className="min-w-0 flex-1 truncate px-2 py-1.5 text-left"
-            title={[tpl.role, tpl.goals].filter(Boolean).join(' · ') || tpl.name}
+            role="menuitem"
+            data-testid="role-option"
+            data-role={role.id}
+            className={row + ' flex flex-col px-2 py-1.5 text-left focus:outline-none'}
             onClick={() => {
               onDone()
-              void create(tpl.id)
+              void create({ roleId: role.id })
             }}
           >
-            {tpl.name}
+            <span className="flex items-center justify-between gap-2 font-medium">
+              <span className="truncate">{roleName(role)}</span>
+              {tag && <span className="shrink-0 rounded border border-zinc-300 px-1 text-[10.5px] font-medium text-zinc-500 dark:border-zinc-600">{tag}</span>}
+            </span>
+            {roleDescription(role) && <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{roleDescription(role)}</span>}
           </button>
-          <button
-            type="button"
-            aria-label={t('sidebar.deleteTemplate', { name: tpl.name })}
-            className="hidden px-2 text-zinc-400 hover:text-red-600 group-hover:block"
-            onClick={() => {
-              if (window.confirm(t('sidebar.deleteTemplate.confirm', { name: tpl.name }))) void remove(tpl.id)
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      ))}
+        )
+      })}
+
+      <div className="my-1 border-t border-zinc-200 dark:border-zinc-700" />
+      <p className={heading}>{t('role.templates')}</p>
+      {templates.length === 0 && <p className="px-2 py-1.5 text-xs text-zinc-500">{t('sidebar.noTemplates')}</p>}
+      {templates.map((tpl) => {
+        const role = findRole(roles, tpl)
+        const choices = Object.keys(tpl.roleParams ?? {}).length
+        return (
+          <div key={tpl.id} className={row + ' group flex items-center'} data-testid="template-option">
+            <button
+              type="button"
+              role="menuitem"
+              className="flex min-w-0 flex-1 flex-col px-2 py-1.5 text-left focus:outline-none"
+              onClick={() => {
+                onDone()
+                void create({ templateId: tpl.id })
+              }}
+            >
+              <span className="truncate font-medium">{tpl.name}</span>
+              <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                {[roleName(role), choices > 0 ? tn('role.choices', choices) : null, tpl.situation?.trim() ? t('role.template.situation') : null].filter(Boolean).join(' · ')}
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-label={t('sidebar.deleteTemplate', { name: tpl.name })}
+              className="hidden px-2 text-zinc-400 hover:text-red-600 group-hover:block"
+              onClick={() => {
+                if (window.confirm(t('sidebar.deleteTemplate.confirm', { name: tpl.name }))) void remove(tpl.id)
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )
+      })}
+
+      <div className="my-1 border-t border-zinc-200 dark:border-zinc-700" />
+      <button
+        type="button"
+        role="menuitem"
+        data-testid="role-menu-store"
+        className={row + ' px-2 py-1.5 text-left font-medium text-brand-700 focus:outline-none dark:text-brand-300'}
+        onClick={() => {
+          onDone()
+          onOpenStore()
+        }}
+      >
+        {t('role.moreInStore')}
+      </button>
     </div>
   )
 }
@@ -63,6 +120,7 @@ function formatWhen(ts: number): string {
 function Item({ conv, active }: { conv: Conversation; active: boolean }): React.JSX.Element {
   const { select, update, remove } = useConversations()
   const streaming = useChat((s) => !!s.streams[conv.id])
+  const role = useRoles((s) => findRole(s.roles, conv))
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(conv.title)
   const input = useRef<HTMLInputElement>(null)
@@ -112,7 +170,15 @@ function Item({ conv, active }: { conv: Conversation; active: boolean }): React.
           title={displayTitle(conv.title)}
         >
           {streaming && <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-brand-500" />}
-          <span className="truncate">{displayTitle(conv.title)}</span>
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate">{displayTitle(conv.title)}</span>
+            {/* Con chi si parla: solo quando non è il Generalista, per non appesantire l'elenco. */}
+            {role && (
+              <span className="truncate text-xs text-zinc-500 dark:text-zinc-400" data-testid="conversation-role">
+                {roleName(role)}
+              </span>
+            )}
+          </span>
         </button>
       )}
       {!editing && (
@@ -147,8 +213,8 @@ function Item({ conv, active }: { conv: Conversation; active: boolean }): React.
   )
 }
 
-/** «Nuova conversazione» in stile outline, con la freccia dei preset (template) attaccata. */
-function NewConversationButton(): React.JSX.Element {
+/** «Nuova conversazione» in stile outline (Generalista), con la freccia di «Parla con un…» attaccata. */
+function NewConversationButton({ onOpenStore }: { onOpenStore(): void }): React.JSX.Element {
   const create = useConversations((s) => s.create)
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -189,8 +255,9 @@ function NewConversationButton(): React.JSX.Element {
           type="button"
           aria-haspopup="menu"
           aria-expanded={open}
-          aria-label={t('sidebar.newFromTemplate')}
-          title={t('sidebar.newFromTemplate.title')}
+          aria-label={t('role.talkTo')}
+          title={t('role.talkTo.title')}
+          data-testid="role-menu-open"
           onClick={() => setOpen((o) => !o)}
           className={part + ' border-l border-brand-600 px-2.5 dark:border-brand-500 ' + (open ? 'bg-brand-50 dark:bg-brand-950/60' : '')}
         >
@@ -198,8 +265,8 @@ function NewConversationButton(): React.JSX.Element {
         </button>
       </div>
       {open && (
-        <div className="absolute inset-x-0 top-full z-40 mt-1.5">
-          <TemplateMenu onDone={() => setOpen(false)} />
+        <div className="absolute left-0 top-full z-40 mt-1.5">
+          <RoleMenu onDone={() => setOpen(false)} onOpenStore={onOpenStore} />
         </div>
       )}
     </div>
@@ -301,7 +368,7 @@ function ExpandedSidebar({ onOpenSettings, onOpenStore, onCollapse }: { onOpenSe
       </div>
 
       <div className="px-3 pb-6 pt-4">
-        <NewConversationButton />
+        <NewConversationButton onOpenStore={onOpenStore} />
       </div>
 
       <section aria-labelledby="sidebar-conversations" className="flex min-h-0 flex-1 flex-col">

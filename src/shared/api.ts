@@ -26,7 +26,10 @@ import type {
   Result,
   SendOptions,
   SendResult,
-  StreamEvent
+  StreamEvent,
+  NewConversationOptions,
+  RoleHealth,
+  RoleRecord
 } from './types'
 import type { SystemInfo } from './settings'
 import type { StoreView } from './store'
@@ -139,8 +142,8 @@ export interface Api {
   conversations: {
     list(query?: ConversationListQuery): Promise<Result<Conversation[]>>
     get(id: string): Promise<Result<ConversationDetail>>
-    /** Nuova conversazione, vuota o con brief e impostazioni di un template. */
-    create(fromTemplateId?: string): Promise<Result<Conversation>>
+    /** Nuova conversazione: vuota (Generalista), da un template, o con un ruolo (anche partendo dal riassunto di un'altra). */
+    create(options?: NewConversationOptions): Promise<Result<Conversation>>
     update(id: string, patch: ConversationPatch): Promise<Result<Conversation>>
     /** Riporta temperatura, top_p e num_ctx ai valori suggeriti per modello e macchina. */
     calibrate(id: string): Promise<Result<Conversation>>
@@ -151,6 +154,16 @@ export interface Api {
     export(id: string, format: 'md' | 'json'): Promise<Result<string | null>>
     /** Conversazioni modificate dal main (es. titolo generato automaticamente). */
     onUpdated(cb: (conversation: Conversation) => void): () => void
+  }
+  roles: {
+    /** Ruoli installati, il Generalista per primo. */
+    list(): Promise<Result<RoleRecord[]>>
+    /** Cambia il ruolo di una conversazione ancora vuota. */
+    set(conversationId: string, roleId: string): Promise<Result<Conversation>>
+    /** Sceglie un'opzione di un parametro del ruolo: aggiorna istruzioni e mente. */
+    choose(conversationId: string, parameterId: string, value: string | string[]): Promise<Result<Conversation>>
+    /** Ruolo o basi mancanti, per l'avviso non bloccante. */
+    health(conversationId: string): Promise<Result<RoleHealth>>
   }
   templates: {
     list(): Promise<Result<BriefTemplate[]>>

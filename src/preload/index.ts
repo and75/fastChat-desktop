@@ -84,13 +84,19 @@ const api: Api = {
   conversations: {
     list: (query) => invoke(IPC.conversationsList, query),
     get: (id) => invoke(IPC.conversationsGet, id),
-    create: (fromTemplateId) => invoke(IPC.conversationsCreate, fromTemplateId),
+    create: (options) => invoke(IPC.conversationsCreate, options),
     update: (id, patch) => invoke(IPC.conversationsUpdate, id, patch),
     calibrate: (id) => invoke(IPC.conversationsCalibrate, id),
     summarize: (id) => invoke(IPC.conversationsSummarize, id),
     remove: (id) => invoke(IPC.conversationsRemove, id),
     export: (id, format) => invoke(IPC.conversationsExport, id, format),
     onUpdated: (cb) => subscribe<Conversation>(IPC.conversationUpdated, cb)
+  },
+  roles: {
+    list: () => invoke(IPC.rolesList),
+    set: (id, roleId) => invoke(IPC.rolesSet, id, roleId),
+    choose: (id, parameterId, value) => invoke(IPC.rolesChoose, id, parameterId, value),
+    health: (id) => invoke(IPC.rolesHealth, id)
   },
   templates: {
     list: () => invoke(IPC.templatesList),

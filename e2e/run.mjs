@@ -107,7 +107,7 @@ const latestConversation = async () =>
 let failed = false
 try {
   const page = await app.firstWindow()
-  /** Apre una scheda del pannello di destra (Modello / Brief) e attende che sia attiva. */
+  /** Apre una scheda del pannello di destra (Modello / Situazione / Conoscenza) e attende che sia attiva. */
   /** I gruppi del pannello Modello partono chiusi: per i test li si apre (la scelta resta in localStorage). */
   const openGroups = () =>
     page.evaluate(() => document.querySelectorAll('[data-testid="model-settings"] details[data-group]').forEach((d) => (d.open = true)))
@@ -187,20 +187,26 @@ try {
     await page.selectOption('#model-select', 'llama3.2:3b')
   })
 
-  await step('brief: si salva da solo e l\'anteprima mostra le sezioni in ordine', async () => {
-    await openTab('Brief')
-    const panel = page.getByTestId('brief-panel')
-    await panel.getByLabel('Vincoli').fill('Rispondi solo in italiano.')
-    await panel.getByLabel('Ruolo').fill('Sei un tutor paziente.')
-    await panel.getByTestId('brief-status').filter({ hasText: 'Salvato' }).waitFor()
-    await panel.getByText('Anteprima system prompt').click()
+  /** Scrive la situazione della conversazione aperta e attende che sia salvata. */
+  const writeSituation = async (text, saved = 'Salvato', tab = 'Situazione') => {
+    await openTab(tab)
+    const panel = page.getByTestId('conversation-panel')
+    await panel.getByTestId('situation-text').fill(text)
+    await panel.getByTestId('situation-status').filter({ hasText: saved }).waitFor()
+  }
+
+  await step('situazione: si salva da sola, con il contatore; l\'anteprima mostra ciò che riceve il modello', async () => {
+    const panel = page.getByTestId('conversation-panel')
+    await writeSituation('# Ruolo\nSei un tutor paziente.\n\n# Vincoli\nRispondi solo in italiano.')
+    // contatore: caratteri scritti sul limite (5% della memoria del modello)
+    assert.match(await panel.getByTestId('situation-count').textContent(), /^68 di 1\.638 caratteri$/)
     assert.equal(
       await panel.getByTestId('system-preview').textContent(),
       '# Ruolo\nSei un tutor paziente.\n\n# Vincoli\nRispondi solo in italiano.'
     )
   })
 
-  await step('invio: risposta in streaming e brief inviato come primo messaggio system', async () => {
+  await step('invio: risposta in streaming e situazione inviata come primo messaggio system', async () => {
     await composer.fill('Ciao!')
     await composer.press('Enter')
     await page.getByTestId('message-user').filter({ hasText: 'Ciao!' }).waitFor()
@@ -297,7 +303,7 @@ try {
     await items.first().getByRole('button').first().click()
     await page.getByTestId('message-user').filter({ hasText: 'Scrivi tanto' }).waitFor()
     assert.equal(await page.getByTestId('message-assistant').count(), 2)
-    assert.equal(await page.getByTestId('brief-panel').getByLabel('Ruolo').inputValue(), 'Sei un tutor paziente.')
+    assert.equal(await page.getByTestId('conversation-panel').getByTestId('situation-text').inputValue(), '# Ruolo\nSei un tutor paziente.\n\n# Vincoli\nRispondi solo in italiano.')
   })
 
   await step('attesa del modello: puntini animati e tempo trascorso fino al primo token', async () => {
@@ -502,8 +508,7 @@ try {
     await waitUntil(async () => (await latestConversation()).style === 'concise')
     assert.equal(await page.getByTestId('composer-style').inputValue(), 'concise')
     await control.getByTestId('style-hint').filter({ hasText: 'Dritto al punto' }).waitFor()
-    await openTab('Brief')
-    await page.getByTestId('brief-panel').getByText('Anteprima system prompt').click()
+    await openTab('Situazione')
     await page.getByTestId('system-preview').filter({ hasText: '# Stile della risposta' }).waitFor()
     await openTab('Modello')
 
@@ -956,22 +961,20 @@ try {
     await settings.getByTestId('dialog-close').click()
     await settings.waitFor({ state: 'detached' })
 
-    // ordine B con promemoria acceso: conversazione nuova con un brief
+    // ordine B con promemoria acceso: conversazione nuova con una situazione
     const { dialog } = await setContext('B', 'on')
     await dialog.getByTestId('dialog-close').click()
     await dialog.waitFor({ state: 'detached' })
     await page.getByTestId('new-conversation').click()
     await page.selectOption('#model-select', 'llama3.2:3b')
-    await openTab('Brief')
-    await page.getByTestId('brief-panel').getByLabel('Ruolo').fill('Sei un tutor')
-    await page.getByTestId('brief-panel').getByTestId('brief-status').filter({ hasText: 'Salvato' }).waitFor()
+    await writeSituation('# Ruolo\nSei un tutor')
     const before = chatRequests().length
     const composer = page.getByRole('textbox', { name: 'Messaggio' })
     await composer.fill('ciao')
     await composer.press('Enter')
     await page.getByTestId('message-assistant').first().waitFor()
     const sent = chatRequests()[before].body.messages
-    // Il Brief è la situazione del Generalista, che non ha un ruolo da ricordare: nessun promemoria accanto
+    // Il Generalista non ha un ruolo da ricordare: nessun promemoria accanto
     // alla domanda (con un ruolo vero c'è: lo verificano i test unitari, in attesa della scelta del ruolo).
     assert.deepEqual(sent, [
       { role: 'system', content: '# Ruolo\nSei un tutor' },
@@ -1071,11 +1074,8 @@ try {
     await page.getByTestId('new-conversation').click()
     await openTab('Modello')
     await page.selectOption('#model-select', 'thinker:8b')
-    await openTab('Brief')
-    await page.getByTestId('brief-panel').getByLabel('Vincoli').fill('Usa esempi con la pizza.')
-    await page.getByTestId('brief-panel').getByTestId('brief-status').filter({ hasText: 'Salvato' }).waitFor()
-    await openTab('Brief')
-    await setSwitch(page.getByTestId('brief-panel'), 'Plan mode', true)
+    await writeSituation('# Vincoli\nUsa esempi con la pizza.')
+    await setSwitch(page.getByTestId('conversation-panel'), 'Plan mode', true)
     await page.getByRole('button', { name: 'Pianifica' }).waitFor()
 
     const before = planRequests().length
@@ -1157,8 +1157,8 @@ try {
   })
 
   await step('plan mode spento: si torna a "Invia"', async () => {
-    await openTab('Brief')
-    await setSwitch(page.getByTestId('brief-panel'), 'Plan mode', false)
+    await openTab('Situazione')
+    await setSwitch(page.getByTestId('conversation-panel'), 'Plan mode', false)
     await page.getByRole('button', { name: 'Invia' }).waitFor()
   })
 
@@ -1169,7 +1169,7 @@ try {
   await page.screenshot({ path: join(root, 'test-results', 'e2e-phase4.png') })
 
   // ------------------------------------------------------------------ fase 5
-  await step('export Markdown e JSON (brief, messaggi, piani)', async () => {
+  await step('export Markdown e JSON (situazione, messaggi, piani)', async () => {
     // pulsante a sola icona con menu a tendina
     const exportBtn = page.getByRole('button', { name: 'Esporta conversazione' })
     assert.equal(((await exportBtn.textContent()) ?? '').trim(), '')
@@ -1180,7 +1180,7 @@ try {
     await page.getByTestId('export-status').filter({ hasText: 'Salvata in' }).waitFor()
     const md = readFileSync(join(userData, 'export.md'), 'utf8')
     assert.match(md, /^# .+\n\n- Modello: thinker:8b\n/)
-    assert.match(md, /## Brief\n\n### Vincoli\nUsa esempi con la pizza\./)
+    assert.match(md, /## Situazione\n\n### Vincoli\nUsa esempi con la pizza\./)
     assert.match(md, /### Utente · .+\n\nSpiegami le frazioni\n\n#### Piano \(eseguito\)\n\n1\. Cos'è una frazione/)
     assert.match(md, /#### Piano \(annullato\)/)
 
@@ -1197,19 +1197,132 @@ try {
   })
 
   await step('salva come template e crea una conversazione dal template', async () => {
-    await openTab('Brief')
-    const panel = page.getByTestId('brief-panel')
+    await openTab('Situazione')
+    const panel = page.getByTestId('conversation-panel')
     await panel.getByRole('button', { name: 'Salva come template' }).click()
     await panel.getByLabel('Nome del template').fill('Tutor pizza')
     await panel.getByRole('button', { name: 'Salva', exact: true }).click()
     await panel.getByText('Template salvato').waitFor()
 
-    await page.getByRole('button', { name: 'Nuova da template' }).click()
-    await page.getByTestId('template-menu').getByRole('button', { name: 'Tutor pizza' }).click()
+    await page.getByTestId('role-menu-open').click()
+    const template = page.getByTestId('role-menu').getByTestId('template-option').filter({ hasText: 'Tutor pizza' })
+    // sotto il nome: il ruolo e cosa porta con sé
+    await template.filter({ hasText: 'Generalista · situazione salvata' }).waitFor()
+    await template.getByRole('menuitem').click()
     await page.locator('header h1', { hasText: 'Nuova conversazione' }).waitFor()
-    assert.equal(await page.getByTestId('brief-panel').getByLabel('Vincoli').inputValue(), 'Usa esempi con la pizza.')
+    assert.equal(await page.getByTestId('conversation-panel').getByTestId('situation-text').inputValue(), '# Vincoli\nUsa esempi con la pizza.')
     assert.equal(await page.locator('#model-select').inputValue(), 'thinker:8b')
     assert.equal(await page.getByTestId('messages').getByTestId('message-user').count(), 0)
+  })
+
+  await step('ruoli: «Parla con un…» crea la conversazione con il ruolo; i parametri cambiano istruzioni e mente', async () => {
+    const panel = page.getByTestId('conversation-panel')
+    await page.getByTestId('role-menu-open').click()
+    const menu = page.getByTestId('role-menu')
+    // il Generalista per primo, poi i ruoli installati (qui le due bozze incluse nell'app)
+    await menu.getByTestId('role-option').nth(2).waitFor()
+    assert.deepEqual(await menu.getByTestId('role-option').evaluateAll((els) => els.map((e) => e.querySelector('span span')?.textContent)), [
+      'Generalista',
+      'Assistente di FastChat (bozza)',
+      'Esperto di prompt engineering (bozza)'
+    ])
+    await menu.getByTestId('role-option').filter({ hasText: 'Esperto di prompt engineering' }).click()
+    await openTab('Modello')
+    await panel.getByTestId('role-name').filter({ hasText: 'Esperto di prompt engineering (bozza)' }).waitFor()
+    // la mente del ruolo: temperatura 0,3 (opzione «Asciutto»), ragionamento acceso, documenti spenti in partenza
+    let conv = await latestConversation()
+    assert.equal(conv.roleId, 'app.fastchat.ruolo.prompt.it')
+    assert.deepEqual([conv.temperature, conv.think, conv.style, conv.knowledge], [0.3, true, 'normal', false])
+    // il modello consigliato (gemma4:e4b) non è installato: resta il predefinito, con l'avviso
+    await panel.getByTestId('role-unverified').filter({ hasText: /Ruolo non verificato con .+\. Consigliato: gemma4:e4b\./ }).waitFor()
+    // nella barra laterale, sotto il titolo, con chi si parla
+    await items.first().getByTestId('conversation-role').filter({ hasText: 'Esperto di prompt engineering' }).waitFor()
+    // quattro sezioni, nell'ordine fisso
+    assert.deepEqual(await panel.getByTestId('role-section').locator('h3').allTextContents(), ['Identità e obiettivi', 'Stile e formato', 'Regole e fonti', 'Metodo'])
+
+    // scelta singola: l'opzione dichiara il suo effetto sulla mente, e lo applica
+    const style = panel.locator('[data-parameter="stile"]')
+    await style.getByTestId('role-effect').filter({ hasText: 'imposta la temperatura a 0,3' }).waitFor()
+    await style.getByRole('combobox').selectOption({ label: 'Dettagliato' })
+    await style.getByTestId('role-effect').filter({ hasText: 'imposta la temperatura a 0,6' }).waitFor()
+    await waitUntil(async () => (await latestConversation()).temperature === 0.6)
+    // la lunghezza della risposta non tocca la temperatura
+    await panel.locator('[data-parameter="risultato"]').getByRole('combobox').selectOption({ label: 'Solo il risultato' })
+    await waitUntil(async () => (await latestConversation()).style === 'concise')
+    assert.equal((await latestConversation()).temperature, 0.6)
+    // scelta multipla
+    await panel.locator('[data-parameter="tecniche"]').getByRole('button', { name: 'Passi numerati' }).click()
+    await waitUntil(async () => ((await latestConversation()).roleParams?.tecniche ?? []).includes('passi'))
+    // un ritocco a mano resta finché non cambia l'opzione che governa quel valore
+    await page.getByTestId('composer-style').selectOption('extended')
+    await waitUntil(async () => (await latestConversation()).style === 'extended')
+    await panel.locator('[data-parameter="destinatario"]').getByRole('combobox').selectOption({ label: 'Esperto' })
+    await waitUntil(async () => (await latestConversation()).roleParams?.destinatario === 'esperto')
+    assert.equal((await latestConversation()).style, 'extended')
+    await panel.locator('[data-parameter="risultato"]').getByRole('combobox').selectOption({ label: 'Risultato con spiegazione' })
+    await waitUntil(async () => (await latestConversation()).style === 'normal')
+
+    // situazione e anteprima: le istruzioni del ruolo, poi la situazione con il suo titolo
+    await writeSituation('Classifico email di assistenza')
+    const preview = await page.getByTestId('system-preview').textContent()
+    assert.match(preview, /^Sei un esperto di prompt engineering[\s\S]*Motiva ogni istruzione in una riga\.[\s\S]*\n\n# Situazione\nClassifico email di assistenza$/)
+
+    // ciò che parte verso il modello è ciò che l'anteprima mostra
+    const before = chatRequests().length
+    const box = page.getByRole('textbox', { name: 'Messaggio' })
+    await box.fill('Guarda questo prompt')
+    await box.press('Enter')
+    await page.getByTestId('message-assistant').first().waitFor()
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
+    const sent = chatRequests()[before].body
+    // (se la base di comportamento del ruolo è installata, le sue tecniche seguono la situazione)
+    assert.ok(sent.messages[0].content.startsWith(preview), sent.messages[0].content.slice(0, 400))
+    assert.equal(sent.options.temperature, 0.6)
+
+    // scheda Conoscenza: la base del ruolo sta a parte, in sola lettura; se non è installata lo si dice
+    await openTab('Conoscenza')
+    const roleBases = panel.getByTestId('role-bases')
+    await roleBases.waitFor()
+    assert.equal((await roleBases.getByTestId('role-base').count()) + (await roleBases.getByTestId('role-base-missing').count()), 1)
+    assert.equal(await roleBases.getByTestId('knowledge-unlink').count(), 0)
+  })
+
+  await step('cambio di ruolo: subito a conversazione vuota; a conversazione avviata, nuova conversazione con o senza riassunto', async () => {
+    const panel = page.getByTestId('conversation-panel')
+    const started = await latestConversation()
+    await openTab('Modello')
+    // conversazione avviata: si propone una nuova conversazione
+    await panel.getByTestId('role-change').click()
+    await panel.getByTestId('role-picker').getByRole('menuitem', { name: /Assistente di FastChat/ }).click()
+    const dialog = page.getByTestId('role-change-dialog')
+    await dialog.getByText('Porta con te il riassunto').waitFor()
+    await dialog.getByTestId('role-change-confirm').filter({ hasText: 'Apri la nuova conversazione' }).click()
+    await dialog.waitFor({ state: 'detached' })
+    await panel.getByTestId('role-name').filter({ hasText: 'Assistente di FastChat (bozza)' }).waitFor()
+    let conv = await latestConversation()
+    assert.notEqual(conv.id, started.id)
+    assert.equal(conv.roleId, 'app.fastchat.ruolo.assistente.it')
+    // parte dal riassunto della precedente: i suoi messaggi, o il riassunto che li copre
+    assert.match(conv.summary, /Guarda questo prompt/)
+    assert.equal(await page.getByTestId('messages').getByTestId('message-user').count(), 0)
+    // la mente è quella del nuovo ruolo
+    assert.deepEqual([conv.temperature, conv.think, conv.knowledge], [0.2, false, true])
+    // la Guida è la sua base di documenti: collegata, tra quelle del ruolo
+    await openTab('Conoscenza')
+    await panel.getByTestId('role-bases').getByTestId('role-base').filter({ hasText: 'Guida di FastChat' }).waitFor()
+
+    // conversazione vuota: il ruolo cambia subito, senza finestra
+    await openTab('Modello')
+    await panel.getByTestId('role-change').click()
+    await panel.getByTestId('role-picker').getByRole('menuitem', { name: 'Generalista' }).click()
+    await panel.getByTestId('role-name').filter({ hasText: 'Generalista' }).waitFor()
+    await waitUntil(async () => (await latestConversation()).roleId === 'app.fastchat.ruolo.generalista')
+    conv = await latestConversation()
+    assert.equal(conv.think, false)
+    assert.equal(await panel.getByTestId('role-section').count(), 0)
+    assert.equal(await page.getByTestId('role-change-dialog').count(), 0)
+    // la conversazione di partenza è rimasta com'era
+    await items.filter({ hasText: 'Esperto di prompt engineering' }).first().waitFor()
   })
 
   await step('impostazioni: verifica URL, tema scuro, modello predefinito', async () => {
@@ -1348,7 +1461,7 @@ try {
     const scrollbars = await page.evaluate(() =>
       [
         document.querySelector('[data-testid="messages"]').parentElement,
-        document.querySelector('[data-testid="brief-panel"]'),
+        document.querySelector('[data-testid="conversation-panel"]'),
         document.querySelector('textarea[aria-label="Messaggio"]'),
         document.querySelector('ul[aria-label="Conversazioni"]')
       ].map((el) => getComputedStyle(el).scrollbarWidth)
@@ -1356,26 +1469,26 @@ try {
     assert.deepEqual(scrollbars, ['none', 'none', 'none', 'none'])
   })
 
-  await step('pannello a schede: Modello / Brief / Conoscenza, indicatore del brief, tastiera, scheda ricordata', async () => {
+  await step('pannello a schede: Modello / Situazione / Conoscenza, indicatore della situazione, tastiera, scheda ricordata', async () => {
     const modelPanel = page.locator('#panel-model')
-    const briefPanel = page.locator('#panel-brief')
+    const briefPanel = page.locator('#panel-situation')
     await openTab('Modello')
     assert.equal(await modelPanel.isVisible(), true)
     assert.equal(await briefPanel.isVisible(), false)
 
-    await openTab('Brief')
+    await openTab('Situazione')
     assert.equal(await briefPanel.isVisible(), true)
     assert.equal(await modelPanel.isVisible(), false)
-    // brief vuoto: nessun indicatore; compilando un campo compare il •
-    const role = briefPanel.getByLabel('Ruolo')
+    // situazione vuota: nessun indicatore; scrivendo compare il •
+    const role = briefPanel.getByTestId('situation-text')
     await role.fill('')
-    await page.getByTestId('brief-filled').waitFor({ state: 'detached' })
+    await page.locator('#panel-tab-situation').getByTestId('tab-filled').waitFor({ state: 'detached' })
     await role.fill('Sei un assistente')
-    await page.getByTestId('brief-filled').waitFor()
-    await page.getByRole('tab', { name: 'Brief (compilato)' }).waitFor()
+    await page.locator('#panel-tab-situation').getByTestId('tab-filled').waitFor()
+    await page.getByRole('tab', { name: 'Situazione (compilato)' }).waitFor()
 
-    // frecce: da Brief a sinistra si va a Modello, a destra a Conoscenza
-    await page.getByRole('tab', { name: 'Brief' }).focus()
+    // frecce: da Situazione a sinistra si va a Modello, a destra a Conoscenza
+    await page.getByRole('tab', { name: 'Situazione' }).focus()
     await page.keyboard.press('ArrowLeft')
     await page.waitForFunction(() => document.getElementById('panel-tab-model')?.getAttribute('aria-selected') === 'true')
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'panel-tab-model')
@@ -1432,11 +1545,11 @@ try {
 
     // la freccia è attaccata al pulsante e apre i preset sopra la lista, senza spostarla
     const listY = await y(side.getByRole('list', { name: 'Conversazioni' }))
-    await side.getByRole('button', { name: 'Nuova da template' }).click()
-    await side.getByTestId('template-menu').waitFor()
+    await side.getByRole('button', { name: 'Parla con un…' }).click()
+    await side.getByTestId('role-menu').waitFor()
     assert.equal(await y(side.getByRole('list', { name: 'Conversazioni' })), listY)
     await page.keyboard.press('Escape')
-    await side.getByTestId('template-menu').waitFor({ state: 'detached' })
+    await side.getByTestId('role-menu').waitFor({ state: 'detached' })
   })
 
   await step('finestra senza barra di sistema: controlli dopo il pulsante del pannello, topbar trascinabile', async () => {
@@ -1648,10 +1761,7 @@ try {
     assert.equal((await latestConversation()).title, 'Nuova conversazione')
     // prompt al modello in inglese: lo stile diventa «# Answer style»
     await page.selectOption('#model-select', 'llama3.2:3b')
-    await openTab('Brief')
-    await page.getByTestId('brief-panel').getByLabel('Role').fill('Tutor')
-    await page.getByTestId('brief-panel').getByTestId('brief-status').filter({ hasText: 'Saved' }).waitFor()
-    await page.getByTestId('brief-panel').getByText('System prompt preview').click()
+    await writeSituation('# Role\nTutor', 'Saved', 'Situation')
     await page.getByTestId('system-preview').filter({ hasText: '# Role' }).waitFor()
     const before = chatRequests().length
     const composer = page.getByRole('textbox', { name: 'Message' })

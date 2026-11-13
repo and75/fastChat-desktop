@@ -105,7 +105,20 @@ describe('pacchetti integrati nell\'app', () => {
     expect(chunks.every((c) => c.text.length > 0 && c.text.length <= 1600)).toBe(true)
     expect(chunks.some((c) => c.locator?.includes('Scelta del contenuto'))).toBe(true)
   })
+  it('i ruoli in bozza (packs/) si leggono con il lettore dell\'app e rispettano le regole dei ruoli', async () => {
+    for (const [file, id, base] of [
+      ['ruolo-assistente-it.fcpack', 'app.fastchat.ruolo.assistente.it', 'app.fastchat.guida'],
+      ['ruolo-prompt-it.fcpack', 'app.fastchat.ruolo.prompt.it', 'it.fastchat.prompt']
+    ]) {
+      const pack = await readPack(readFileSync(resolve(__dirname, '../packs', file)))
+      expect(pack.manifest).toMatchObject({ id, type: 'identity', language: 'it' })
+      expect(pack.manifest.name).toMatch(/\(bozza\)$/)
+      expect(pack.role!.parameters!.length).toBeGreaterThan(4)
+      expect(pack.role!.bases).toEqual([expect.objectContaining({ id: base })])
+    }
+  })
 })
+
 
 describe('pacchetti: esporta, installa, modello dichiarato', () => {
   let fake: FakeOllama

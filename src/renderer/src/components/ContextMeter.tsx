@@ -1,3 +1,5 @@
+import { roleInstructions } from '@shared/roles'
+import { definitionOf, useRoles } from '../store/useRoles'
 import { computeContextUsage, DEFAULT_CHARS_PER_TOKEN, formatTokensK, SUMMARY, type ContextUsage } from '@shared/prompt'
 import { fmtInt, fmtNum, t } from '@shared/i18n'
 import { resolveSettings } from '@shared/settings'
@@ -13,13 +15,14 @@ export function useContextUsage(): ContextUsage | null {
   const messages = useChat((s) => s.messages)
   const live = useChat((s) => (s.conversation ? s.streams[s.conversation.id] : undefined))
   const caps = useModels((s) => (conversation ? s.capabilities[conversation.model] : undefined))
+  const roles = useRoles((s) => s.roles)
   if (!conversation) return null
   // Durante lo streaming conta anche la risposta che sta arrivando.
   const all = live?.kind === 'chat' && live.content ? [...messages, { role: 'assistant' as const, content: live.content }] : messages
   // Stessa memoria che il main invia a Ollama come num_ctx.
   return computeContextUsage({
     brief: conversation,
-    // Fino alla scelta del ruolo nell'interfaccia le conversazioni sono sul Generalista: nessuna istruzione.
+    instructions: roleInstructions(definitionOf(roles, conversation), conversation.roleParams),
     situation: conversation.situation,
     style: conversation.style,
     messages: all,

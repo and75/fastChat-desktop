@@ -8,6 +8,7 @@ import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { useKnowledge } from '../store/useKnowledge'
 import { useModels } from '../store/useModels'
+import { definitionOf, findRole, roleName, useRoles } from '../store/useRoles'
 import { BookOpenIcon, FileTextIcon, PinIcon, PlusIcon, RegenerateIcon, TrashIcon } from './icons'
 import { ConnectForm, ConnectionRow } from './KnowledgeConnections'
 
@@ -336,9 +337,61 @@ export const baseTitle = (b: Pick<KnowledgeBaseInfo, 'name' | 'meta'>): string =
 export const baseDetail = (b: KnowledgeBaseInfo): string =>
   tn('knowledge.status.docs', b.documents) + (b.ready < b.documents ? ` · ${t('knowledge.base.ready', { n: b.ready })}` : '')
 
+/** Id dei pacchetti delle basi che il ruolo della conversazione porta con sé. */
+function useRoleBaseIds(conversation: Conversation): Set<string> {
+  const roles = useRoles((s) => s.roles)
+  return new Set((definitionOf(roles, conversation).bases ?? []).map((b) => b.id))
+}
+
+/**
+ * Basi del ruolo: fanno parte del ruolo, in sola lettura e senza «Scollega». Se una base richiesta non è
+ * installata lo si dice, senza bloccare nulla.
+ */
+function RoleBases({ conversation }: { conversation: Conversation }): React.JSX.Element | null {
+  const linked = useKnowledge((s) => s.status[conversation.id]?.linked ?? EMPTY)
+  const role = useRoles((s) => findRole(s.roles, conversation))
+  const health = useRoles((s) => s.health[conversation.id])
+  const checkHealth = useRoles((s) => s.checkHealth)
+  const ids = useRoleBaseIds(conversation)
+  const names = new Map((role?.definition.bases ?? []).map((b) => [b.id, b.name ?? b.id]))
+  const refreshStatus = useKnowledge((s) => s.load)
+  // Le basi installate dopo la creazione della conversazione vengono collegate dal controllo: poi si rilegge lo stato.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => void checkHealth(conversation.id).then(() => refreshStatus(conversation.id)), [conversation.id, conversation.roleId])
+  const own = linked.filter((b) => b.packageId && ids.has(b.packageId))
+  const missing = health?.missingBases ?? []
+  if (!role || (own.length === 0 && missing.length === 0)) return null
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="role-bases">
+      <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('role.bases.title')}</span>
+      <span className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">{t('role.bases.hint', { role: roleName(role) })}</span>
+      {own.map((b) => (
+        <div key={b.id} className="flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-2 text-sm dark:border-brand-900 dark:bg-brand-950/40" data-testid="role-base">
+          <BookOpenIcon size={16} className="mt-0.5 shrink-0 text-brand-700 dark:text-brand-300" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-medium text-zinc-800 dark:text-zinc-200">{baseTitle(b)}</div>
+            <div className="truncate text-xs text-zinc-500">
+              {t(`knowledge.purpose.${b.purpose ?? 'documents'}`)} · {baseDetail(b)}
+            </div>
+            {!b.modelInstalled && <ModelMissing model={b.model} />}
+          </div>
+        </div>
+      ))}
+      {missing.map((id) => (
+        <p key={id} className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs leading-snug text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200" data-testid="role-base-missing">
+          {t('role.bases.missing', { id: names.get(id) ?? id })}
+        </p>
+      ))}
+    </div>
+  )
+}
+
 /** Basi della libreria collegate alla conversazione: elenco con «Scollega» e scelta di una base da collegare. */
 function LinkedBases({ conversation }: { conversation: Conversation }): React.JSX.Element {
-  const linked = useKnowledge((s) => s.status[conversation.id]?.linked ?? EMPTY)
+  const roleBases = useRoleBaseIds(conversation)
+  // Le basi del ruolo stanno a parte, in sola lettura.
+  const all = useKnowledge((s) => s.status[conversation.id]?.linked ?? EMPTY)
+  const linked = all.filter((b) => !(b.packageId && roleBases.has(b.packageId)))
   const bases = useKnowledge((s) => s.bases)
   const loadBases = useKnowledge((s) => s.loadBases)
   const link = useKnowledge((s) => s.link)
@@ -347,7 +400,7 @@ function LinkedBases({ conversation }: { conversation: Conversation }): React.JS
   const busy = useChat((s) => !!s.streams[conversation.id])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => void loadBases(), [conversation.id])
-  const available = bases.filter((b) => !linked.some((l) => l.id === b.id))
+  const available = bases.filter((b) => !all.some((l) => l.id === b.id))
   return (
     <div className="flex flex-col gap-1.5" data-testid="knowledge-linked">
       <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('knowledge.linked.title')}</span>
@@ -441,6 +494,7 @@ export function KnowledgePanel({ conversation }: { conversation: Conversation })
 
   return (
     <div className="flex flex-col gap-3" data-testid="knowledge-panel">
+      <RoleBases conversation={conversation} />
       <KnowledgePill conversation={conversation} />
       <p className="text-xs leading-snug text-zinc-500 dark:text-zinc-400">{t('knowledge.intro')}</p>
       <ShareControl conversation={conversation} />

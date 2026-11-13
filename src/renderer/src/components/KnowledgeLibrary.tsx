@@ -134,7 +134,8 @@ function PackPreview({ pack, onDone, onOpenStore }: { pack: PackInspection; onDo
   const installPack = useKnowledge((s) => s.installPack)
   const busy = useKnowledge((s) => s.busy)
   const m = pack.manifest
-  const supported = m.type === 'knowledge'
+  const isRole = m.type === 'identity'
+  const supported = m.type === 'knowledge' || isRole
   const trusted = pack.trust === 'verified'
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-brand-300 bg-brand-50/60 p-3 text-sm dark:border-brand-800 dark:bg-brand-950/20" data-testid="pack-preview">
@@ -143,11 +144,17 @@ function PackPreview({ pack, onDone, onOpenStore }: { pack: PackInspection; onDo
       </div>
       {(m.i18n?.[getLocale()]?.description ?? m.description) && <p className="text-xs text-zinc-600 dark:text-zinc-300">{m.i18n?.[getLocale()]?.description ?? m.description}</p>}
       <ul className="flex flex-col gap-0.5 text-xs text-zinc-600 dark:text-zinc-300">
-        <li>{t('pack.preview.content', { docs: m.documents ?? 0, chunks: m.chunks ?? 0 })}{m.author ? ` · ${m.author}` : ''}</li>
-        <li>
-          {m.embedding ? t('pack.preview.model', { model: m.embedding.model }) : t('pack.preview.textOnly')}
-          {m.embedding && !pack.modelInstalled ? <span className="text-amber-700 dark:text-amber-400"> {t('pack.preview.modelMissing')}</span> : null}
-        </li>
+        {isRole ? (
+          <li data-testid="pack-role">{t('pack.preview.role')}{m.author ? ` · ${m.author}` : ''}</li>
+        ) : (
+          <>
+            <li>{t('pack.preview.content', { docs: m.documents ?? 0, chunks: m.chunks ?? 0 })}{m.author ? ` · ${m.author}` : ''}</li>
+            <li>
+              {m.embedding ? t('pack.preview.model', { model: m.embedding.model }) : t('pack.preview.textOnly')}
+              {m.embedding && !pack.modelInstalled ? <span className="text-amber-700 dark:text-amber-400"> {t('pack.preview.modelMissing')}</span> : null}
+            </li>
+          </>
+        )}
         <li className={trustClass(pack.trust)}>{t(`pack.trust.${pack.trust}`)}{trusted ? '' : ` ${t('pack.preview.untrusted')}`}</li>
         {pack.installedVersion && <li>{t('pack.preview.update', { version: pack.installedVersion })}</li>}
         {!supported && <li className="text-red-700 dark:text-red-300">{t('err.pack.unsupported', { type: m.type })}</li>}

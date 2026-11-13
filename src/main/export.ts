@@ -1,12 +1,15 @@
 import { briefToSituation, formatPlan } from '@shared/prompt'
 import { sourceLabel } from '@shared/knowledge'
 import { t } from '@shared/i18n'
+import { resolveChoices, type Role } from '@shared/roles'
 import type { Conversation, KnowledgeDocument, Message, Plan } from '@shared/types'
 
 export type ExportFormat = 'md' | 'json'
 
 export interface ExportData {
   conversation: Conversation
+  /** Il ruolo con cui si parla (assente per il Generalista e nelle esportazioni precedenti). */
+  role?: { name: string; definition: Role } | null
   messages: Message[]
   plans: Plan[]
   /** Documenti della base di conoscenza (assenti nelle esportazioni precedenti). */
@@ -18,7 +21,7 @@ const planStatus = (s: Plan['status']): string => t(`md.status.${s}`)
 const iso = (ts: number): string => new Date(ts).toISOString()
 
 /** Esporta in Markdown: intestazione, brief, impostazioni, poi i messaggi con piani e ragionamento. */
-export function toMarkdown({ conversation: c, messages, plans, documents = [] }: ExportData): string {
+export function toMarkdown({ conversation: c, role, messages, plans, documents = [] }: ExportData): string {
   const out: string[] = [`# ${c.title}`, '']
   out.push(
     `- ${t('md.model')}: ${c.model || '—'}`,
@@ -30,11 +33,22 @@ export function toMarkdown({ conversation: c, messages, plans, documents = [] }:
     ''
   )
 
+  if (role) {
+    // Il ruolo e le scelte fatte: ciò che, con la situazione, compone le istruzioni per il modello.
+    out.push(`## ${t('md.role')}`, '', role.name, '')
+    const choices = resolveChoices(role.definition, c.roleParams)
+    for (const p of role.definition.parameters ?? []) {
+      const chosen = choices[p.id]
+      const labels = p.options.filter((o) => (Array.isArray(chosen) ? chosen.includes(o.id) : chosen === o.id)).map((o) => o.label)
+      out.push(`- ${p.label}: ${labels.join(', ') || '—'}`)
+    }
+    if (role.definition.parameters?.length) out.push('')
+  }
   // La situazione; per le conversazioni nate con il Brief sono i suoi quattro campi con i loro titoli.
-  const brief = c.situation ?? briefToSituation(c)
-  if (brief) {
-    // Le sezioni del brief scendono di due livelli, sotto "## Brief".
-    out.push(`## ${t('md.brief')}`, '', brief.replace(/^# /gm, '### '), '')
+  const situation = c.situation ?? briefToSituation(c)
+  if (situation) {
+    // I titoli scritti dall'utente scendono di due livelli, sotto «## Situazione».
+    out.push(`## ${t('md.situation')}`, '', situation.replace(/^# /gm, '### '), '')
   }
 
   if (c.summary) out.push(`## ${t('md.summary')}`, '', c.summary, '')

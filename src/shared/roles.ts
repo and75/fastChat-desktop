@@ -11,6 +11,7 @@ import {
   type Brief,
   type ContextOrder,
   type ContextSettings,
+  type ConversationPatch,
   type ResponseStyle,
   type RoleBinding
 } from './types'
@@ -70,6 +71,8 @@ export interface RoleParameter {
 export interface RoleBase {
   id: string
   purpose: BasePurpose
+  /** Nome da mostrare quando la base non è installata (altrimenti si vede solo l'id del pacchetto). */
+  name?: string
 }
 
 export interface RoleProfileContext {
@@ -273,6 +276,7 @@ export function validateRole(raw: unknown): RoleIssue[] {
     if (seenBases.has(b.id)) issues.push({ code: 'base.duplicate', at })
     seenBases.add(b.id)
     if (!BASE_PURPOSES.includes(b.purpose as BasePurpose)) issues.push({ code: 'base.purpose', at })
+    if (b.name !== undefined && typeof b.name !== 'string') issues.push({ code: 'base.shape', at })
   }
 
   // Profili
@@ -428,6 +432,32 @@ export function governedSettings(role: Role, parameterId: string): RoleMindKey[]
 export function releaseOverrides<T extends RoleProfileMind>(role: Role, overrides: T | null | undefined, parameterId: string): T {
   const governed = governedSettings(role, parameterId) as string[]
   return Object.fromEntries(Object.entries(overrides ?? {}).filter(([key]) => !governed.includes(key))) as T
+}
+
+/** I valori della mente che vivono come impostazioni della conversazione. */
+export const MIND_FIELDS = ['temperature', 'topP', 'think', 'planMode', 'style', 'numCtx', 'knowledge'] as const
+export type MindField = (typeof MIND_FIELDS)[number]
+
+/**
+ * Ciò che la mente del ruolo scrive sulla conversazione: solo i valori che il ruolo, le scelte o i ritocchi
+ * fissano. Il resto resta com'è (valori suggeriti per il modello).
+ */
+export function mindPatch(role: Role, input: RoleMindInput = {}): Pick<ConversationPatch, MindField> {
+  const mind = roleMind(role, input)
+  const out: Record<string, unknown> = {}
+  for (const key of MIND_FIELDS) if (mind[key] !== undefined) out[key] = mind[key]
+  return out as Pick<ConversationPatch, MindField>
+}
+
+/** I ritocchi manuali contenuti in un aggiornamento della conversazione, aggiunti a quelli già registrati. */
+export function withManualOverrides(overrides: RoleProfileMind | null | undefined, patch: ConversationPatch): RoleProfileMind {
+  const out: Record<string, unknown> = { ...(overrides ?? {}) }
+  for (const key of MIND_FIELDS) {
+    if (patch[key] === undefined) continue
+    if (patch[key] === null) delete out[key]
+    else out[key] = patch[key]
+  }
+  return out as RoleProfileMind
 }
 
 // ---------------------------------------------------------------- composizione del contesto

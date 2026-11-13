@@ -206,16 +206,8 @@ export async function createConversation(
   return (await getConversation(db, id))!
 }
 
-const BRIEF_FIELDS = ['role', 'context', 'goals', 'constraints'] as const
-
 export async function updateConversation(db: Db, id: string, patch: ConversationPatch): Promise<Conversation> {
   const clean = sanitizePatch(patch)
-  // Transitorio, fino alla scheda «Situazione» (passo 2.5 dei ruoli): la vecchia scheda Brief scrive ancora i
-  // quattro campi, e la situazione li segue. Una situazione scritta esplicitamente vince.
-  if (clean.situation === undefined && BRIEF_FIELDS.some((key) => clean[key] !== undefined)) {
-    const current = await getConversation(db, id)
-    if (current) clean.situation = briefToSituation({ ...current, ...clean })
-  }
   await db
     .update(conversations)
     .set({ ...clean, updatedAt: Date.now() })

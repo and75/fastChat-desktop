@@ -56,7 +56,7 @@ describe('export', () => {
 - Creata: 2026-01-01T00:00:00.000Z
 - Aggiornata: 2026-01-02T00:00:00.000Z
 
-## Brief
+## Situazione
 
 ### Ruolo
 Sei un tutor
@@ -114,5 +114,19 @@ Metà.
   it('nome file ripulito', () => {
     expect(suggestedFileName('Domanda: a/b? <ok>', 'md')).toBe('Domanda ab ok.md')
     expect(suggestedFileName('   ', 'json')).toBe('conversazione.json')
+  })
+
+  it('con un ruolo: nome, scelte fatte e situazione', () => {
+    const definition = {
+      instructions: 'Sei un tutor.',
+      parameters: [
+        { id: 'livello', section: 'style' as const, label: 'Livello', type: 'single' as const, default: 'base', options: [{ id: 'base', label: 'Base' }, { id: 'avanzato', label: 'Avanzato' }] },
+        { id: 'temi', section: 'rules' as const, label: 'Temi', type: 'multi' as const, default: [], options: [{ id: 'a', label: 'Algebra' }, { id: 'g', label: 'Geometria' }] }
+      ]
+    }
+    const md = toMarkdown({ ...data, conversation: { ...conv, roleId: 'tutor', roleParams: { livello: 'avanzato' }, situation: 'Lezione di matematica' }, role: { name: 'Tutor', definition } })
+    expect(md).toContain('## Ruolo\n\nTutor\n\n- Livello: Avanzato\n- Temi: —\n\n## Situazione\n\nLezione di matematica\n')
+    // senza ruolo (Generalista) la sezione non c'è
+    expect(toMarkdown(data)).not.toContain('## Ruolo\n\n')
   })
 })

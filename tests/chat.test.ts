@@ -513,19 +513,6 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     expect(lastChatBody().messages).toEqual([system, { role: 'user', content: 'ciao' }])
   })
 
-  it('transitorio: finché c\'è la scheda Brief, la situazione segue i suoi quattro campi; una situazione scritta vince', async () => {
-    const conv = await createConversation(h.db, { model: 'llama3.2', role: 'Sei un tutor' })
-    expect((await updateConversation(h.db, conv.id, { role: 'Sei un cuoco', goals: 'Cucinare' })).situation).toBe('# Ruolo\nSei un cuoco\n\n# Obiettivi\nCucinare')
-    await ask(service(), conv.id, 'ciao')
-    expect(lastChatBody().messages[0]).toEqual({ role: 'system', content: '# Ruolo\nSei un cuoco\n\n# Obiettivi\nCucinare' })
-    // Un aggiornamento che non tocca il Brief lascia la situazione com'è.
-    await updateConversation(h.db, conv.id, { situation: 'Sto preparando una cena' })
-    expect((await updateConversation(h.db, conv.id, { temperature: 0.2 })).situation).toBe('Sto preparando una cena')
-    expect((await updateConversation(h.db, conv.id, { role: 'Altro', situation: 'Vince questa' })).situation).toBe('Vince questa')
-    await ask(service(), conv.id, 'e ora?')
-    expect(lastChatBody().messages[0]).toEqual({ role: 'system', content: 'Vince questa' })
-  })
-
   it('ruolo con parametri: le frasi delle scelte nel prompt, nei tre ordini; stile e piano dopo la situazione', async () => {
     await install('prompt.it', 'prompt.it.json')
     const roleParams = { intervento: 'spiega', destinatario: 'esperto', risultato: 'solo', tecniche: ['formato'] }

@@ -109,6 +109,56 @@ const guida = await build({
   }
 })
 
+// ---------------------------------------------------------------- ruoli integrati (bozze)
+// Un ruolo è un pacchetto di tipo «identity» con role.json (docs/ruoli.md §3.4). Le definizioni stanno in roles/.
+// Sono BOZZE, per provare l'interfaccia dei ruoli: i testi definitivi e le basi di comportamento e di esempi
+// arrivano con il passo 2.7 del piano. L'app li controlla alla lettura (un test verifica questi file).
+async function buildRole({ id, group, name, description, language, source, file }) {
+  const roleBytes = Buffer.from(JSON.stringify(JSON.parse(readFileSync(join(root, source), 'utf8')), null, 2), 'utf8')
+  const version = `0.1.0+${sha(roleBytes).slice(0, 8)}`
+  const manifest = {
+    id,
+    type: 'identity',
+    group,
+    name,
+    version,
+    description,
+    author: 'FastChat',
+    language,
+    license: 'MIT',
+    createdAt: 0,
+    format: 'fastchat-pack',
+    formatVersion: 1,
+    files: { 'role.json': sha(roleBytes) }
+  }
+  const zip = new JSZip()
+  const date = new Date('2026-01-01T00:00:00Z')
+  zip.file('role.json', roleBytes, { date })
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2), { date })
+  const data = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: 9 } })
+  writeFileSync(join(root, 'packs', file), data)
+  console.log(`packs/${file}: ruolo «${name}», versione ${version}`)
+}
+
+await buildRole({
+  id: 'app.fastchat.ruolo.assistente.it',
+  group: 'app.fastchat.ruolo.assistente',
+  file: 'ruolo-assistente-it.fcpack',
+  name: 'Assistente di FastChat (bozza)',
+  description: "Risponde a domande sull'uso dell'app.",
+  language: 'it',
+  source: 'roles/assistente.it.json'
+})
+await buildRole({
+  id: 'app.fastchat.ruolo.prompt.it',
+  group: 'app.fastchat.ruolo.prompt',
+  file: 'ruolo-prompt-it.fcpack',
+  name: 'Esperto di prompt engineering (bozza)',
+  description: 'Scrive e migliora i prompt per modelli locali.',
+  language: 'it',
+  source: 'roles/prompt.it.json'
+})
+
 // ---------------------------------------------------------------- catalogo locale dello store
 // Finché il repository remoto non esiste, lo store legge questo catalogo incluso nell'app (cartella store/),
 // con lo stesso formato che avrà quello remoto. Le voci «identity», «plugin» e parte dei «bundle» sono esempi:

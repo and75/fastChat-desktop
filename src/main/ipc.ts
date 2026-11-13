@@ -14,6 +14,8 @@ import {
   type ConversationDetail,
   type ConversationListQuery,
   type ConversationPatch,
+  GENERALIST_ROLE_ID,
+  type NewConversationOptions,
   type PlanUpdate,
   type Result,
   type SendOptions
@@ -23,13 +25,15 @@ import { LANGUAGE_SETTINGS, resolveLocale, setLocale, t } from '@shared/i18n'
 import type { SystemInfo } from '@shared/settings'
 import { calibrationPatch, type CalibrateDeps } from './calibrate'
 import { createChatService } from './chat'
+import { createRoleSession } from './roleSession'
 import type { Db } from './db/client'
 import {
-  conversationFromTemplate,
-  createConversation,
   createTemplateFromConversation,
+  ensureGeneralist,
   getConversation,
-  getTemplate,
+  getRole,
+  listRoles,
+  roleOf,
   getSettings,
   listConversations,
   listContextCalls,
@@ -345,22 +349,31 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     }
   }
 
-  handle(IPC.conversationsCreate, async (_e, fromTemplateId?: string) => {
-    const model = await initialModel()
-    let init: ConversationPatch = { model }
-    if (fromTemplateId) {
-      const template = await getTemplate(db, requireId(fromTemplateId))
-      if (!template) throw new Error(t('err.templateNotFound'))
-      init = conversationFromTemplate(template, model)
-    }
-    // I parametri partono dai valori suggeriti per il modello; il template può fissarne alcuni (temperatura).
-    const conv = await createConversation(db, init)
-    const fill = await calibrationPatch(calibrate, conv.model, { ...conv, temperature: init.temperature ?? null }, true)
-    // Le basi segnate «collega alle nuove conversazioni» (es. quelle predefinite dell'app) arrivano già collegate.
-    await knowledge.linkDefaults(conv).catch(() => undefined)
-    // Le basi del ruolo (comportamento, esempi) fanno parte del ruolo: arrivano con il loro tipo.
-    await knowledge.linkRole(conv).catch(() => undefined)
-    return Object.keys(fill).length ? updateConversation(db, conv.id, fill) : conv
+  const roles = createRoleSession({
+    db,
+    knowledge,
+    initialModel,
+    suggest: (model) => calibrationPatch(calibrate, model, {}, false),
+    modelInstalled: async (name) => (await ollama.listModels()).some((m) => m.name === name),
+    summarize: (id) => summarizer.summarize(id, true, undefined, true)
+  })
+  const optionalId = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined)
+
+  handle(IPC.conversationsCreate, (_e, options?: NewConversationOptions) =>
+    roles.create({ templateId: optionalId(options?.templateId), roleId: optionalId(options?.roleId), carryFrom: optionalId(options?.carryFrom) })
+  )
+
+  // ---- ruoli
+  handle(IPC.rolesList, async () => {
+    const generalist = await ensureGeneralist(db)
+    return [generalist, ...(await listRoles(db)).filter((r) => r.id !== generalist.id)]
+  })
+  handle(IPC.rolesSet, (_e, id: string, roleId: string) => roles.setRole(requireId(id), requireId(roleId)))
+  handle(IPC.rolesChoose, (_e, id: string, parameterId: string, value: unknown) => roles.choose(requireId(id), requireId(parameterId), value))
+  handle(IPC.rolesHealth, async (_e, id: string) => {
+    const conv = await getConversation(db, requireId(id))
+    if (!conv) throw new Error(t('err.convNotFound'))
+    return knowledge.roleHealth(conv)
   })
 
   // ---- memoria della conversazione
@@ -475,7 +488,10 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     if (typeof path !== 'string' || !path) throw new Error(t('err.badText'))
     // Una voce dello Store non si installa da file: sovrascriverebbe (anche senza firma) ciò che lo Store gestisce.
     if (await store.owns((await knowledge.inspectPack(path)).manifest.id)) throw new Error(t('err.pack.inStore'))
-    await knowledge.installPack(path, { allowUntrusted: allowUntrusted === true })
+    const { manifest } = await knowledge.inspectPack(path)
+    // Un ruolo arriva dallo stesso punto delle basi: si installa con quelle che richiede.
+    if (manifest.type === 'identity') await knowledge.installRole(path, { allowUntrusted: allowUntrusted === true })
+    else await knowledge.installPack(path, { allowUntrusted: allowUntrusted === true })
     return knowledge.listBases()
   })
   /** Esporta una base come pacchetto: chiede dove salvare; restituisce il percorso, o null se annullato. */
@@ -526,11 +542,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
 
   /** Riporta temperatura, top_p e num_ctx ai valori suggeriti per il modello e la macchina. */
   handle(IPC.conversationsCalibrate, async (_e, id: string) => {
-    const conv = await getConversation(db, requireId(id))
-    if (!conv) throw new Error(t('err.convNotFound'))
-    const fill = await calibrationPatch(calibrate, conv.model, conv, false)
-    if (!Object.keys(fill).length) throw new Error(t('err.calibrateNoOllama'))
-    return updateConversation(db, conv.id, fill)
+    return roles.calibrate(requireId(id))
   })
 
   handle(IPC.conversationsExport, async (e, id: string, format: ExportFormat): Promise<string | null> => {
@@ -539,6 +551,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     if (!conversation) throw new Error(t('err.convNotFound'))
     const data = {
       conversation,
+      role: conversation.roleId && conversation.roleId !== GENERALIST_ROLE_ID ? { name: (await getRole(db, conversation.roleId))?.name ?? conversation.roleId, definition: (await roleOf(db, conversation)).definition } : null,
       messages: await listMessages(db, conversation.id),
       plans: await listPlans(db, conversation.id),
       documents: (await knowledge.documentsOf(conversation.id)).docs
@@ -576,15 +589,9 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   })
 
   handle(IPC.conversationsUpdate, async (_e, id: string, patch: ConversationPatch) => {
-    const convId = requireId(id)
-    patch = patch ?? {}
-    const current = await getConversation(db, convId)
-    if (current && typeof patch.model === 'string' && current.model !== patch.model) {
-      // Cambio modello: i parametri ripartono dai valori suggeriti per il nuovo modello (salvo quelli nel patch).
-      const fill = await calibrationPatch(calibrate, patch.model, {}, false)
-      patch = { ...fill, ...patch }
-    }
-    return updateConversation(db, convId, patch)
+    // Cambio modello: i parametri ripartono dai valori suggeriti per il nuovo modello, poi dalla mente del ruolo
+    // (salvo quelli nel patch). I valori della mente toccati a mano restano come ritocchi.
+    return roles.update(requireId(id), patch ?? {})
   })
 
   handle(IPC.conversationsRemove, async (_e, id: string) => {

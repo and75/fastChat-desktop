@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Conversation, ConversationPatch } from '@shared/types'
+import type { Conversation, ConversationPatch, NewConversationOptions } from '@shared/types'
 import { useChat } from './useChat'
 
 interface ConversationsState {
@@ -12,8 +12,8 @@ interface ConversationsState {
   refresh(): Promise<void>
   setSearch(search: string): void
   setShowArchived(value: boolean): void
-  /** Nuova conversazione, vuota o da un template. */
-  create(fromTemplateId?: string): Promise<void>
+  /** Nuova conversazione: vuota (Generalista), da un template, o con un ruolo. Restituisce se è andata a buon fine. */
+  create(options?: NewConversationOptions): Promise<boolean>
   select(id: string | null): Promise<void>
   update(id: string, patch: ConversationPatch): Promise<Conversation | null>
   /** Riporta i parametri del modello ai valori suggeriti. */
@@ -51,12 +51,16 @@ export const useConversations = create<ConversationsState>((set, get) => ({
     void get().refresh()
   },
 
-  async create(fromTemplateId) {
-    const res = await window.api.conversations.create(fromTemplateId)
-    if (!res.ok) return set({ error: res.error })
+  async create(options) {
+    const res = await window.api.conversations.create(options)
+    if (!res.ok) {
+      set({ error: res.error })
+      return false
+    }
     set({ search: '', showArchived: false })
     await get().refresh()
     await get().select(res.data.id)
+    return true
   },
 
   async select(id) {

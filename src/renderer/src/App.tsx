@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { displayTitle, getLocale, resolveLocale, setLocale, subscribeLocale, t } from '@shared/i18n'
-import { BriefPanel } from './components/BriefPanel'
+import { ConversationPanel } from './components/ConversationPanel'
 import { ChatView } from './components/ChatView'
 import { IconButton } from './components/IconButton'
 import { DownloadIcon, PanelRightIcon } from './components/icons'
@@ -14,6 +14,7 @@ import { useChat } from './store/useChat'
 import { useConversations } from './store/useConversations'
 import { useKnowledge } from './store/useKnowledge'
 import { useModels } from './store/useModels'
+import { useRoles } from './store/useRoles'
 
 /** Esporta la conversazione aperta: icona download con menu a tendina Markdown / JSON. */
 function ExportMenu({ conversationId }: { conversationId: string }): React.JSX.Element {
@@ -109,6 +110,8 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     void initModels()
     void useConversations.getState().refresh()
+    // I ruoli installati: servono alla barra laterale (con chi si parla) e al pannello della conversazione.
+    void useRoles.getState().refresh()
     // Un solo listener per tipo di evento, per tutta la vita della finestra.
     const offStream = window.api.chat.onStream((event) => {
       useChat.getState().handleStream(event)
@@ -180,7 +183,7 @@ export default function App(): React.JSX.Element {
         <OllamaBanner />
         <div className="flex min-h-0 flex-1">
           <ChatView />
-          {conversation && briefOpen && <BriefPanel key={conversation.id} conversation={conversation} />}
+          {conversation && briefOpen && <ConversationPanel key={conversation.id} conversation={conversation} />}
         </div>
       </div>
       {settingsOpen && <SettingsDialog

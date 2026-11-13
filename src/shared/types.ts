@@ -58,6 +58,22 @@ export interface RoleRecord {
   createdAt: number
 }
 
+/** Come nasce una conversazione: vuota (Generalista), da un template, o con un ruolo. */
+export interface NewConversationOptions {
+  templateId?: string
+  roleId?: string
+  /** Conversazione di cui portare il riassunto: il cambio di ruolo a conversazione avviata (D23). */
+  carryFrom?: string
+}
+
+/** Cosa manca al ruolo di una conversazione, per l'avviso non bloccante. */
+export interface RoleHealth {
+  /** Il ruolo non è più installato: la conversazione continua come Generalista. */
+  roleMissing: boolean
+  /** Id dei pacchetti delle basi che il ruolo richiede e che non sono installate. */
+  missingBases: string[]
+}
+
 export interface Conversation extends Brief, ConversationSettings, RoleBinding {
   id: string
   title: string
@@ -737,6 +753,10 @@ export const IPC = {
   plansUpdate: 'plans:update',
   plansExecute: 'plans:execute',
   conversationsExport: 'conversations:export',
+  rolesList: 'roles:list',
+  rolesSet: 'roles:set',
+  rolesChoose: 'roles:choose',
+  rolesHealth: 'roles:health',
   templatesList: 'templates:list',
   templatesCreate: 'templates:create',
   templatesRemove: 'templates:remove',

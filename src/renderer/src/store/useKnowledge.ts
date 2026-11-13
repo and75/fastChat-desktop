@@ -1,3 +1,4 @@
+import { useRoles } from './useRoles'
 import { create } from 'zustand'
 import type { BasePurpose, KnowledgeBaseInfo, KnowledgeProgress, KnowledgeSourceInfo, KnowledgeStatus, PackInspection } from '@shared/types'
 
@@ -191,6 +192,8 @@ export const useKnowledge = create<KnowledgeState>((set, get) => {
       set({ bases: res.data })
       // Un aggiornamento cambia i documenti di una base che qualche conversazione può avere collegata.
       reloadAll()
+      // Il pacchetto poteva essere un ruolo: l'elenco dei ruoli si rilegge.
+      void useRoles.getState().refresh()
       return true
     },
 
