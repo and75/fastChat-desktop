@@ -83,7 +83,7 @@ sezione li scrive il ruolo**. Una sezione senza parametri non si vede.
 |---|---|---|
 | **1. Identità e obiettivi** | Chi è il ruolo, in cosa è specializzato, cosa deve ottenere | Ruolo, Obiettivi |
 | **2. Stile e formato** | Pubblico, tono, struttura e lunghezza della risposta | Vincoli |
-| **3. Regole e fonti** | Come usa le fonti, tecniche da applicare, limiti, cosa fa quando non sa | Vincoli |
+| **3. Regole** | Come usa le fonti, tecniche da applicare, limiti, cosa fa quando non sa | Vincoli |
 | **4. Metodo** | Come procede prima di rispondere (chiarimenti, ragionamento, piano) | (nuovo) |
 
 Perché sezioni fisse:
@@ -515,7 +515,7 @@ Nessuna istruzione, nessun parametro, nessuna base. Segue la lingua dell'interfa
 | | | | Risposta breve | «Rispondi in una o due frasi.» | lunghezza «Essenziale» |
 | | Percorso | Sì/No | Sì ✓ | «Indica sempre il percorso: finestra → scheda → pulsante.» | — |
 | | | | No | (nessuna frase) | — |
-| **Regole e fonti** | Argomenti da collegare | Multipla | Basi di conoscenza ✓ | «Quando è pertinente, collega la risposta alle basi di conoscenza.» | — |
+| **Regole** | Argomenti da collegare | Multipla | Basi di conoscenza ✓ | «Quando è pertinente, collega la risposta alle basi di conoscenza.» | — |
 | | | | Modelli e memoria | «Quando è pertinente, indica l'effetto su memoria e velocità.» | — |
 | | | | Store e ruoli | «Quando è pertinente, segnala cosa si trova nello Store.» | — |
 | | Se la Guida non lo dice | Singola | Lo dichiara ✓ | «Se la documentazione non copre la domanda, dillo e non inventare.» | — |
@@ -559,7 +559,7 @@ memoria · Lo dichiara.
 | | | | Risultato con spiegazione ✓ | «Dopo il risultato, spiega in tre punti le scelte fatte.» | lunghezza «Normale» |
 | | Stile del prompt | Singola | Asciutto ✓ | «Usa frasi brevi e imperative.» | temperatura 0,3 |
 | | | | Dettagliato | «Motiva ogni istruzione in una riga.» | temperatura 0,6 |
-| **Regole e fonti** | Tecniche da usare | Multipla | Ruolo esplicito ✓ | «Quando scrivi o riscrivi un prompt, aprilo dichiarando chi deve essere il modello.» | — |
+| **Regole** | Tecniche da usare | Multipla | Ruolo esplicito ✓ | «Quando scrivi o riscrivi un prompt, aprilo dichiarando chi deve essere il modello.» | — |
 | | | | Esempi nel prompt | «Quando scrivi o riscrivi un prompt, inserisci uno o due esempi di risposta attesa.» | — |
 | | | | Formato di uscita ✓ | «Quando scrivi o riscrivi un prompt, specifica il formato esatto della risposta.» | — |
 | | | | Passi numerati | «Quando scrivi o riscrivi un prompt, chiedi al modello di procedere per passi numerati.» | — |
@@ -596,7 +596,7 @@ verificare se le opzioni di risposta breve debbano spegnerlo.
 |---|---|---|
 | **Identità e obiettivi** | Specializzazione: Giornalistica · Tecnica · Commerciale · Narrativa — Intervento: Scrive da zero · Riscrive · Corregge soltanto — Priorità (multipla): Chiarezza · Sintesi · Persuasione · Precisione | Ambito: Web · Dati · Sistemi · Mobile — Intervento: Scrive codice · Rivede · Spiega · Trova l'errore |
 | **Stile e formato** | Pubblico: Generalista · Esperti · Studenti — Formato: Articolo · Email · Post · Relazione — Registro: Formale · Colloquiale · Divulgativo | Interlocutore: Programmatori · Commerciali · Direttore tecnico · CTO — Formato: Solo codice · Codice commentato · Passo-passo |
-| **Regole e fonti** | Fonti: Solo i documenti · Documenti e conoscenza propria — Cosa evitare (multipla): Gergo · Frasi fatte · Superlativi · Anglicismi | Fonti: Solo il codice fornito · Anche librerie note — Limiti: Non inventa API · Segnala ciò che non ha potuto provare |
+| **Regole** | Fonti: Solo i documenti · Documenti e conoscenza propria — Cosa evitare (multipla): Gergo · Frasi fatte · Superlativi · Anglicismi | Fonti: Solo il codice fornito · Anche librerie note — Limiti: Non inventa API · Segnala ciò che non ha potuto provare |
 | **Metodo** | Scrive subito · Propone una scaletta | Risponde subito · Prima il piano, poi il codice |
 
 ---
@@ -761,7 +761,7 @@ Applicate allo stesso ruolo (Assistente alla scrittura).
 | **A** | Tre gruppi del Brief: Ruolo, Obiettivi, Vincoli | Scartata: «Vincoli» diventa un contenitore unico |
 | **B** | Solo tipi di vincolo: Pubblico, Formato, Tono, Fonti, Limiti, Metodo | Scartata: spariscono identità e obiettivi |
 | **C** | Otto gruppi: Identità, Obiettivi, cinque tipi di vincolo, Metodo; ogni impostazione della mente di proprietà di un gruppo | Scartata dopo la seconda revisione: troppe intestazioni, spesso con un solo parametro; parametri incastrati a forza (es. «Tecniche» in Fonti) |
-| **D** | **Quattro sezioni** (Identità e obiettivi, Stile e formato, Regole e fonti, Metodo), tipo di vincolo come etichetta facoltativa, regola piatta sulla mente | **Scelta** (§3.2) |
+| **D** | **Quattro sezioni** (Identità e obiettivi, Stile e formato, Regole, Metodo), tipo di vincolo come etichetta facoltativa, regola piatta sulla mente | **Scelta** (§3.2) |
 
 ## Appendice B — Esito delle revisioni esterne
 

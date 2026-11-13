@@ -11,30 +11,16 @@ import { useModels } from '../store/useModels'
 import { definitionOf, findRole, roleName, useRoles } from '../store/useRoles'
 import { BookOpenIcon, FileTextIcon, PinIcon, PlusIcon, RegenerateIcon, TrashIcon } from './icons'
 import { ConnectForm, ConnectionRow } from './KnowledgeConnections'
+import { Switch } from './ModelSettings'
 
-/** Pill «Usa la base di conoscenza»: impostazione della conversazione, valida per ogni domanda salvo il bottone libro. */
+/** Interruttore «Usa la base di conoscenza»: impostazione della conversazione, valida per ogni domanda salvo il bottone libro. */
 export function KnowledgePill({ conversation }: { conversation: Conversation }): React.JSX.Element {
   const update = useConversations((s) => s.update)
   const on = conversation.knowledge
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      title={t('knowledge.pill.title')}
-      onClick={() => void update(conversation.id, { knowledge: !on })}
-      className={
-        'inline-flex items-center gap-2 self-start rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ' +
-        (on
-          ? 'border-brand-600 bg-brand-600 text-white hover:bg-brand-700 dark:border-brand-500 dark:bg-brand-500 dark:hover:bg-brand-600'
-          : 'border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800')
-      }
-      data-testid="knowledge-pill"
-    >
-      <BookOpenIcon size={15} />
-      <span>{t('knowledge.pill')}</span>
-      <span className={'text-xs ' + (on ? 'text-brand-100' : 'text-zinc-400')}>{on ? t('state.on') : t('state.off')}</span>
-    </button>
+    <div data-testid="knowledge-pill" data-on={on}>
+      <Switch label={t('knowledge.pill')} checked={on} title={t('knowledge.pill.title')} color="bg-brand-600" onChange={(knowledge) => void update(conversation.id, { knowledge })} />
+    </div>
   )
 }
 

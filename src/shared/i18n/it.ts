@@ -890,7 +890,7 @@ export const it = {
   'role.section': 'Ruolo',
   'role.section.identity': 'Identità e obiettivi',
   'role.section.style': 'Stile e formato',
-  'role.section.rules': 'Regole e fonti',
+  'role.section.rules': 'Regole',
   'role.section.method': 'Metodo',
   'role.change': 'Cambia…',
   'role.noOthers': 'Nessun altro ruolo installato.',

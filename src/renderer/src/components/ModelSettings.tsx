@@ -41,16 +41,19 @@ function useDebouncedPatch(convId: string, delay = 300): (patch: ConversationPat
   }
 }
 
-function Switch(props: {
+/** Interruttore dell'app: lo stesso per il ragionamento, il plan mode, le opzioni dei ruoli e la base di conoscenza. */
+export function Switch(props: {
   label: string
   checked: boolean
   disabled?: boolean
   title: string
   compact?: boolean
+  /** Etichetta in peso normale: per le righe di un elenco di opzioni. */
+  light?: boolean
   color: string
   onChange(v: boolean): void
 }): React.JSX.Element {
-  const { label, checked, disabled = false, title, compact = false, color, onChange } = props
+  const { label, checked, disabled = false, title, compact = false, light = false, color, onChange } = props
   const track = (
     <span
       aria-hidden
@@ -91,7 +94,7 @@ function Switch(props: {
         </>
       ) : (
         <>
-          <span className="font-medium text-zinc-700 dark:text-zinc-300">{label}</span>
+          <span className={(light ? 'text-[13px] ' : 'font-medium ') + 'text-zinc-700 dark:text-zinc-300'}>{label}</span>
           {track}
         </>
       )}
@@ -636,7 +639,7 @@ function readOpenGroups(): Record<string, boolean> {
  * Gruppo richiudibile del pannello. Chiuso mostra i valori correnti in una riga; aperto, i controlli con
  * le loro spiegazioni. Lo stato aperto/chiuso si ricorda.
  */
-function Group({ id, title, badge, summary, children }: { id: string; title: string; badge?: string; summary: string; children: React.ReactNode }): React.JSX.Element {
+export function Group({ id, title, badge, summary, children }: { id: string; title: string; badge?: string; summary: string; children: React.ReactNode }): React.JSX.Element {
   const [open, setOpen] = useState(() => readOpenGroups()[id] === true)
   return (
     <details

@@ -28,7 +28,7 @@ Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo 
 | # | Decisione |
 |---|---|
 | D8 | Ogni ruolo definisce **i suoi** parametri, consolidati per quel mestiere. Non esiste un elenco comune. |
-| D9 | I parametri si mostrano in **quattro sezioni fisse, sempre visibili**: Identità e obiettivi · Stile e formato · Regole e fonti · Metodo. Una sezione vuota non si vede. |
+| D9 | I parametri si mostrano in **quattro sezioni fisse, sempre visibili**: Identità e obiettivi · Stile e formato · Regole · Metodo. Una sezione vuota non si vede. |
 | D10 | Tipi di parametro: scelta singola, scelta multipla, sì/no (trattato come scelta singola a due opzioni). |
 | D11 | Ogni opzione porta una **frase di istruzione** e può **modificare la mente**. |
 | D12 | **In tutto il ruolo, al massimo un parametro può toccare una data impostazione** del modello. Un ruolo che viola la regola è rifiutato. |
@@ -432,6 +432,11 @@ Scelte fatte nel passo 2.5:
   provare l'interfaccia; nome con «(bozza)». I testi definitivi e le basi vere sono il passo 2.7.
 - **Installare un ruolo da file**: da Impostazioni → Conoscenza → importa pacchetto, come le basi.
 - **Tolti**: la scheda Brief e le righe transitorie del passo 2.3. I quattro campi restano nel database.
+- **Dopo il Controllo 3** (richieste dell'utente): la sezione «Regole e fonti» si chiama **«Regole»**; le quattro
+  sezioni del ruolo sono **richiudibili, chiuse al primo arrivo**, e da chiuse mostrano le scelte in vigore;
+  **niente menu a tendina**: interruttore per sì/no, un interruttore per opzione nella scelta multipla, pulsanti
+  affiancati (o uno sotto l'altro, se le etichette sono lunghe) nella scelta singola; nella scheda Conoscenza
+  la pill «Usa la base di conoscenza» è diventata lo **stesso interruttore**.
 - **Non fatto**: rimozione di un ruolo dall'interfaccia (arriva con lo Store, passo 2.6); `README.md` e la
   Guida parlano ancora del Brief (passo 2.8).
 

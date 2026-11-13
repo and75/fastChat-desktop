@@ -9,6 +9,7 @@ import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { definitionOf, findRole, languageTag, roleDescription, roleName, useRoles } from '../store/useRoles'
 import { DialogClose } from './IconButton'
+import { Group, Switch } from './ModelSettings'
 
 /** Ciò che un'opzione fa alla mente, in parole: «imposta la temperatura a 0,3». */
 export function describeEffect(mind: RoleMindSettings | undefined): string {
@@ -23,83 +24,103 @@ export function describeEffect(mind: RoleMindSettings | undefined): string {
   return parts.join(' · ')
 }
 
-const selectClass = 'w-full min-w-0 rounded-md border border-zinc-300 bg-white px-1.5 py-1 text-[13px] dark:border-zinc-700 dark:bg-zinc-900'
+const effectClass = 'text-[11.5px] text-brand-700 dark:text-brand-300'
 
+/** Le opzioni stanno affiancate su una riga? Dipende da quante sono e da quanto sono lunghe le etichette. */
+const fitsInline = (options: RoleOption[]): boolean => options.length <= 4 && options.reduce((n, o) => n + o.label.length, 0) + options.length * 3 <= 34
+
+/**
+ * Un parametro del ruolo. Sì/no: un interruttore. Scelta multipla: un interruttore per opzione. Scelta singola:
+ * pulsanti affiancati (uno sotto l'altro quando le etichette sono lunghe). Sotto, ciò che la scelta fa alla mente.
+ */
 function Parameter({ parameter, chosen, onChoose }: { parameter: RoleParameter; chosen: string | string[]; onChoose(value: string | string[]): void }): React.JSX.Element {
   const active = parameter.options.filter((o) => (Array.isArray(chosen) ? chosen.includes(o.id) : chosen === o.id))
   const effect = active.map((o) => describeEffect(o.mind)).filter(Boolean).join(' · ')
   const note = effect && (
-    <span className="col-start-2 -mt-1 text-[11.5px] text-brand-700 dark:text-brand-300" data-testid="role-effect">
+    <span className={effectClass} data-testid="role-effect">
       {effect}
     </span>
   )
-
-  if (parameter.type === 'multi') {
-    const list = Array.isArray(chosen) ? chosen : []
-    const toggle = (o: RoleOption): void => onChoose(list.includes(o.id) ? list.filter((id) => id !== o.id) : [...list, o.id])
-    return (
-      <div className="flex flex-col gap-1.5" role="group" aria-label={parameter.label} data-testid="role-parameter" data-parameter={parameter.id}>
-        <span className="text-[13px] text-zinc-700 dark:text-zinc-300">{parameter.label}</span>
-        <div className="flex flex-wrap gap-1.5">
-          {parameter.options.map((o) => {
-            const on = list.includes(o.id)
-            return (
-              <button
-                key={o.id}
-                type="button"
-                aria-pressed={on}
-                title={describeEffect(o.mind) || undefined}
-                onClick={() => toggle(o)}
-                className={
-                  'rounded-full border px-2.5 py-0.5 text-xs transition-colors ' +
-                  (on
-                    ? 'border-brand-600 bg-brand-600 text-white'
-                    : 'border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800')
-                }
-              >
-                {o.label}
-              </button>
-            )
-          })}
-        </div>
-        {effect && (
-          <span className="text-[11.5px] text-brand-700 dark:text-brand-300" data-testid="role-effect">
-            {effect}
-          </span>
-        )}
-      </div>
-    )
-  }
+  const label = <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{parameter.label}</span>
 
   if (parameter.type === 'toggle') {
-    const on = chosen === 'on'
     return (
-      <div className="grid grid-cols-[minmax(0,7.5rem)_1fr] items-center gap-x-2 gap-y-1.5" data-testid="role-parameter" data-parameter={parameter.id}>
-        <span className="text-[13px] text-zinc-700 dark:text-zinc-300">{parameter.label}</span>
-        <label className="relative flex cursor-pointer items-center justify-end">
-          <input type="checkbox" role="switch" aria-label={parameter.label} className="peer sr-only" checked={on} onChange={(e) => onChoose(e.target.checked ? 'on' : 'off')} />
-          <span aria-hidden className={'relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 ' + (on ? 'bg-brand-600' : 'bg-zinc-300 dark:bg-zinc-700')}>
-            <span className={'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ' + (on ? 'left-4.5' : 'left-0.5')} />
-          </span>
-        </label>
+      <div className="flex flex-col gap-1" data-testid="role-parameter" data-parameter={parameter.id}>
+        <Switch label={parameter.label} checked={chosen === 'on'} title={parameter.label} color="bg-brand-600" onChange={(on) => onChoose(on ? 'on' : 'off')} />
         {note}
       </div>
     )
   }
 
-  return (
-    <label className="grid grid-cols-[minmax(0,7.5rem)_1fr] items-center gap-x-2 gap-y-1.5" data-testid="role-parameter" data-parameter={parameter.id}>
-      <span className="text-[13px] text-zinc-700 dark:text-zinc-300">{parameter.label}</span>
-      <select aria-label={parameter.label} className={selectClass} value={typeof chosen === 'string' ? chosen : ''} onChange={(e) => onChoose(e.target.value)}>
+  if (parameter.type === 'multi') {
+    const list = Array.isArray(chosen) ? chosen : []
+    return (
+      <div className="flex flex-col gap-1.5" role="group" aria-label={parameter.label} data-testid="role-parameter" data-parameter={parameter.id}>
+        {label}
         {parameter.options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.label}
-          </option>
+          <Switch
+            key={o.id}
+            label={o.label}
+            light
+            checked={list.includes(o.id)}
+            title={describeEffect(o.mind) || o.label}
+            color="bg-brand-600"
+            onChange={(on) => onChoose(on ? [...list, o.id] : list.filter((id) => id !== o.id))}
+          />
         ))}
-      </select>
+        {note}
+      </div>
+    )
+  }
+
+  const inline = fitsInline(parameter.options)
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="role-parameter" data-parameter={parameter.id}>
+      {label}
+      <div
+        role="radiogroup"
+        aria-label={parameter.label}
+        className={'overflow-hidden rounded-lg border border-zinc-300 text-xs dark:border-zinc-700 ' + (inline ? 'grid' : 'flex flex-col')}
+        style={inline ? { gridTemplateColumns: `repeat(${parameter.options.length}, minmax(0, 1fr))` } : undefined}
+      >
+        {parameter.options.map((o, i) => {
+          const on = chosen === o.id
+          return (
+            <button
+              key={o.id}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              title={describeEffect(o.mind) || undefined}
+              onClick={() => !on && onChoose(o.id)}
+              className={
+                'px-2 py-1.5 transition-colors ' +
+                (inline ? 'text-center ' : 'text-left ') +
+                (i > 0 ? (inline ? 'border-l ' : 'border-t ') + 'border-zinc-300 dark:border-zinc-700 ' : '') +
+                (on ? 'bg-brand-600 font-medium text-white' : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800')
+              }
+            >
+              {o.label}
+            </button>
+          )
+        })}
+      </div>
       {note}
-    </label>
+    </div>
   )
+}
+
+/** Le scelte in vigore in una sezione, in una riga: è ciò che si legge quando la sezione è chiusa. */
+function sectionSummary(parameters: RoleParameter[], choices: Record<string, string | string[]>): string {
+  return parameters
+    .map((p) => {
+      const chosen = choices[p.id]
+      if (p.type === 'toggle') return `${p.label}: ${chosen === 'on' ? t('md.yes') : t('md.no')}`
+      const labels = p.options.filter((o) => (Array.isArray(chosen) ? chosen.includes(o.id) : chosen === o.id)).map((o) => o.label)
+      return p.type === 'multi' ? `${p.label}: ${labels.join(', ') || t('common.none')}` : labels[0]
+    })
+    .filter(Boolean)
+    .join(' · ')
 }
 
 /**
@@ -274,7 +295,8 @@ export function RolePanel({ conversation }: { conversation: Conversation }): Rea
   const recommended = definition.mind?.model
 
   return (
-    <section className="mb-3 flex flex-col gap-2.5" aria-label={t('role.section')} data-testid="role-panel">
+    <section className="flex flex-col" aria-label={t('role.section')} data-testid="role-panel">
+      <div className="flex flex-col gap-2.5 pb-2.5">
       <RoleCard conversation={conversation} role={role} missing={missing} />
       {missing && (
         <p className={warnClass} data-testid="role-missing">
@@ -288,18 +310,22 @@ export function RolePanel({ conversation }: { conversation: Conversation }): Rea
         </p>
       )}
       {error && <p className="text-xs text-red-700 dark:text-red-400">{error}</p>}
+      </div>
+      {/* Le quattro sezioni fisse, richiudibili come i gruppi del modello: chiuse mostrano le scelte in vigore. */}
       {ROLE_SECTIONS.map((section) => {
         const own = parameters.filter((p) => p.section === section)
         if (own.length === 0) return null
         return (
-          <div key={section} className="flex flex-col gap-2 border-t border-zinc-200 pt-2.5 dark:border-zinc-800" data-testid="role-section" data-section={section}>
-            <h3 className="text-[13px] font-semibold">{t(`role.section.${section}`)}</h3>
-            {own.map((p) => (
-              <Parameter key={p.id} parameter={p} chosen={choices[p.id]} onChoose={(value) => void choose(conversation.id, p.id, value)} />
-            ))}
+          <div key={section} className="border-t border-zinc-200 dark:border-zinc-800" data-testid="role-section" data-section={section}>
+            <Group id={`role-${section}`} title={t(`role.section.${section}`)} summary={sectionSummary(own, choices)}>
+              {own.map((p) => (
+                <Parameter key={p.id} parameter={p} chosen={choices[p.id]} onChoose={(value) => void choose(conversation.id, p.id, value)} />
+              ))}
+            </Group>
           </div>
         )
       })}
+      {parameters.length > 0 && <div className="border-t border-zinc-200 dark:border-zinc-800" />}
     </section>
   )
 }

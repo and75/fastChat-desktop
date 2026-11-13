@@ -890,7 +890,7 @@ export const fr: Record<Key, string> = {
   'role.section': 'Rôle',
   'role.section.identity': 'Identité et objectifs',
   'role.section.style': 'Style et format',
-  'role.section.rules': 'Règles et sources',
+  'role.section.rules': 'Règles',
   'role.section.method': 'Méthode',
   'role.change': 'Changer…',
   'role.noOthers': 'Aucun autre rôle installé.',

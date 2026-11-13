@@ -693,7 +693,7 @@ try {
   await page.getByTestId('model-settings').getByText('Varietà delle parole').scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(root, 'test-results', 'e2e-phase3.png') })
 
-  await step('base di conoscenza: scheda, documenti (testo e PDF), estratti con fonte, bottone libro per una domanda, pill', async () => {
+  await step('base di conoscenza: scheda, documenti (testo e PDF), estratti con fonte, bottone libro per una domanda, interruttore', async () => {
     const box = page.getByRole('textbox', { name: 'Messaggio' })
     const book = page.getByTestId('knowledge-button')
     const ask = async (text) => {
@@ -711,7 +711,7 @@ try {
     const panel = page.getByTestId('knowledge-panel')
     await panel.getByTestId('knowledge-status').filter({ hasText: 'Nessun documento' }).waitFor()
     assert.equal(await book.isDisabled(), true)
-    assert.equal(await page.getByRole('switch', { name: 'Usa la base di conoscenza' }).getAttribute('aria-checked'), 'true')
+    assert.equal(await page.getByRole('switch', { name: 'Usa la base di conoscenza' }).isChecked(), true)
     // aggiunta (dialog saltato): un testo e un PDF, indicizzati in sottofondo; il puntino sulla scheda
     await panel.getByTestId('knowledge-add').click()
     await panel.locator('[data-testid="knowledge-doc"][data-status="ready"]').nth(1).waitFor({ timeout: 30_000 })
@@ -750,7 +750,7 @@ try {
     assert.doesNotMatch(system.content, /# Base di conoscenza/)
     await page.locator('[data-testid="message-knowledge"][data-on="false"]').waitFor()
     await page.waitForFunction(() => document.querySelector('[data-testid="knowledge-button"]')?.getAttribute('aria-pressed') === 'true')
-    // pill spenta: il libro è spento; acceso per una domanda sola → sezione presente
+    // interruttore spento: il libro è spento; acceso per una domanda sola → sezione presente
     await page.getByTestId('knowledge-pill').click()
     await waitUntil(async () => (await latestConversation()).knowledge === false)
     await page.waitForFunction(() => document.querySelector('[data-testid="knowledge-button"]')?.getAttribute('aria-pressed') === 'false')
@@ -1238,28 +1238,36 @@ try {
     // nella barra laterale, sotto il titolo, con chi si parla
     await items.first().getByTestId('conversation-role').filter({ hasText: 'Esperto di prompt engineering' }).waitFor()
     // quattro sezioni, nell'ordine fisso
-    assert.deepEqual(await panel.getByTestId('role-section').locator('h3').allTextContents(), ['Identità e obiettivi', 'Stile e formato', 'Regole e fonti', 'Metodo'])
+    assert.deepEqual(await panel.getByTestId('role-section').evaluateAll((els) => els.map((e) => e.dataset.section)), ['identity', 'style', 'rules', 'method'])
+    // al primo arrivo sono chiuse: ciascuna mostra in una riga le scelte in vigore
+    assert.equal(await panel.locator('[data-testid="role-section"] details[open]').count(), 0)
+    assert.equal(await panel.getByTestId('group-role-style-summary').textContent(), 'Principiante · Risultato con spiegazione · Asciutto')
+    assert.equal(await panel.getByTestId('group-role-rules-summary').textContent(), 'Tecniche da usare: Ruolo esplicito, Formato di uscita')
+    await panel.locator('[data-testid="role-section"][data-section="rules"] summary').filter({ hasText: /^.?Regole/ }).waitFor()
+    // niente menu a tendina: pulsanti affiancati per la scelta singola, interruttori per quella multipla
+    await page.evaluate(() => document.querySelectorAll('[data-testid="role-panel"] details[data-group]').forEach((d) => (d.open = true)))
+    assert.equal(await panel.getByTestId('role-panel').getByRole('combobox').count(), 0)
 
     // scelta singola: l'opzione dichiara il suo effetto sulla mente, e lo applica
     const style = panel.locator('[data-parameter="stile"]')
     await style.getByTestId('role-effect').filter({ hasText: 'imposta la temperatura a 0,3' }).waitFor()
-    await style.getByRole('combobox').selectOption({ label: 'Dettagliato' })
+    await style.getByRole('radio', { name: 'Dettagliato' }).click()
     await style.getByTestId('role-effect').filter({ hasText: 'imposta la temperatura a 0,6' }).waitFor()
     await waitUntil(async () => (await latestConversation()).temperature === 0.6)
     // la lunghezza della risposta non tocca la temperatura
-    await panel.locator('[data-parameter="risultato"]').getByRole('combobox').selectOption({ label: 'Solo il risultato' })
+    await panel.locator('[data-parameter="risultato"]').getByRole('radio', { name: 'Solo il risultato' }).click()
     await waitUntil(async () => (await latestConversation()).style === 'concise')
     assert.equal((await latestConversation()).temperature, 0.6)
     // scelta multipla
-    await panel.locator('[data-parameter="tecniche"]').getByRole('button', { name: 'Passi numerati' }).click()
+    await setSwitch(panel.locator('[data-parameter="tecniche"]'), 'Passi numerati', true)
     await waitUntil(async () => ((await latestConversation()).roleParams?.tecniche ?? []).includes('passi'))
     // un ritocco a mano resta finché non cambia l'opzione che governa quel valore
     await page.getByTestId('composer-style').selectOption('extended')
     await waitUntil(async () => (await latestConversation()).style === 'extended')
-    await panel.locator('[data-parameter="destinatario"]').getByRole('combobox').selectOption({ label: 'Esperto' })
+    await panel.locator('[data-parameter="destinatario"]').getByRole('radio', { name: 'Esperto' }).click()
     await waitUntil(async () => (await latestConversation()).roleParams?.destinatario === 'esperto')
     assert.equal((await latestConversation()).style, 'extended')
-    await panel.locator('[data-parameter="risultato"]').getByRole('combobox').selectOption({ label: 'Risultato con spiegazione' })
+    await panel.locator('[data-parameter="risultato"]').getByRole('radio', { name: 'Risultato con spiegazione' }).click()
     await waitUntil(async () => (await latestConversation()).style === 'normal')
 
     // situazione e anteprima: le istruzioni del ruolo, poi la situazione con il suo titolo
