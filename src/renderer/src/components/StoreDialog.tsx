@@ -3,12 +3,16 @@ import { getLocale, t, tn, type Key } from "@shared/i18n";
 import {
   localize,
   STORE_CATEGORIES,
+  storeGroups,
+  storeLanguages,
   type StoreEntry,
+  type StoreGroup,
   type StoreItemType,
   type StoreState,
   type StoreView,
 } from "@shared/store";
 import { useKnowledge } from "../store/useKnowledge";
+import { useRoles } from "../store/useRoles";
 import { DialogClose } from "./IconButton";
 import { BookOpenIcon, IdCardIcon, PackageIcon, PuzzleIcon } from "./icons";
 
@@ -51,21 +55,48 @@ function StateBadge({ state }: { state: StoreState }): React.JSX.Element {
   );
 }
 
-/** Una voce dello store: titolo e descrizione nella lingua dell'interfaccia, requisiti, stato, azione. */
+/** Nome di una lingua scritto in quella lingua: «Italiano», «Français». */
+export function languageName(code: string): string {
+  try {
+    const name = new Intl.DisplayNames([code], { type: "language" }).of(code) ?? code;
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  } catch {
+    return code.toUpperCase();
+  }
+}
+
+const isInstalled = (item: StoreEntry): boolean =>
+  item.state === "installed" || item.state === "update";
+
+/**
+ * Una scheda dello store: una voce, o le varianti della stessa voce in lingue diverse (si sceglie quale
+ * installare). Titolo e descrizione, requisiti, stato e azione sono quelli della variante scelta.
+ */
 function StoreCard({
-  item,
+  group,
   all,
-  busy,
+  busyId,
+  searching,
   onInstall,
   onRemove,
 }: {
-  item: StoreEntry;
+  group: StoreGroup;
   all: Map<string, StoreEntry>;
-  busy: boolean;
-  onInstall(): void;
-  onRemove(): void;
+  busyId: string | null;
+  searching: boolean;
+  onInstall(id: string): void;
+  onRemove(id: string): void;
 }): React.JSX.Element {
   const locale = getLocale();
+  const [chosen, setChosen] = useState(group.preferred.id);
+  const item = group.variants.find((v) => v.id === chosen) ?? group.preferred;
+  const busy = busyId === item.id;
+  const languages = group.variants.filter((v) => v.language);
+  // La ricerca ha trovato il testo in un'altra variante: lo si dice, così si capisce perché la scheda è qui.
+  const elsewhere =
+    searching && !group.matched.some((m) => m.id === item.id)
+      ? group.matched[0]
+      : null;
   // Rimuovere chiede conferma, come in Impostazioni → Conoscenza: dice quante conversazioni la collegano.
   const [confirming, setConfirming] = useState(false);
   const linkedIn = useKnowledge(
@@ -79,9 +110,6 @@ function StoreCard({
   const details = [
     item.author,
     `v${item.version.split("+")[0]}`,
-    item.language
-      ? t("store.language", { language: item.language.toUpperCase() })
-      : null,
     item.size ? fmtSize(item.size) : null,
     item.price ? `${item.price.toFixed(2)} €` : t("store.free"),
   ].filter(Boolean);
@@ -90,6 +118,7 @@ function StoreCard({
       className="flex flex-col gap-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
       data-testid="store-item"
       data-id={item.id}
+      data-group={group.key}
     >
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
@@ -115,7 +144,7 @@ function StoreCard({
             <button
               type="button"
               disabled={busy}
-              onClick={onInstall}
+              onClick={() => onInstall(item.id)}
               className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
               data-testid="store-item-install"
             >
@@ -146,16 +175,18 @@ function StoreCard({
         >
           <span className="min-w-0 flex-1">
             {t("store.remove.confirm", { name: localize(item.name, locale) })}{" "}
-            {linkedIn > 0
-              ? tn("knowledge.library.delete.confirm", linkedIn)
-              : t("knowledge.library.delete.confirmNone")}
+            {item.type === "identity"
+              ? t("store.role.remove.hint")
+              : linkedIn > 0
+                ? tn("knowledge.library.delete.confirm", linkedIn)
+                : t("knowledge.library.delete.confirmNone")}
           </span>
           <button
             type="button"
             className="rounded-lg bg-red-600 px-2.5 py-1 font-medium text-white hover:bg-red-700"
             onClick={() => {
               setConfirming(false);
-              onRemove();
+              onRemove(item.id);
             }}
             data-testid="store-item-remove-confirm"
           >
@@ -169,6 +200,64 @@ function StoreCard({
             {t("common.cancel")}
           </button>
         </div>
+      )}
+
+      {languages.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300"
+          role="group"
+          aria-label={t("store.availableIn")}
+          data-testid="store-item-languages"
+        >
+          <span>{t("store.availableIn")}</span>
+          {languages.length === 1 ? (
+            // Una sola lingua: non c'è nulla da scegliere.
+            <span
+              className="rounded-full border border-zinc-300 px-2.5 py-0.5 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
+              data-testid="store-item-language"
+              data-language={languages[0].language}
+            >
+              {languageName(languages[0].language!)}
+            </span>
+          ) : (
+            languages.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              aria-pressed={v.id === item.id}
+              onClick={() => {
+                setConfirming(false);
+                setChosen(v.id);
+              }}
+              data-testid="store-item-language"
+              data-language={v.language}
+              data-installed={isInstalled(v)}
+              className={
+                "rounded-full border px-2.5 py-0.5 transition-colors disabled:cursor-default " +
+                (v.id === item.id
+                  ? "border-brand-600 bg-brand-50 font-medium text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"
+                  : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800")
+              }
+            >
+              {languageName(v.language!)}
+              {isInstalled(v) && (
+                <span className="ml-1 text-emerald-700 dark:text-emerald-400" aria-label={t("store.state.installed")}>
+                  ✓
+                </span>
+              )}
+            </button>
+            ))
+          )}
+        </div>
+      )}
+
+      {elsewhere && (
+        <p className="text-xs leading-snug text-zinc-600 dark:text-zinc-300" data-testid="store-item-found">
+          {t("store.foundIn", {
+            language: elsewhere.language ? languageName(elsewhere.language) : "",
+            name: localize(elsewhere.name, locale),
+          })}
+        </p>
       )}
 
       {(contains.length > 0 || requires.length > 0) && (
@@ -218,8 +307,9 @@ function StoreCard({
               ? "store.model.required"
               : "store.model.recommended",
             { model: item.model.name },
-          )}
-        {item.builtin && ` ${t("store.builtin")}.`}
+          ) + "."}
+        {item.builtin &&
+          ` ${t(item.type === "identity" ? "store.builtin.role" : "store.builtin")}.`}
         {item.state === "update" &&
           item.installedVersion &&
           ` ${t("store.installedVersion", { version: item.installedVersion.split("+")[0] })}.`}
@@ -227,8 +317,10 @@ function StoreCard({
           item.state !== "available" &&
           item.state !== "soon" &&
           ` ${t("store.installed.hint")}`}
-        {(item.type === "identity" || item.type === "plugin") &&
-          ` ${t("store.soon.hint")}`}
+        {item.type === "identity" &&
+          isInstalled(item) &&
+          ` ${t("store.role.hint")}`}
+        {item.type === "plugin" && ` ${t("store.soon.hint")}`}
       </p>
     </li>
   );
@@ -237,12 +329,17 @@ function StoreCard({
 /** Lo store: una finestra sopra la chat, divisa in categorie. Mostra il catalogo e ciò che è già installato. */
 export function StoreDialog({
   onClose,
+  initialTab = "knowledge",
 }: {
   onClose(): void;
+  /** Categoria aperta all'arrivo: «Altri ruoli nello Store…» porta ai ruoli. */
+  initialTab?: StoreItemType;
 }): React.JSX.Element {
   const [view, setView] = useState<StoreView | null>(null);
-  const [tab, setTab] = useState<StoreItemType>("knowledge");
+  const [tab, setTab] = useState<StoreItemType>(initialTab);
   const [query, setQuery] = useState("");
+  /** Filtro per lingua del contenuto; null = tutte. */
+  const [language, setLanguage] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -274,23 +371,22 @@ export function StoreDialog({
     const knowledge = useKnowledge.getState();
     void knowledge.loadBases();
     for (const key of Object.keys(knowledge.status)) void knowledge.load(key);
+    // Un ruolo installato o rimosso: l'elenco di «Parla con un…» si rilegge.
+    void useRoles.getState().refresh();
   };
 
   const all = useMemo(
     () => new Map((view?.items ?? []).map((i) => [i.id, i])),
     [view],
   );
-  const needle = query.trim().toLowerCase();
-  const shown = (view?.items ?? []).filter(
-    (i) =>
-      i.type === tab &&
-      (!needle ||
-        `${localize(i.name, locale)} ${localize(i.summary, locale)} ${i.author ?? ""}`
-          .toLowerCase()
-          .includes(needle)),
-  );
+  const needle = query.trim();
+  const items = view?.items ?? [];
+  const languages = storeLanguages(items, tab);
+  // Il filtro vale per la categoria aperta: una lingua che lì non c'è non filtra.
+  const activeLanguage = language && languages.includes(language) ? language : null;
+  const shown = storeGroups(items, { type: tab, query: needle, language: activeLanguage, locale });
   const count = (type: StoreItemType): number =>
-    (view?.items ?? []).filter((i) => i.type === type).length;
+    storeGroups(items, { type, locale }).length;
 
   return (
     <dialog
@@ -336,15 +432,45 @@ export function StoreDialog({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-5">
-          <input
-            type="search"
-            aria-label={t("store.search")}
-            placeholder={t("store.search")}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-            data-testid="store-search"
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="search"
+              aria-label={t("store.search")}
+              placeholder={t("store.search")}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="min-w-[12rem] flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              data-testid="store-search"
+            />
+            {languages.length > 0 && (
+              <div
+                role="radiogroup"
+                aria-label={t("store.language.filter")}
+                className="flex shrink-0 overflow-hidden rounded-lg border border-zinc-300 text-sm dark:border-zinc-700"
+                data-testid="store-language-filter"
+              >
+                {[null, ...languages].map((code, i) => (
+                  <button
+                    key={code ?? "all"}
+                    type="button"
+                    role="radio"
+                    aria-checked={activeLanguage === code}
+                    onClick={() => setLanguage(code)}
+                    data-language={code ?? "all"}
+                    className={
+                      "px-3 py-1.5 transition-colors " +
+                      (i > 0 ? "border-l border-zinc-300 dark:border-zinc-700 " : "") +
+                      (activeLanguage === code
+                        ? "bg-brand-600 font-medium text-white"
+                        : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800")
+                    }
+                  >
+                    {code ? languageName(code) : t("store.language.all")}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {(error ?? view?.error) && (
             <p
@@ -368,7 +494,7 @@ export function StoreDialog({
               data-testid="store-empty"
             >
               {needle
-                ? t("store.noResults", { query: query.trim() })
+                ? t("store.noResults", { query: needle })
                 : t("store.empty")}
             </p>
           ) : (
@@ -376,14 +502,16 @@ export function StoreDialog({
               className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,24rem),1fr))] items-start gap-3"
               data-testid="store-items"
             >
-              {shown.map((item) => (
+              {shown.map((group) => (
                 <StoreCard
-                  key={item.id}
-                  item={item}
+                  // La variante preselezionata cambia con il filtro per lingua: la scheda riparte da lì.
+                  key={`${group.key}:${group.preferred.id}`}
+                  group={group}
                   all={all}
-                  busy={busy === item.id}
-                  onInstall={() => void act(item.id, "install")}
-                  onRemove={() => void act(item.id, "remove")}
+                  busyId={busy}
+                  searching={needle !== ""}
+                  onInstall={(id) => void act(id, "install")}
+                  onRemove={(id) => void act(id, "remove")}
                 />
               ))}
             </ul>

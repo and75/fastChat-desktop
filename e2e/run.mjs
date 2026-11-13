@@ -1001,12 +1001,12 @@ try {
     await back.dialog.waitFor({ state: 'detached' })
   })
 
-  await step('store: finestra sopra la chat, quattro categorie, Guida già installata, installa una base e la collega', async () => {
+  await step('store: finestra sopra la chat, quattro categorie, ruoli con lingua e filtro, Guida già installata, installa una base e la collega', async () => {
     await page.getByTestId('store-open').click()
     const store = page.getByTestId('store-dialog')
     await store.getByTestId('store-item').first().waitFor()
-    // categorie nell'ordine: Identità, Basi di conoscenza, Plugin, Pacchetti; si apre sulle basi
-    assert.deepEqual(await store.getByRole('tab').allTextContents(), ['Identità1', 'Basi di conoscenza2', 'Plugin1', 'Pacchetti1'])
+    // categorie nell'ordine: Ruoli, Basi di conoscenza, Plugin, Pacchetti; si apre sulle basi
+    assert.deepEqual(await store.getByRole('tab').allTextContents(), ['Ruoli2', 'Basi di conoscenza2', 'Plugin1', 'Pacchetti0'])
     assert.equal(await store.getByRole('tab', { name: /Basi di conoscenza/ }).getAttribute('aria-selected'), 'true')
     const item = (name) => store.getByTestId('store-item').filter({ has: page.getByTestId('store-item-name').filter({ hasText: name }) })
     // la Guida integrata: installata, senza azioni
@@ -1014,18 +1014,29 @@ try {
     await guide.locator('[data-testid="store-item-state"][data-state="installed"]').first().waitFor()
     assert.equal(await guide.getByRole('button').count(), 0)
     await store.getByTestId('store-source').filter({ hasText: 'Catalogo incluso nell’app' }).waitFor()
-    // identità e plugin: nel catalogo, non ancora installabili
+    // ruoli: i due in bozza inclusi nell'app, installati e non rimovibili; ciascuno con la sua lingua e ciò che richiede
     await store.getByTestId('store-tab-identity').click()
-    await item('Tutor dei prompt').locator('[data-state="soon"]').first().waitFor()
-    await item('Tutor dei prompt').getByTestId('store-item-part').filter({ hasText: 'Scrivere buoni prompt' }).waitFor()
+    const expert = item('Esperto di prompt engineering')
+    await expert.locator('[data-testid="store-item-state"][data-state="installed"]').first().waitFor()
+    await expert.getByTestId('store-item-language').filter({ hasText: 'Italiano' }).waitFor()
+    await expert.getByTestId('store-item-part').filter({ hasText: 'Scrivere buoni prompt' }).waitFor()
     assert.equal(await store.getByTestId('store-item-install').count(), 0)
+    assert.equal(await store.getByTestId('store-item-remove').count(), 0)
+    // filtro per lingua accanto alla ricerca: pulsanti, non un menu
+    const filter = store.getByTestId('store-language-filter')
+    assert.deepEqual(await filter.getByRole('radio').allTextContents(), ['Tutte le lingue', 'Italiano'])
+    await filter.getByRole('radio', { name: 'Italiano' }).click()
+    assert.equal(await store.getByTestId('store-item').count(), 2)
+    await store.getByTestId('store-search').fill('uso dell\'app')
+    assert.equal(await store.getByTestId('store-item').count(), 1)
+    await store.getByTestId('store-search').fill('')
+    await filter.getByRole('radio', { name: 'Tutte le lingue' }).click()
+    // plugin: nel catalogo, non ancora installabili
     await store.getByTestId('store-tab-plugin').click()
     await store.locator('[data-testid="store-item-state"][data-state="soon"]').first().waitFor()
-    // un pacchetto elenca ciò che contiene, ognuno con il suo stato
+    // nessun pacchetto nel catalogo incluso nell'app
     await store.getByTestId('store-tab-bundle').click()
-    const kit = store.getByTestId('store-item')
-    assert.equal(await kit.getByTestId('store-item-part').count(), 2)
-    await kit.locator(':scope > div [data-testid="store-item-state"][data-state="available"]').first().waitFor()
+    await store.getByTestId('store-empty').filter({ hasText: 'Nessuna voce in questa categoria.' }).waitFor()
     // ricerca
     await store.getByTestId('store-tab-knowledge').click()
     await store.getByTestId('store-search').fill('prompt')
@@ -1033,7 +1044,7 @@ try {
     await store.getByTestId('store-search').fill('zzz')
     await store.getByTestId('store-empty').filter({ hasText: 'Nessun risultato per «zzz»' }).waitFor()
     await store.getByTestId('store-search').fill('')
-    // installa «Scrivere buoni prompt»: diventa installata, e il pacchetto che la contiene pure
+    // installa «Scrivere buoni prompt»: diventa installata
     await item('Scrivere buoni prompt').getByTestId('store-item-install').click()
     await item('Scrivere buoni prompt').locator('[data-testid="store-item-state"][data-state="installed"]').first().waitFor()
     // rimuovere chiede conferma (qui si annulla)
@@ -1331,6 +1342,14 @@ try {
     assert.equal(await page.getByTestId('role-change-dialog').count(), 0)
     // la conversazione di partenza è rimasta com'era
     await items.filter({ hasText: 'Esperto di prompt engineering' }).first().waitFor()
+    // «Altri ruoli nello Store…» apre lo Store sulla scheda dei ruoli
+    await page.getByTestId('role-menu-open').click()
+    await page.getByTestId('role-menu-store').click()
+    const store = page.getByTestId('store-dialog')
+    await store.getByTestId('store-item').first().waitFor()
+    assert.equal(await store.getByTestId('store-tab-identity').getAttribute('aria-selected'), 'true')
+    await store.getByTestId('dialog-close').click()
+    await store.waitFor({ state: 'detached' })
   })
 
   await step('impostazioni: verifica URL, tema scuro, modello predefinito', async () => {
@@ -1782,7 +1801,7 @@ try {
     await page.getByTestId('store-open').filter({ hasText: 'Store' }).click()
     const store = page.getByTestId('store-dialog')
     await store.getByTestId('store-item').first().waitFor()
-    assert.deepEqual(await store.getByRole('tab').allTextContents(), ['Identities1', 'Knowledge bases2', 'Plugins1', 'Bundles1'])
+    assert.deepEqual(await store.getByRole('tab').allTextContents(), ['Roles2', 'Knowledge bases2', 'Plugins1', 'Bundles0'])
     assert.deepEqual(await store.getByTestId('store-item-name').allTextContents(), ['FastChat Guide', 'Writing good prompts'])
     await store.locator('[data-testid="store-item-state"][data-state="installed"]').first().filter({ hasText: 'Installed' }).waitFor()
     await store.getByRole('button', { name: 'Close' }).click()

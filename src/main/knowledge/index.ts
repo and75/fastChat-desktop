@@ -805,7 +805,8 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
       description: manifest.description ?? '',
       version: manifest.version,
       definition,
-      origin: opts.builtin ? 'builtin' : 'package'
+      origin: opts.builtin ? 'builtin' : 'package',
+      meta: { trust: opts.builtin ? 'builtin' : trust, ...(opts.store ? { store: true } : {}) }
     })
     const findBase = opts.findBase ?? siblingPacks(dirname(path))
     const missing: string[] = []
@@ -816,6 +817,11 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
       if (!installed) missing.push(wanted.id)
     }
     return { role, missing }
+  }
+
+  /** Ruoli installati, per id (per lo Store). */
+  async function installedRoles(): Promise<Map<string, RoleRecord>> {
+    return new Map((await listRoles(db)).filter((r) => r.id !== GENERALIST_ROLE_ID).map((r) => [r.id, r]))
   }
 
   /**
@@ -955,6 +961,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     installPack,
     installBuiltin,
     installRole,
+    installedRoles,
     removeRole,
     roleHealth,
     installedPacks,

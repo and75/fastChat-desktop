@@ -837,7 +837,7 @@ export const it = {
   'err.knowledge.builtin': 'La base integrata nell\'app non si elimina',
   'store.remove.confirm': 'Rimuovere «{name}»?',
   'store.title': 'Store',
-  'store.category.identity': 'Identità',
+  'store.category.identity': 'Ruoli',
   'store.category.knowledge': 'Basi di conoscenza',
   'store.category.plugin': 'Plugin',
   'store.category.bundle': 'Pacchetti',
@@ -868,7 +868,7 @@ export const it = {
   'store.vectors': 'Vettori pronti: richiede il modello di embedding {model}.',
   'store.model.recommended': 'Modello consigliato: {model}',
   'store.model.required': 'Modello richiesto: {model}',
-  'store.soon.hint': 'Identità e plugin si potranno installare con un prossimo aggiornamento dell’app.',
+  'store.soon.hint': 'I plugin si potranno installare con un prossimo aggiornamento dell’app.',
   'store.installed.hint': 'La trovi in Impostazioni → Conoscenza e la colleghi a una conversazione dalla scheda «Conoscenza».',
   'settings.storeUrl': 'Repository dello store',
   'settings.storeUrl.hint': 'Indirizzo da cui leggere il catalogo. Vuoto: si usa il catalogo incluso nell’app.',
@@ -925,7 +925,14 @@ export const it = {
   'situation.over': 'Il testo supera il limite: resta com\'è e viene inviato per intero, ma si può solo accorciare.',
   'situation.preview': 'Cosa riceve il modello',
   'situation.preview.hint': 'In viola le istruzioni del ruolo (si cambiano dalla scheda Modello), poi la tua situazione.',
-  'pack.preview.role': 'Ruolo: compare in «Parla con un…». Le basi che richiede si installano con lui, se sono nella stessa cartella.'
+  'pack.preview.role': 'Ruolo: compare in «Parla con un…». Le basi che richiede si installano con lui, se sono nella stessa cartella.',
+  'store.availableIn': 'Disponibile in:',
+  'store.language.all': 'Tutte le lingue',
+  'store.language.filter': 'Lingua dei contenuti',
+  'store.foundIn': 'Trovato in {language}: «{name}». Scegli la lingua per vedere e installare quella variante.',
+  'store.role.hint': 'Lo trovi in «Parla con un…», accanto a «Nuova conversazione».',
+  'store.role.remove.hint': 'Le conversazioni che lo usano continuano come Generalista, con la loro situazione. Le sue basi restano se un altro ruolo le usa.',
+  'store.builtin.role': 'Incluso nell’app'
 } as const satisfies Record<string, string>
 
 export type Key = keyof typeof it

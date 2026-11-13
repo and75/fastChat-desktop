@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { displayTitle, localeTag, t, tn } from '@shared/i18n'
+import type { StoreItemType } from '@shared/store'
 import type { Conversation } from '@shared/types'
 import { useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
@@ -13,7 +14,7 @@ import { isMac } from './WindowControls'
  * «Parla con un…»: i ruoli installati, poi i template. Un clic crea una conversazione con quel ruolo, o con il
  * ruolo, le scelte e la situazione salvati nel template.
  */
-function RoleMenu({ onDone, onOpenStore }: { onDone(): void; onOpenStore(): void }): React.JSX.Element {
+function RoleMenu({ onDone, onOpenStore }: { onDone(): void; onOpenStore(tab?: StoreItemType): void }): React.JSX.Element {
   const { templates, refresh, remove } = useTemplates()
   const roles = useRoles((s) => s.roles)
   const refreshRoles = useRoles((s) => s.refresh)
@@ -101,7 +102,7 @@ function RoleMenu({ onDone, onOpenStore }: { onDone(): void; onOpenStore(): void
         className={row + ' px-2 py-1.5 text-left font-medium text-brand-700 focus:outline-none dark:text-brand-300'}
         onClick={() => {
           onDone()
-          onOpenStore()
+          onOpenStore('identity')
         }}
       >
         {t('role.moreInStore')}
@@ -214,7 +215,7 @@ function Item({ conv, active }: { conv: Conversation; active: boolean }): React.
 }
 
 /** «Nuova conversazione» in stile outline (Generalista), con la freccia di «Parla con un…» attaccata. */
-function NewConversationButton({ onOpenStore }: { onOpenStore(): void }): React.JSX.Element {
+function NewConversationButton({ onOpenStore }: { onOpenStore(tab?: StoreItemType): void }): React.JSX.Element {
   const create = useConversations((s) => s.create)
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -296,7 +297,7 @@ function useCollapsed(): [boolean, (v: boolean) => void] {
 }
 
 /** Barra laterale chiusa: striscia con logo, pulsante per riaprire, nuova conversazione e impostazioni. */
-function CollapsedRail({ onExpand, onOpenSettings, onOpenStore }: { onExpand(): void; onOpenSettings(): void; onOpenStore(): void }): React.JSX.Element {
+function CollapsedRail({ onExpand, onOpenSettings, onOpenStore }: { onExpand(): void; onOpenSettings(): void; onOpenStore(tab?: StoreItemType): void }): React.JSX.Element {
   const create = useConversations((s) => s.create)
   return (
     <aside
@@ -322,7 +323,7 @@ function CollapsedRail({ onExpand, onOpenSettings, onOpenStore }: { onExpand(): 
         <PlusIcon size={18} />
       </IconButton>
       <div className="flex-1" />
-      <IconButton tooltip={t('store.title')} tooltipPlacement="right" data-testid="store-open-rail" onClick={onOpenStore}>
+      <IconButton tooltip={t('store.title')} tooltipPlacement="right" data-testid="store-open-rail" onClick={() => onOpenStore()}>
         <StoreIcon size={18} />
       </IconButton>
       <IconButton tooltip={t('settings.title')} tooltipPlacement="right" onClick={onOpenSettings}>
@@ -332,13 +333,13 @@ function CollapsedRail({ onExpand, onOpenSettings, onOpenStore }: { onExpand(): 
   )
 }
 
-export function Sidebar({ onOpenSettings, onOpenStore }: { onOpenSettings(): void; onOpenStore(): void }): React.JSX.Element {
+export function Sidebar({ onOpenSettings, onOpenStore }: { onOpenSettings(): void; onOpenStore(tab?: StoreItemType): void }): React.JSX.Element {
   const [collapsed, setCollapsed] = useCollapsed()
   if (collapsed) return <CollapsedRail onExpand={() => setCollapsed(false)} onOpenSettings={onOpenSettings} onOpenStore={onOpenStore} />
   return <ExpandedSidebar onCollapse={() => setCollapsed(true)} onOpenSettings={onOpenSettings} onOpenStore={onOpenStore} />
 }
 
-function ExpandedSidebar({ onOpenSettings, onOpenStore, onCollapse }: { onOpenSettings(): void; onOpenStore(): void; onCollapse(): void }): React.JSX.Element {
+function ExpandedSidebar({ onOpenSettings, onOpenStore, onCollapse }: { onOpenSettings(): void; onOpenStore(tab?: StoreItemType): void; onCollapse(): void }): React.JSX.Element {
   const { conversations, activeId, search, showArchived, setSearch, setShowArchived } = useConversations()
   const [query, setQuery] = useState(search)
 
@@ -404,7 +405,7 @@ function ExpandedSidebar({ onOpenSettings, onOpenStore, onCollapse }: { onOpenSe
       <div className="border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
         <button
           type="button"
-          onClick={onOpenStore}
+          onClick={() => onOpenStore()}
           className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800"
           data-testid="store-open"
         >

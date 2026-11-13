@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-11",
+  "updatedAt": "2026-11-13",
   "items": [
     {
       "id": "app.fastchat.guida",
@@ -43,29 +43,42 @@
       }
     },
     {
-      "id": "it.fastchat.tutor-prompt",
+      "id": "app.fastchat.ruolo.assistente.it",
       "type": "identity",
-      "version": "1.0.0",
+      "group": "app.fastchat.ruolo.assistente",
+      "builtin": true,
+      "version": "0.1.0+b9a17044",
       "author": "FastChat",
       "language": "it",
       "price": 0,
       "model": {
-        "name": "gemma3:12b",
+        "name": "gemma4:e4b",
+        "required": false
+      },
+      "requires": [
+        "app.fastchat.guida"
+      ],
+      "name": "Assistente di FastChat (bozza)",
+      "summary": "Risponde a domande sull'uso dell'app."
+    },
+    {
+      "id": "app.fastchat.ruolo.prompt.it",
+      "type": "identity",
+      "group": "app.fastchat.ruolo.prompt",
+      "builtin": true,
+      "version": "0.1.0+9e6f4a75",
+      "author": "FastChat",
+      "language": "it",
+      "price": 0,
+      "model": {
+        "name": "gemma4:e4b",
         "required": false
       },
       "requires": [
         "it.fastchat.prompt"
       ],
-      "name": {
-        "it": "Tutor dei prompt",
-        "en": "Prompt tutor",
-        "fr": "Tuteur de prompts"
-      },
-      "summary": {
-        "it": "Rilegge i tuoi prompt e propone come migliorarli, con esempi.",
-        "en": "Reviews your prompts and suggests improvements, with examples.",
-        "fr": "Relit vos prompts et propose des améliorations, avec des exemples."
-      }
+      "name": "Esperto di prompt engineering (bozza)",
+      "summary": "Scrive e migliora i prompt per modelli locali."
     },
     {
       "id": "it.fastchat.sito-web",
@@ -82,28 +95,6 @@
         "it": "Collega le pagine di un sito come base di conoscenza.",
         "en": "Connects the pages of a website as a knowledge base.",
         "fr": "Connecte les pages d’un site comme base de connaissances."
-      }
-    },
-    {
-      "id": "it.fastchat.kit-prompt",
-      "type": "bundle",
-      "version": "1.0.0",
-      "author": "FastChat",
-      "language": "it",
-      "price": 0,
-      "contains": [
-        "it.fastchat.tutor-prompt",
-        "it.fastchat.prompt"
-      ],
-      "name": {
-        "it": "Kit dei prompt",
-        "en": "Prompt kit",
-        "fr": "Kit de prompts"
-      },
-      "summary": {
-        "it": "L’identità «Tutor dei prompt» con la base «Scrivere buoni prompt».",
-        "en": "The “Prompt tutor” identity with the “Writing good prompts” base.",
-        "fr": "L’identité « Tuteur de prompts » avec la base « Écrire de bons prompts »."
       }
     }
   ]

@@ -286,9 +286,9 @@ const storeDialog = page.getByTestId('store-dialog')
 await storeDialog.getByTestId('store-item').first().waitFor()
 await page.waitForTimeout(300)
 await page.screenshot({ path: out('21-store.png') })
-await storeDialog.getByTestId('store-tab-bundle').click()
+await storeDialog.getByTestId('store-tab-identity').click()
 await page.waitForTimeout(300)
-await page.screenshot({ path: out('22-store-pacchetti.png') })
+await page.screenshot({ path: out('22-store-ruoli.png') })
 
 // formule: LaTeX in linea e a blocco, prezzi lasciati come testo
 await storeDialog.getByTestId('dialog-close').click()

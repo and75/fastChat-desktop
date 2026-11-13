@@ -55,7 +55,15 @@ export interface RoleRecord {
   version: string | null
   definition: Role
   origin: RoleOrigin
+  /** Come è arrivato: fiducia nella firma del pacchetto, e se lo gestisce lo Store. */
+  meta: RoleMeta | null
   createdAt: number
+}
+
+export interface RoleMeta {
+  trust?: PackTrust | 'builtin'
+  /** Installato dallo Store: si aggiorna e si rimuove da lì. */
+  store?: boolean
 }
 
 /** Come nasce una conversazione: vuota (Generalista), da un template, o con un ruolo. */

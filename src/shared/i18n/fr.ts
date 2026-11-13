@@ -838,7 +838,7 @@ export const fr: Record<Key, string> = {
   'err.knowledge.builtin': 'La base incluse dans l\'application ne peut pas être supprimée',
   'store.remove.confirm': 'Supprimer « {name} » ?',
   'store.title': 'Store',
-  'store.category.identity': 'Identités',
+  'store.category.identity': 'Rôles',
   'store.category.knowledge': 'Bases de connaissances',
   'store.category.plugin': 'Plugins',
   'store.category.bundle': 'Packs',
@@ -869,7 +869,7 @@ export const fr: Record<Key, string> = {
   'store.vectors': 'Vecteurs prêts : nécessite le modèle d’embedding {model}.',
   'store.model.recommended': 'Modèle conseillé : {model}',
   'store.model.required': 'Modèle requis : {model}',
-  'store.soon.hint': 'Les identités et les plugins pourront être installés avec une prochaine mise à jour de l’application.',
+  'store.soon.hint': 'Les plugins pourront être installés avec une prochaine mise à jour de l’application.',
   'store.installed.hint': 'Elle se trouve dans Paramètres → Connaissances ; liez-la à une conversation depuis l’onglet « Connaissances ».',
   'settings.storeUrl': 'Dépôt du store',
   'settings.storeUrl.hint': 'Adresse où lire le catalogue. Vide : le catalogue inclus dans l’application est utilisé.',
@@ -925,5 +925,12 @@ export const fr: Record<Key, string> = {
   'situation.over': 'Le texte dépasse la limite : il reste tel quel et est envoyé en entier, mais on ne peut que le raccourcir.',
   'situation.preview': 'Ce que reçoit le modèle',
   'situation.preview.hint': 'En violet les instructions du rôle (modifiables depuis l\'onglet Modèle), puis votre situation.',
-  'pack.preview.role': 'Rôle : il apparaît dans « Parler avec un… ». Les bases qu\'il requiert s\'installent avec lui, si elles sont dans le même dossier.'
+  'pack.preview.role': 'Rôle : il apparaît dans « Parler avec un… ». Les bases qu\'il requiert s\'installent avec lui, si elles sont dans le même dossier.',
+  'store.availableIn': 'Disponible en :',
+  'store.language.all': 'Toutes les langues',
+  'store.language.filter': 'Langue des contenus',
+  'store.foundIn': 'Trouvé en {language} : « {name} ». Choisissez la langue pour voir et installer cette variante.',
+  'store.role.hint': 'Vous le trouverez dans « Parler avec un… », à côté de « Nouvelle conversation ».',
+  'store.role.remove.hint': 'Les conversations qui l\'utilisent continuent en Généraliste, avec leur situation. Ses bases restent si un autre rôle les utilise.',
+  'store.builtin.role': 'Inclus dans l’application'
 }

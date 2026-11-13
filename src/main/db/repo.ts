@@ -420,11 +420,12 @@ export async function getRole(db: Db, id: string): Promise<RoleRecord | null> {
 }
 
 /** Registra un ruolo installato, o lo aggiorna se c'è già (stesso id). */
-export async function saveRole(db: Db, role: Omit<RoleRecord, 'createdAt'>): Promise<RoleRecord> {
-  const { id, ...fields } = role
+export async function saveRole(db: Db, role: Omit<RoleRecord, 'createdAt' | 'meta'> & { meta?: RoleRecord['meta'] }): Promise<RoleRecord> {
+  const { id, ...rest } = role
+  const fields = { ...rest, meta: role.meta ?? null }
   await db
     .insert(roles)
-    .values({ ...role, createdAt: Date.now() })
+    .values({ ...role, meta: role.meta ?? null, createdAt: Date.now() })
     .onConflictDoUpdate({ target: roles.id, set: fields })
   return (await getRole(db, id))!
 }

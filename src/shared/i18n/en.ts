@@ -838,7 +838,7 @@ export const en: Record<Key, string> = {
   'err.knowledge.builtin': 'The base bundled with the app cannot be deleted',
   'store.remove.confirm': 'Remove “{name}”?',
   'store.title': 'Store',
-  'store.category.identity': 'Identities',
+  'store.category.identity': 'Roles',
   'store.category.knowledge': 'Knowledge bases',
   'store.category.plugin': 'Plugins',
   'store.category.bundle': 'Bundles',
@@ -869,7 +869,7 @@ export const en: Record<Key, string> = {
   'store.vectors': 'Ready-made vectors: requires the {model} embedding model.',
   'store.model.recommended': 'Recommended model: {model}',
   'store.model.required': 'Required model: {model}',
-  'store.soon.hint': 'Identities and plugins will be installable with a future update of the app.',
+  'store.soon.hint': 'Plugins will be installable with a future update of the app.',
   'store.installed.hint': 'Find it in Settings → Knowledge and link it to a conversation from the “Knowledge” tab.',
   'settings.storeUrl': 'Store repository',
   'settings.storeUrl.hint': 'Address the catalog is read from. Empty: the catalog bundled with the app is used.',
@@ -926,5 +926,12 @@ export const en: Record<Key, string> = {
   'situation.over': 'The text is over the limit: it stays as it is and is sent in full, but it can only be shortened.',
   'situation.preview': 'What the model receives',
   'situation.preview.hint': 'In purple the role\'s instructions (changed from the Model tab), then your situation.',
-  'pack.preview.role': 'Role: it appears under “Talk to a…”. The bases it requires are installed with it, if they are in the same folder.'
+  'pack.preview.role': 'Role: it appears under “Talk to a…”. The bases it requires are installed with it, if they are in the same folder.',
+  'store.availableIn': 'Available in:',
+  'store.language.all': 'All languages',
+  'store.language.filter': 'Content language',
+  'store.foundIn': 'Found in {language}: “{name}”. Choose the language to see and install that variant.',
+  'store.role.hint': 'You will find it under “Talk to a…”, next to “New conversation”.',
+  'store.role.remove.hint': 'Conversations using it continue as Generalist, with their situation. Its bases stay if another role uses them.',
+  'store.builtin.role': 'Bundled with the app'
 }

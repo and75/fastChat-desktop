@@ -18,7 +18,8 @@ import type {
   BasePurpose,
   ContextOrder,
   SystemSlot,
-  RoleOrigin
+  RoleOrigin,
+  RoleMeta
 } from '@shared/types'
 import type { Role, RoleChoices, RoleProfileMind } from '@shared/roles'
 
@@ -141,6 +142,7 @@ export const roles = sqliteTable('roles', {
   /** Contenuto di `role.json`: istruzioni, mente, parametri, basi, profili. */
   definition: text('definition', { mode: 'json' }).$type<Role>().notNull(),
   origin: text('origin', { enum: ['builtin', 'package'] }).$type<RoleOrigin>().notNull().default('package'),
+  meta: text('meta', { mode: 'json' }).$type<RoleMeta>(),
   createdAt: integer('created_at').notNull().default(now)
 })
 

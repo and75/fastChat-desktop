@@ -1,7 +1,7 @@
 # Ruoli — decisioni e piano di esecuzione
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
-1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1–2.5 (⏸ Controllo 3: schermate da far vedere all'utente).
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1–2.6. Controllo 3 superato.
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -335,7 +335,8 @@ installare ruoli dallo Store nella propria lingua.
 | 2.2 Dati e conversione | Fatto | Migrazione 0016; Generalista e conversione dei Brief all'avvio (`ensureRoles`) |
 | 2.3 Il ruolo nel prompt | Fatto | `rolePrompt`, lingua del ruolo (`src/main/promptLocale.ts`), `linkRole`; un test end-to-end aggiornato |
 | 2.4 Pacchetti | Fatto | `role.json` nel `.fcpack`; `installRole`, `removeRole`, `roleHealth`; ruoli integrati all'avvio |
-| 2.5 Interfaccia dei ruoli | Fatto · ⏸ Controllo 3 | «Parla con un…», parametri, Situazione, cambio di ruolo, basi del ruolo; due ruoli in bozza in `packs/` |
+| 2.5 Interfaccia dei ruoli | Fatto · Controllo 3 superato | «Parla con un…», parametri, Situazione, cambio di ruolo, basi del ruolo; due ruoli in bozza in `packs/` |
+| 2.6 Store | Fatto | Ruoli installabili e rimovibili dallo Store; varianti per lingua, ricerca in tutte le lingue, filtro; migrazione 0017 |
 
 Scelte fatte nel passo 2.1:
 
@@ -440,6 +441,24 @@ Scelte fatte nel passo 2.5:
 - **Non fatto**: rimozione di un ruolo dall'interfaccia (arriva con lo Store, passo 2.6); `README.md` e la
   Guida parlano ancora del Brief (passo 2.8).
 
+Scelte fatte nel passo 2.6:
+
+- **La scheda dello Store si chiama «Ruoli»** (deciso dall'utente); tolte dal catalogo incluso nell'app le voci
+  finte «Tutor dei prompt» e «Kit dei prompt». La categoria «Pacchetti» resta, per ora vuota.
+- **Varianti per lingua**: le voci con lo stesso `group` sono una scheda sola (`storeGroups`), con la scelta
+  della lingua; preselezionata la lingua del filtro, poi una variante installata, poi quella dell'interfaccia.
+  Vale per ruoli e basi. Il filtro per lingua è a pulsanti e compare quando la categoria ha voci con una lingua.
+- **Un ruolo è scritto in una lingua**: nel catalogo titolo e descrizione sono nella lingua del ruolo, non
+  tradotti nelle lingue dell'interfaccia.
+- **Installazione di un ruolo dallo Store**: le basi che richiede si prendono dallo stesso catalogo. Dal
+  repository remoto ruolo e basi devono avere una firma riconosciuta; un ruolo firmato con una base non firmata
+  si installa senza quella base.
+- **Migrazione 0017**: `roles.meta` (fiducia nella firma, installato dallo Store). Un ruolo dello Store non si
+  sovrascrive importando un file (`store.owns`).
+- **I due ruoli in bozza** sono nel catalogo come «inclusi nell'app»: installati, non rimovibili.
+- **«Altri ruoli nello Store…»** apre lo Store sulla scheda dei ruoli.
+- **Da fare al 2.7**: le varianti francesi non esistono ancora; la scelta della lingua mostra solo «Italiano».
+
 Scoperte durante il lavoro:
 
 - **Riuso con l'ordine B**: non è «solo l'ultima domanda». Gli estratti viaggiano con la domanda corrente; alla
@@ -488,8 +507,8 @@ Scoperte durante il lavoro:
   `claude/contesto-parametri-effettivi` coincidono, salvo questo documento.
 - **Seconda consegna** (ruoli): fatti i **passi 2.1** (il ruolo come dato), **2.2** (dati e conversione dei
   Brief) e **2.3** (il prompt nasce da ruolo e situazione), **2.4** (pacchetti dei ruoli) e **2.5** (interfaccia). I ruoli
-  si scelgono e si regolano dall'app; ce ne sono due in bozza. Si prosegue dal **passo 2.6** (Store), dopo il
-  riscontro dell'utente sulle schermate (Controllo 3).
+  si scelgono e si regolano dall'app; ce ne sono due in bozza. Fatto anche il **passo 2.6** (Store). Si prosegue
+  dal **passo 2.7** (contenuti: testi dei ruoli, basi, francese), che richiede la rilettura dell'utente.
 
 ## Cosa manca dalla prima consegna
 
@@ -525,7 +544,7 @@ Scoperte durante il lavoro:
 | Cosa | Comando |
 |---|---|
 | Typecheck | `npm run typecheck` |
-| Test unitari (351) | `npx vitest run` |
+| Test unitari (354) | `npx vitest run` |
 | End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
 | Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
 | Pacchetti e catalogo dello Store | `npm run packs:build` |

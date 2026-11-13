@@ -138,9 +138,10 @@ async function buildRole({ id, group, name, description, language, source, file 
   const data = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: 9 } })
   writeFileSync(join(root, 'packs', file), data)
   console.log(`packs/${file}: ruolo «${name}», versione ${version}`)
+  return { version }
 }
 
-await buildRole({
+const ruoloAssistente = await buildRole({
   id: 'app.fastchat.ruolo.assistente.it',
   group: 'app.fastchat.ruolo.assistente',
   file: 'ruolo-assistente-it.fcpack',
@@ -149,7 +150,7 @@ await buildRole({
   language: 'it',
   source: 'roles/assistente.it.json'
 })
-await buildRole({
+const ruoloPrompt = await buildRole({
   id: 'app.fastchat.ruolo.prompt.it',
   group: 'app.fastchat.ruolo.prompt',
   file: 'ruolo-prompt-it.fcpack',
@@ -161,8 +162,8 @@ await buildRole({
 
 // ---------------------------------------------------------------- catalogo locale dello store
 // Finché il repository remoto non esiste, lo store legge questo catalogo incluso nell'app (cartella store/),
-// con lo stesso formato che avrà quello remoto. Le voci «identity», «plugin» e parte dei «bundle» sono esempi:
-// si vedono ma non si installano ancora.
+// con lo stesso formato che avrà quello remoto. I ruoli in bozza sono quelli integrati nell'app (cartella packs/);
+// la voce «plugin» è un esempio: si vede ma non si installa ancora.
 
 // Le versioni precedenti dei file dello store non servono più.
 rmSync(join(root, 'store', 'items'), { recursive: true, force: true })
@@ -183,7 +184,7 @@ const prompt = await build({
 
 const catalog = {
   version: 1,
-  updatedAt: '2026-11-11',
+  updatedAt: '2026-11-13',
   items: [
     {
       id: 'app.fastchat.guida',
@@ -218,20 +219,32 @@ const catalog = {
       }
     },
     {
-      id: 'it.fastchat.tutor-prompt',
+      id: 'app.fastchat.ruolo.assistente.it',
       type: 'identity',
-      version: '1.0.0',
+      group: 'app.fastchat.ruolo.assistente',
+      builtin: true,
+      version: ruoloAssistente.version,
       author: 'FastChat',
       language: 'it',
       price: 0,
-      model: { name: 'gemma3:12b', required: false },
+      model: { name: 'gemma4:e4b', required: false },
+      requires: ['app.fastchat.guida'],
+      name: 'Assistente di FastChat (bozza)',
+      summary: "Risponde a domande sull'uso dell'app."
+    },
+    {
+      id: 'app.fastchat.ruolo.prompt.it',
+      type: 'identity',
+      group: 'app.fastchat.ruolo.prompt',
+      builtin: true,
+      version: ruoloPrompt.version,
+      author: 'FastChat',
+      language: 'it',
+      price: 0,
+      model: { name: 'gemma4:e4b', required: false },
       requires: ['it.fastchat.prompt'],
-      name: { it: 'Tutor dei prompt', en: 'Prompt tutor', fr: 'Tuteur de prompts' },
-      summary: {
-        it: 'Rilegge i tuoi prompt e propone come migliorarli, con esempi.',
-        en: 'Reviews your prompts and suggests improvements, with examples.',
-        fr: 'Relit vos prompts et propose des améliorations, avec des exemples.'
-      }
+      name: 'Esperto di prompt engineering (bozza)',
+      summary: 'Scrive e migliora i prompt per modelli locali.'
     },
     {
       id: 'it.fastchat.sito-web',
@@ -244,21 +257,6 @@ const catalog = {
         it: 'Collega le pagine di un sito come base di conoscenza.',
         en: 'Connects the pages of a website as a knowledge base.',
         fr: 'Connecte les pages d’un site comme base de connaissances.'
-      }
-    },
-    {
-      id: 'it.fastchat.kit-prompt',
-      type: 'bundle',
-      version: '1.0.0',
-      author: 'FastChat',
-      language: 'it',
-      price: 0,
-      contains: ['it.fastchat.tutor-prompt', 'it.fastchat.prompt'],
-      name: { it: 'Kit dei prompt', en: 'Prompt kit', fr: 'Kit de prompts' },
-      summary: {
-        it: 'L’identità «Tutor dei prompt» con la base «Scrivere buoni prompt».',
-        en: 'The “Prompt tutor” identity with the “Writing good prompts” base.',
-        fr: 'L’identité « Tuteur de prompts » avec la base « Écrire de bons prompts ».'
       }
     }
   ]
