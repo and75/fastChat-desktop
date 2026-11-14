@@ -564,6 +564,16 @@ Scoperte durante il lavoro:
 
 ## Cosa resta aperto dopo la seconda consegna
 
+- **Esperto di prompt engineering, testi in revisione** (dopo la 0.2.0): alla prima prova con Gemma 4 i prompt
+  prodotti erano rigidi (etichette, ordini secchi, delimitatori inutili). Causa: tecniche ed esempi scritti a
+  tavolino. Riscritti in italiano partendo dalle guide ufficiali di Anthropic, Google (Gemini e Gemma) e OpenAI:
+  `store/sources/prompt-tecniche.it.md`, `store/sources/prompt-esempi.it.md`, frasi di cinque opzioni e
+  istruzione fissa in `roles/prompt.it.json`. **Da fare**: rilettura dell'utente, poi francese allineato,
+  `npm run packs:build`, test ed end-to-end (le frasi attese cambiano), `ruoli.md` §7. I pacchetti in `packs/`
+  e nello Store sono ancora quelli della 0.2.0.
+- **Ragionamento dell'Esperto**: in una conversazione dell'utente risultava spento, mentre il ruolo lo prevede
+  acceso. Non riprodotto nei test; da chiarire se l'ha spento l'utente.
+
 - **Profili per modello** (`profiles` nel ruolo): i ruoli escono senza. Servono i risultati della prova con
   Ollama qui sopra. I valori della mente (temperatura 0,2 / 0,3 / 0,6) sono ipotesi non provate su Gemma 4.
 - **Ragionamento e risposte brevi**: con il ragionamento acceso il modello può pensare a lungo anche con

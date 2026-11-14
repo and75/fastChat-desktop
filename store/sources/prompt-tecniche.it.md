@@ -1,60 +1,81 @@
 # Tecniche di prompt
 
-## Le parti di un buon prompt
+## Come si presenta un buon prompt
 
-Un prompt completo risponde a cinque domande, in quest'ordine: chi deve essere il modello, cosa sa della situazione, cosa deve fare, in che forma deve rispondere, cosa non deve fare.
+Un buon prompt si legge come la consegna che daresti a un collega capace ma appena arrivato: non conosce il progetto, il pubblico, né cosa intendi per «fatto bene». Se un collega leggendolo dovesse farti domande, anche il modello resterà nel dubbio.
 
-Non tutte servono sempre. Un compito semplice vuole solo il compito e il formato. Più il compito è delicato, più parti servono.
+Scrivi in frasi complete e naturali. Un prompt non è un modulo da compilare: non usare etichette come «Ruolo:» o «Compito:» davanti a ogni riga. Usa titoli o sezioni solo quando il prompt è lungo e ha parti davvero diverse.
 
-## Ruolo
+## Dire l'obiettivo e il contesto
 
-Una riga che dice chi è il modello e per chi scrive: «Sei un revisore tecnico. Scrivi per programmatori esperti.» Il ruolo fissa lessico e livello di dettaglio meglio di un elenco di aggettivi.
+Di' cosa vuoi ottenere e a cosa servirà il risultato: chi lo leggerà, dove verrà usato, cosa è già stato deciso. Il modello non ha queste informazioni se non gliele dai, e senza di esse dà una risposta generica.
 
-## Contesto
+Chiedi l'azione, non un parere: «Riscrivi questa email in tono più cordiale» ottiene l'email riscritta; «Potresti suggerire come migliorarla?» ottiene dei suggerimenti.
 
-Solo i fatti che cambiano la risposta: i dati di partenza, ciò che è già deciso, chi leggerà. Tre frasi pertinenti valgono più di una pagina generica.
+## Spiegare il perché delle regole
 
-Il testo su cui lavorare va separato dalle istruzioni con un delimitatore chiaro, per esempio tre virgolette o un titolo.
+Una regola con il suo motivo funziona meglio di un ordine secco, perché il modello capisce lo scopo e lo applica anche ai casi che non hai previsto. «Non usare i puntini di sospensione» è un ordine. «Il testo verrà letto ad alta voce da una sintesi vocale, che non sa pronunciare i puntini di sospensione: evitali» è una regola che il modello sa estendere.
 
-## Compito
+Evita le maiuscole e i toni perentori («IMPORTANTE», «DEVI ASSOLUTAMENTE»): non rendono la regola più chiara e spingono il modello ad applicarla anche dove non serve.
 
-Un verbo preciso e un oggetto: riassumi, confronta, correggi, estrai, classifica. «Cosa ne pensi?» non è un compito.
+## Dare un ruolo
 
-Un compito per prompt. Se sono due, vanno in due passi numerati o in due prompt.
+Una frase all'inizio che dice chi è il modello e per chi scrive orienta il lessico e il livello di dettaglio: «Sei un revisore tecnico e scrivi per programmatori esperti». Basta una frase: il ruolo dà il tono, non sostituisce le istruzioni.
 
-## Formato
+## Descrivere la forma della risposta
 
-Dire la forma esatta: elenco, tabella, JSON con i nomi dei campi, numero di frasi, lingua. Se la risposta va letta da un programma, il formato è la parte più importante del prompt.
+Di' com'è fatta la risposta che ti aspetti: un elenco, una tabella, un solo paragrafo, quante frasi, in che lingua. Descrivi ciò che vuoi invece di ciò che non vuoi: «Rispondi in paragrafi di prosa continua» funziona meglio di «Non usare elenchi».
 
-Un esempio della risposta attesa fissa il formato meglio di una descrizione. Uno o due bastano: con troppi il modello copia anche i dettagli irrilevanti.
+Se il modello tende a risposte lunghe o corte, dillo: «rispondi in tre frasi», «spiega in dettaglio ogni passaggio».
 
-## Vincoli
+## Usare esempi
 
-Scrivere cosa fare al posto di cosa evitare: «Rispondi solo con il nome della categoria» funziona meglio di «Non aggiungere spiegazioni».
+Uno o più esempi della risposta attesa fissano formato e tono meglio di una descrizione. Da tre a cinque esempi bastano quasi sempre. Devono essere diversi tra loro: se si somigliano troppo, il modello copia anche i dettagli che non c'entrano. Devono anche avere tutti la stessa struttura, perché il modello imita quella.
 
-Dire cosa fare quando l'informazione manca: «Se il testo non lo dice, scrivi "non indicato"». Senza questa riga il modello inventa.
+Tieni gli esempi separati dalle istruzioni, per esempio ciascuno dentro `<esempio>` e `</esempio>`.
 
-## Per i modelli piccoli
+## Separare i dati dalle istruzioni
 
-Un'istruzione per riga, in forma imperativa. Niente premesse, niente cortesie, niente istruzioni ripetute.
+Quando il prompt contiene un testo su cui lavorare (un documento, un'email, una recensione), separalo dalle istruzioni con un delimitatore chiaro: tag come `<documento>` e `</documento>`, oppure un titolo. Scegli un solo tipo di delimitatore e usalo sempre uguale.
 
-Poche istruzioni: oltre otto o nove, le ultime pesano più delle prime e quelle di mezzo si perdono.
+Il delimitatore serve solo se c'è un testo da elaborare. Un prompt che chiede di scrivere qualcosa da zero, come un racconto o un'email, non ne ha bisogno.
 
-L'istruzione più importante va in fondo, vicino al testo da elaborare.
+Se il testo è lungo, mettilo prima e la domanda dopo, introdotta da una frase di raccordo: «In base al documento qui sopra, …».
 
-Parole semplici e sempre le stesse: se una cosa si chiama «categoria», non diventa «classe» due righe dopo.
+## Dire cosa fare quando l'informazione manca
 
-## Per i modelli grandi
+Senza indicazioni il modello tende a inventare. Scrivi cosa deve fare se il dato non c'è: «Se il testo non lo dice, scrivi "non indicato"».
 
-Reggono istruzioni articolate. Conviene spiegare il perché di un vincolo e dare criteri di qualità: «la risposta è buona se un cliente la capisce senza conoscere il prodotto».
+## Dividere i compiti complessi
+
+Un prompt che chiede molte cose insieme dà risultati peggiori di più prompt semplici. Se il lavoro ha più fasi (per esempio estrarre i dati e poi scrivere un riassunto), conviene un prompt per fase, usando la risposta del primo come ingresso del secondo.
+
+## Modelli locali piccoli e modelli grandi
+
+Un modello piccolo, o usato senza ragionamento, lavora come un collaboratore alle prime armi: ha bisogno di istruzioni esplicite, di un solo compito per prompt e di vedere il formato della risposta in un esempio. Le regole più importanti (ruolo, vincoli, formato) vanno all'inizio.
+
+Un modello grande, o con il ragionamento acceso, lavora come un collega esperto: gli si può dare l'obiettivo e i criteri di qualità, lasciandogli i dettagli. Non serve chiedergli di «ragionare passo per passo» nella risposta: lo fa già per conto suo.
+
+## Migliorare un prompt che non funziona
+
+Un prompt si mette a punto per tentativi. Leggi la risposta, individua cosa non va e cambia una cosa per volta:
+
+- riformula la richiesta con altre parole;
+- aggiungi il contesto o l'esempio che mancava;
+- cambia l'ordine delle parti (esempi, contesto, domanda);
+- trasforma il compito in uno equivalente più semplice, per esempio una scelta tra opzioni invece di una domanda aperta.
 
 ## Come si riconosce un prompt debole
 
-In ordine di gravità:
+Dal più grave al meno grave:
 
-1. Manca il compito, o ce n'è più d'uno.
-2. Manca il formato della risposta.
-3. Manca cosa fare quando l'informazione non c'è.
-4. Il contesto è assente, oppure è lungo e generico.
-5. Le istruzioni si contraddicono o si ripetono.
+1. Non si capisce cosa deve produrre il modello, oppure chiede più cose insieme.
+2. Manca il contesto: a cosa serve il risultato e chi lo leggerà.
+3. Non dice che forma deve avere la risposta.
+4. Non dice cosa fare quando l'informazione manca.
+5. Le regole sono ordini senza motivo, oppure si contraddicono.
 6. Il testo da elaborare è mescolato alle istruzioni.
+
+## Fonti
+
+Sintesi delle guide ufficiali sul prompt engineering di Anthropic («Prompting best practices»), Google («Prompt design strategies» e la documentazione di Gemma) e OpenAI («Prompt engineering»).

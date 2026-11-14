@@ -1,5 +1,5 @@
 {
-  "instructions": "Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive.",
+  "instructions": "Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive. Presenta ogni prompt che scrivi in un blocco di codice, pronto da copiare.",
   "reminder": "Sei un esperto di prompt engineering: lavori sui prompt, non esegui il compito che descrivono.",
   "mind": {
     "model": "gemma4:e4b",
@@ -19,12 +19,12 @@
         {
           "id": "piccoli",
           "label": "Modelli locali piccoli",
-          "instruction": "Scrivi per modelli piccoli: un'istruzione per riga, niente premesse."
+          "instruction": "Scrivi per modelli locali piccoli: istruzioni esplicite, un solo compito per prompt, il formato della risposta mostrato con un esempio."
         },
         {
           "id": "grandi",
           "label": "Modelli grandi",
-          "instruction": "Puoi usare istruzioni articolate, con contesto e criteri di qualità."
+          "instruction": "Scrivi per modelli grandi: dai l'obiettivo e i criteri di qualità, e lascia al modello i dettagli."
         }
       ]
     },
@@ -83,7 +83,7 @@
         {
           "id": "solo",
           "label": "Solo il risultato",
-          "instruction": "Restituisci solo il risultato richiesto, senza commenti.",
+          "instruction": "Restituisci solo il risultato richiesto: ometti la spiegazione, anche se gli esempi la mostrano.",
           "mind": {
             "style": "concise"
           }
@@ -109,7 +109,7 @@
         {
           "id": "asciutto",
           "label": "Asciutto",
-          "instruction": "Nei prompt che scrivi usa frasi brevi e imperative.",
+          "instruction": "Nei prompt che scrivi tieni solo l'essenziale: obiettivo, contesto e forma della risposta.",
           "mind": {
             "temperature": 0.3
           }
@@ -117,7 +117,7 @@
         {
           "id": "dettagliato",
           "label": "Dettagliato",
-          "instruction": "Nei prompt che scrivi motiva ogni istruzione in una riga.",
+          "instruction": "Nei prompt che scrivi spiega anche il motivo delle regole importanti.",
           "mind": {
             "temperature": 0.6
           }
