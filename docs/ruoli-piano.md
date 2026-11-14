@@ -1,7 +1,7 @@
 # Ruoli — decisioni e piano di esecuzione
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
-1.7), che va eseguita sul computer dell'utente. **Seconda consegna completa sul branch** (passi 2.1–2.8), **non rilasciata**: si attende il Controllo 5 dell'utente; la release parte solo con la sua conferma esplicita.
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna rilasciata nella 0.2.0** (passi 2.1–2.8, Controllo 5 superato).
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -338,7 +338,7 @@ installare ruoli dallo Store nella propria lingua.
 | 2.5 Interfaccia dei ruoli | Fatto · Controllo 3 superato | «Parla con un…», parametri, Situazione, cambio di ruolo, basi del ruolo; due ruoli in bozza in `packs/` |
 | 2.6 Store | Fatto | Ruoli installabili e rimovibili dallo Store; varianti per lingua, ricerca in tutte le lingue, filtro; migrazione 0017 |
 | 2.7 Contenuti | Fatto | Testi dei ruoli e basi in italiano e francese, Guida in tre lingue; pacchetti definitivi; `forRole` nel catalogo |
-| 2.8 Chiusura | Fatto | Verifica completa, app impacchettata, documentazione; ⏸ Controllo 5 |
+| 2.8 Chiusura | Fatto | Verifica completa, app impacchettata, documentazione; rilasciata nella 0.2.0 |
 
 Scelte fatte nel passo 2.1:
 
@@ -491,7 +491,7 @@ Passo 2.7, fatto (Controllo 4 superato: testi riletti e approvati dall'utente):
 - Rispetto a `ruoli.md` §7: le opzioni di «Prima di rispondere» non impostano più il ragionamento (già acceso
   nella mente di partenza); le frasi di «Stile del prompt» dicono «nei prompt che scrivi».
 
-Passo 2.8, fatto (⏸ Controllo 5: l'utente guarda il risultato; nessuna release senza la sua conferma):
+Passo 2.8, fatto (Controllo 5 superato; release 0.2.0 chiesta dall'utente):
 
 - **Verifica**: typecheck, 358 test unitari, end-to-end (59 passi), anteprime rigenerate, installer Linux con
   `npm run test:packaged` (ora controlla anche i ruoli inclusi, le loro basi e il catalogo dello Store).
@@ -547,9 +547,8 @@ Scoperte durante il lavoro:
 ## Dove siamo
 
 - **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8).
-- **Seconda consegna** (ruoli): **completa sul branch** `claude/contesto-parametri-effettivi` (passi 2.1–2.8),
-  **non ancora rilasciata** e non ancora su `main`. Manca solo il **Controllo 5**: l'utente guarda il risultato
-  e decide se rilasciare.
+- **Seconda consegna** (ruoli): fatta e rilasciata nella **0.2.0** (passi 2.1–2.8). `main` e il branch
+  `claude/contesto-parametri-effettivi` coincidono, salvo questo documento.
 - Cosa c'è: ruoli scelti da «Parla con un…» e regolati nella scheda «Modello»; scheda «Situazione» al posto del
   Brief; due ruoli italiani inclusi nell'app con le loro basi; ruoli francesi, Guida francese e Guida inglese
   nello Store; testi riletti e approvati dall'utente.
@@ -626,6 +625,6 @@ Scoperte durante il lavoro:
 ## Messaggio di apertura suggerito per la nuova sessione
 
 > Riprendiamo il progetto dei ruoli di FastChat. Leggi `docs/ruoli.md` e `docs/ruoli-piano.md` (soprattutto la
-> Parte 3). La seconda consegna è completa sul branch `claude/contesto-parametri-effettivi`, non rilasciata.
-> Ti dico io da dove ripartire: rilascio, profili per modello dopo la prova con Ollama, o altro. Prima di
+> Parte 3). La seconda consegna è rilasciata nella 0.2.0.
+> Ti dico io da dove ripartire: profili per modello dopo la prova con Ollama, o altro. Prima di
 > scrivere codice dimmi in breve cosa farai e aspetta il mio ok.
