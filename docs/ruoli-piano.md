@@ -572,8 +572,8 @@ Scoperte durante il lavoro:
 - **Promemoria del ruolo**: nelle prove brevi con Gemma 4 il ruolo regge senza. Decidere dopo prove lunghe se
   tenerlo nell'interfaccia.
 - Riga «Riassunto di una conversazione avuta con: *ruolo precedente*» al cambio di ruolo: opzione da provare.
-- **Interfaccia francese**: « Modèles » indica sia la scheda del modello sia i template. Segnalato all'utente,
-  non deciso.
+- **Interfaccia francese** (deciso dall'utente): il template salvato si chiama « template de conversation »
+  (« template » sui pulsanti); « modèle » resta solo per il modello di IA.
 - **Guida inglese**: esiste solo la Guida; i ruoli sono in italiano e francese.
 - **Aggiornare i testi**: una modifica a `README.md`, `docs/base-di-conoscenza.md` o a un manuale va riportata
   nelle altre due lingue, poi `npm run packs:build`.

@@ -10,7 +10,7 @@ Le panneau se masque et s'affiche avec le bouton en haut à droite, à côté de
 
 « Nouvelle conversation », dans la barre latérale, ouvre une conversation avec le rôle « Généraliste » : aucune instruction, le modèle tel qu'il est.
 
-La flèche à côté de « Nouvelle conversation » ouvre « Parler avec un… » : la liste des rôles installés, puis les conversations enregistrées comme modèles. Un clic sur un rôle ouvre une conversation avec ce rôle.
+La flèche à côté de « Nouvelle conversation » ouvre « Parler avec un… » : la liste des rôles installés, puis les templates de conversation. Un clic sur un rôle ouvre une conversation avec ce rôle.
 
 Le modèle se choisit dans le menu « Modèle », dans la barre du haut.
 
@@ -28,7 +28,7 @@ Dans l'onglet « Situation », on écrit le contexte de cette conversation, avec
 
 Sous le champ se trouve le compteur de caractères. « Ce que reçoit le modèle » montre les instructions complètes : celles du rôle, puis la situation.
 
-Dans le même onglet se trouvent « Mode plan » et « Enregistrer comme modèle ».
+Dans le même onglet se trouvent « Mode plan » et « Enregistrer comme template ».
 
 ## Documents et bases de connaissances
 
@@ -66,9 +66,9 @@ L'« État du contexte », en bas de l'onglet « Modèle », montre la part de m
 
 « Installer » ajoute l'élément ; « Supprimer » le retire. Un rôle s'installe avec les bases qu'il requiert. Quand un rôle existe en plusieurs langues, « Disponible en : » permet de choisir laquelle installer.
 
-## Conversations enregistrées comme modèles et exportation
+## Templates de conversation et exportation
 
-« Enregistrer comme modèle », dans l'onglet « Situation », enregistre le rôle, les choix et la situation. La conversation enregistrée se retrouve dans « Parler avec un… », sous « Modèles ».
+« Enregistrer comme template », dans l'onglet « Situation », enregistre le rôle, les choix et la situation. Le template se retrouve dans « Parler avec un… », sous « Templates de conversation ».
 
 L'icône d'exportation, en haut à droite, enregistre la conversation en Markdown ou en JSON.
 
