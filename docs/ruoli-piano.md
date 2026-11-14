@@ -569,15 +569,14 @@ Scoperte durante il lavoro:
   tavolino. Riscritti in italiano partendo dalle guide ufficiali di Anthropic, Google (Gemini e Gemma) e OpenAI:
   `store/sources/prompt-tecniche.it.md`, `store/sources/prompt-esempi.it.md`, frasi di cinque opzioni e
   istruzione fissa in `roles/prompt.it.json`. Gli esempi partono da prompt veri (guida di OpenAI,
-  `f/awesome-chatgpt-prompts`, `danielmiessler/fabric`): provenienza e licenze in `store/sources/FONTI.md`. **Da fare**: rilettura dell'utente, poi francese allineato,
-  `npm run packs:build`, test ed end-to-end (le frasi attese cambiano), `ruoli.md` §7. I pacchetti in `packs/`
-  e nello Store sono ancora quelli della 0.2.0.
+  `f/awesome-chatgpt-prompts`, `danielmiessler/fabric`): provenienza e licenze in `store/sources/FONTI.md`. Riletti e approvati dall'utente; francese allineato, pacchetti ricostruiti, end-to-end
+  e `ruoli.md` §7.3 aggiornati. **Non ancora rilasciato**: l'utente deve provarlo con Gemma 4.
 - **Esperto di prompt engineering, parametri rivisti** (deciso dall'utente, sulla base delle fonti): da sette a
   cinque. Tolto «Intervento» (lo dice già la richiesta; ora è una frase fissa del ruolo); «Chi userà il prompt»
   e «Risultato» fusi in «Spiegazione» (Nessuna / Semplice / Tecnica); «Stile del prompt» sostituito da «Tipo di
   prompt» (Messaggio da incollare in chat / Prompt di sistema da riusare); in «Tecniche da usare» entra «Cosa
   fare se manca un dato»; nessun parametro tocca più la temperatura (0,6 fissa nel ruolo). Fatto in
-  `roles/prompt.{it,fr}.json`; `ruoli.md` §7.3, pacchetti, end-to-end e anteprime ancora da aggiornare.
+  `roles/prompt.{it,fr}.json`, con pacchetti, end-to-end, anteprime e `ruoli.md` §7.3.
 - **Ragionamento dell'Esperto**: in una conversazione dell'utente risultava spento, mentre il ruolo lo prevede
   acceso. Non riprodotto nei test; da chiarire se l'ha spento l'utente.
 

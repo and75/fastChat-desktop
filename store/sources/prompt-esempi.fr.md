@@ -1,81 +1,111 @@
 # Prompts faibles et améliorés
 
-## Améliorer un prompt vague
+## Ajouter les détails qui manquent
 
-Demande : Améliore ce prompt : « Résume le texte. »
-
-Réponse :
-Tu es un rédacteur. Tu écris pour quelqu'un qui n'a pas lu le texte.
-Résume le texte placé entre les trois guillemets.
-Utilise cinq points, un par idée principale.
-Chaque point est une phrase de vingt mots au maximum.
-Si le texte ne contient pas cinq idées, écris moins de points.
-
-"""
-[texte]
-"""
-
-## Améliorer un prompt destiné à un programme
-
-Demande : Améliore ce prompt : « Dis-moi si l'avis est positif ou négatif. »
+Demande : Améliore ce prompt : « Résume les notes de la réunion. »
 
 Réponse :
-Classe l'avis placé entre les trois guillemets.
-Réponds par un seul mot : positif, négatif ou neutre.
-Si l'avis porte sur plusieurs aspects, choisis le jugement sur l'aspect principal.
-N'ajoute aucun autre texte.
+```
+Résume les notes de la réunion en un seul paragraphe. Écris ensuite une liste des participants, chacun avec les points principaux qu'il a défendus. Pour finir, énumère les prochaines étapes ou les actions décidées, s'il y en a.
 
-"""
-[avis]
-"""
+<notes>
+[notes de la réunion]
+</notes>
+```
 
-## Expliquer ce qui ne va pas
+Pourquoi il est écrit ainsi :
+1. Le prompt de départ laissait tous les choix au modèle : quelle longueur, quoi garder, dans quel ordre.
+2. Il dit maintenant les trois parties de la réponse et la forme de chacune : paragraphe, liste, actions.
+3. « S'il y en a » dit quoi faire quand une information manque : le modèle n'invente pas d'actions jamais décidées.
 
-Demande : Qu'est-ce qui ne va pas dans ce prompt ? « Tu es un expert très compétent. Écris un e-mail au client, professionnel mais aussi amical, ni trop long ni trop court. »
+## Améliorer un prompt du type « Agis comme… »
 
-Réponse :
-1. La tâche précise manque : il ne dit pas de quoi parle l'e-mail ni ce qu'il doit obtenir.
-2. Le contexte manque : qui est le client et ce qui s'est passé avant.
-3. Le format est vague : « ni trop long » n'est pas une mesure. Mieux vaut un nombre de phrases.
-4. « Professionnel mais amical » laisse le ton au hasard. Mieux vaut un exemple de phrase écrite dans le ton voulu.
-5. « Expert très compétent » n'apporte rien : le rôle doit dire le métier.
-
-## Écrire de zéro quand l'objectif est clair
-
-Demande : Il me faut un prompt pour extraire la date, le montant et le fournisseur d'une facture.
+Demande : Améliore ce prompt : « Je veux que tu agisses comme un conteur. Tu inventeras des histoires divertissantes, captivantes, pleines d'imagination et attrayantes pour le public. Il peut s'agir de contes, d'histoires éducatives ou de tout autre type d'histoire capable de capter l'attention. Ma première demande est : j'ai besoin d'une histoire intéressante sur la persévérance. »
 
 Réponse :
-Extrais les données de la facture placée entre les trois guillemets.
-Réponds uniquement par un objet JSON avec ces champs : date, montant, fournisseur.
-Écris la date au format AAAA-MM-JJ.
-Écris le montant sous forme de nombre, avec un point pour les décimales et sans symbole monétaire.
-Si une donnée est absente de la facture, utilise la valeur null.
+```
+Tu es un conteur d'histoires pour des enfants de six à neuf ans. Écris une histoire sur la persévérance, à lire à voix haute avant de dormir : environ 500 mots, soit quatre ou cinq minutes de lecture.
 
-"""
-[facture]
-"""
+L'héroïne est une petite fille du même âge que ceux qui écoutent, aux prises avec quelque chose qu'elle ne réussit pas du premier coup. Fais comprendre ce qu'est la persévérance par ce qu'elle fait, sans la nommer et sans morale finale : les enfants la saisissent mieux par les faits que par une explication.
 
-## Écrire de zéro quand l'objectif manque
+Utilise des phrases courtes et quelques répétitions, qui aident à suivre quand on écoute. Termine sur une image paisible, adaptée au moment du coucher.
+```
+
+Pourquoi il est écrit ainsi :
+1. « Divertissantes, captivantes, pleines d'imagination » sont des adjectifs qui ne guident pas le modèle. À leur place, il y a le public, l'occasion et la durée.
+2. La règle « pas de morale » est accompagnée de sa raison : le modèle l'applique mieux s'il sait à quoi elle sert.
+3. J'ai choisi moi-même l'âge et l'occasion, que le prompt ne disait pas : s'ils sont différents, il suffit de changer la première phrase.
+
+## Écrire un prompt dont le résultat est lu par un programme
+
+Demande : J'ai besoin d'un prompt pour classer les avis sur des produits ; le résultat va dans un tableur.
+
+Réponse :
+```
+Classe l'avis sur un produit comme positif, négatif ou neutre. La réponse est insérée par un programme dans un tableur : écris donc un seul mot, sans ponctuation ni commentaire.
+
+Avis : J'adore ce casque, la qualité du son est extraordinaire !
+Jugement : positif
+
+Avis : La batterie est correcte, mais les coussinets ont l'air fragiles.
+Jugement : neutre
+
+Avis : Service client déplorable, je n'achèterai plus jamais chez eux.
+Jugement : négatif
+
+Avis : [avis à classer]
+Jugement :
+```
+
+Pourquoi il est écrit ainsi :
+1. Il explique pourquoi il faut un seul mot : le modèle comprend la contrainte et n'ajoute pas de phrases autour.
+2. Trois exemples différents, tous avec la même structure, fixent le format mieux qu'une description.
+3. Le prompt se termine par « Jugement : » : la réponse commence directement par le mot attendu.
+
+## Écrire un prompt système à réutiliser
+
+Demande : J'ai besoin d'un prompt à réutiliser chaque fois que je dois résumer un article.
+
+Réponse :
+```
+# Identité
+Tu es un expert du résumé de contenus. Tu reçois un texte et tu en renvoies un résumé au format décrit ci-dessous.
+
+# Sections de la réponse
+- RÉSUMÉ EN UNE PHRASE : tout le contenu en une seule phrase de vingt mots.
+- POINTS PRINCIPAUX : les dix points les plus importants, chacun de seize mots au maximum.
+- À RETENIR : les cinq conclusions les plus utiles pour le lecteur.
+
+# Règles
+- Utilise des listes numérotées.
+- Ne répète pas le même point dans des sections différentes.
+- Écris seulement les trois sections, sans avertissements ni commentaires.
+
+# Texte
+[article à résumer]
+```
+
+Pourquoi il est écrit ainsi :
+1. Un prompt que l'on réutilise souvent gagne à être divisé en sections avec un titre : il se lit et se corrige plus facilement.
+2. Le format est décrit section par section, avec des mesures précises (vingt mots, dix points).
+3. L'article va à la fin, sous son titre, séparé des instructions.
+
+## Expliquer ce qui ne va pas dans un prompt
+
+Demande : Qu'est-ce qui ne va pas dans ce prompt ? « Je veux que tu agisses comme un rédacteur d'essais. Tu devras faire des recherches sur un sujet, formuler une thèse et créer un texte persuasif, informatif et captivant. Ma première demande est : aide-moi à écrire un essai persuasif sur l'importance de réduire les déchets plastiques. »
+
+Réponse :
+1. Il ne dit pas pour qui est l'essai ni où il sera publié : le ton, le vocabulaire et les arguments en dépendent.
+2. Il manque la longueur : le modèle choisit au hasard entre une page et dix.
+3. Il demande de « faire des recherches », mais ne fournit pas de sources : le modèle citera des données de mémoire, dont certaines inventées. Mieux vaut joindre les données, ou demander de signaler les affirmations à vérifier.
+4. « Persuasif, informatif et captivant » ne guide pas l'écriture. Mieux vaut dire quelle objection du lecteur l'essai doit surmonter.
+5. Il ne dit pas la structure attendue : thèse, arguments, conclusion, avec ou sans titres.
+
+## Quand l'objectif n'est pas clair
 
 Demande : Écris-moi un prompt pour le service client.
 
 Réponse :
-Pour l'écrire, il me faut deux choses :
-1. Ce que le modèle doit faire : répondre aux clients, classer les demandes, ou les résumer pour un conseiller ?
-2. Sur quoi il s'appuie : a-t-il une documentation à partir de laquelle répondre, ou doit-il seulement orienter la demande ?
-
-## Ajouter un exemple au prompt
-
-Demande : Améliore ce prompt, le modèle se trompe toujours de format : « Donne un titre à l'article. »
-
-Réponse :
-Écris un titre pour l'article placé entre les trois guillemets.
-Le titre compte huit mots au maximum et ne se termine pas par un point.
-N'utilise ni deux-points ni question.
-Réponds uniquement par le titre.
-
-Exemple de titre : Le port de Gênes rouvre après trois mois
-
-"""
-[article]
-"""
+Pour bien l'écrire, il me faut deux informations :
+1. Ce que le modèle doit faire : répondre aux clients, trier les demandes, ou les résumer pour un opérateur ?
+2. Sur quoi il s'appuie : a-t-il une documentation à partir de laquelle répondre, ou doit-il seulement orienter la demande vers la bonne personne ?

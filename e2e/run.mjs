@@ -1246,10 +1246,10 @@ try {
     await menu.getByTestId('role-option').filter({ hasText: 'Esperto di prompt engineering' }).click()
     await openTab('Modello')
     await panel.getByTestId('role-name').filter({ hasText: 'Esperto di prompt engineering' }).waitFor()
-    // la mente del ruolo: temperatura 0,3 (opzione «Asciutto»), ragionamento acceso, documenti spenti in partenza
+    // la mente del ruolo: temperatura 0,6, ragionamento acceso, documenti spenti in partenza
     let conv = await latestConversation()
     assert.equal(conv.roleId, 'app.fastchat.ruolo.prompt.it')
-    assert.deepEqual([conv.temperature, conv.think, conv.style, conv.knowledge], [0.3, true, 'normal', false])
+    assert.deepEqual([conv.temperature, conv.think, conv.style, conv.knowledge], [0.6, true, 'normal', false])
     // il modello consigliato (gemma4:e4b) non è installato: resta il predefinito, con l'avviso
     await panel.getByTestId('role-unverified').filter({ hasText: /Ruolo non verificato con .+\. Consigliato: gemma4:e4b\./ }).waitFor()
     // nella barra laterale, sotto il titolo, con chi si parla
@@ -1258,22 +1258,19 @@ try {
     assert.deepEqual(await panel.getByTestId('role-section').evaluateAll((els) => els.map((e) => e.dataset.section)), ['identity', 'style', 'rules', 'method'])
     // al primo arrivo sono chiuse: ciascuna mostra in una riga le scelte in vigore
     assert.equal(await panel.locator('[data-testid="role-section"] details[open]').count(), 0)
-    assert.equal(await panel.getByTestId('group-role-style-summary').textContent(), 'Principiante · Risultato con spiegazione · Asciutto')
-    assert.equal(await panel.getByTestId('group-role-rules-summary').textContent(), 'Tecniche da usare: Ruolo esplicito, Formato di uscita')
+    assert.equal(await panel.getByTestId('group-role-style-summary').textContent(), 'Semplice · Messaggio da incollare in chat')
+    assert.equal(await panel.getByTestId('group-role-rules-summary').textContent(), 'Tecniche da usare: Ruolo esplicito, Formato di uscita, Cosa fare se manca un dato')
     await panel.locator('[data-testid="role-section"][data-section="rules"] summary').filter({ hasText: /^.?Regole/ }).waitFor()
     // niente menu a tendina: pulsanti affiancati per la scelta singola, interruttori per quella multipla
     await page.evaluate(() => document.querySelectorAll('[data-testid="role-panel"] details[data-group]').forEach((d) => (d.open = true)))
     assert.equal(await panel.getByTestId('role-panel').getByRole('combobox').count(), 0)
 
     // scelta singola: l'opzione dichiara il suo effetto sulla mente, e lo applica
-    const style = panel.locator('[data-parameter="stile"]')
-    await style.getByTestId('role-effect').filter({ hasText: 'imposta la temperatura a 0,3' }).waitFor()
-    await style.getByRole('radio', { name: 'Dettagliato' }).click()
-    await style.getByTestId('role-effect').filter({ hasText: 'imposta la temperatura a 0,6' }).waitFor()
-    await waitUntil(async () => (await latestConversation()).temperature === 0.6)
-    // la lunghezza della risposta non tocca la temperatura
-    await panel.locator('[data-parameter="risultato"]').getByRole('radio', { name: 'Solo il risultato' }).click()
+    const explanation = panel.locator('[data-parameter="spiegazione"]')
+    await explanation.getByTestId('role-effect').filter({ hasText: 'imposta lo stile a' }).first().waitFor()
+    await explanation.getByRole('radio', { name: 'Nessuna' }).click()
     await waitUntil(async () => (await latestConversation()).style === 'concise')
+    // nessuna scelta del ruolo tocca la temperatura
     assert.equal((await latestConversation()).temperature, 0.6)
     // scelta multipla
     await setSwitch(panel.locator('[data-parameter="tecniche"]'), 'Passi numerati', true)
@@ -1281,16 +1278,16 @@ try {
     // un ritocco a mano resta finché non cambia l'opzione che governa quel valore
     await page.getByTestId('composer-style').selectOption('extended')
     await waitUntil(async () => (await latestConversation()).style === 'extended')
-    await panel.locator('[data-parameter="destinatario"]').getByRole('radio', { name: 'Esperto' }).click()
-    await waitUntil(async () => (await latestConversation()).roleParams?.destinatario === 'esperto')
+    await panel.locator('[data-parameter="tipo"]').getByRole('radio', { name: 'Prompt di sistema da riusare' }).click()
+    await waitUntil(async () => (await latestConversation()).roleParams?.tipo === 'sistema')
     assert.equal((await latestConversation()).style, 'extended')
-    await panel.locator('[data-parameter="risultato"]').getByRole('radio', { name: 'Risultato con spiegazione' }).click()
+    await explanation.getByRole('radio', { name: 'Semplice' }).click()
     await waitUntil(async () => (await latestConversation()).style === 'normal')
 
     // situazione e anteprima: le istruzioni del ruolo, poi la situazione con il suo titolo
     await writeSituation('Classifico email di assistenza')
     const preview = await page.getByTestId('system-preview').textContent()
-    assert.match(preview, /^Sei un esperto di prompt engineering[\s\S]*Nei prompt che scrivi motiva ogni istruzione in una riga\.[\s\S]*\n\n# Situazione\nClassifico email di assistenza$/)
+    assert.match(preview, /^Sei un esperto di prompt engineering[\s\S]*Scrivi il prompt come prompt di sistema da riusare[\s\S]*\n\n# Situazione\nClassifico email di assistenza$/)
 
     // ciò che parte verso il modello è ciò che l'anteprima mostra
     const before = chatRequests().length
@@ -1390,7 +1387,7 @@ try {
     assert.equal(conv.roleId, 'app.fastchat.ruolo.prompt.fr')
     // le sezioni restano nella lingua dell'interfaccia, le scelte del ruolo sono nella sua
     await page.evaluate(() => document.querySelectorAll('[data-testid="role-panel"] details[data-group]').forEach((d) => (d.open = true)))
-    await panel.locator('[data-parameter="stile"]').getByRole('radio').first().waitFor()
+    await panel.locator('[data-parameter="tipo"]').getByRole('radio').first().waitFor()
     await openTab('Conoscenza')
     await panel.getByTestId('role-bases').getByTestId('role-base').filter({ hasText: /Techniques de prompt|Tecniche di prompt/ }).waitFor()
     await panel.getByTestId('role-bases').getByTestId('role-base').filter({ hasText: /Prompts faibles et améliorés|Prompt deboli e migliorati/ }).waitFor()
