@@ -577,9 +577,8 @@ Scoperte durante il lavoro:
   prompt» (Messaggio da incollare in chat / Prompt di sistema da riusare); in «Tecniche da usare» entra «Cosa
   fare se manca un dato»; nessun parametro tocca più la temperatura (0,6 fissa nel ruolo). Fatto in
   `roles/prompt.{it,fr}.json`, con pacchetti, end-to-end, anteprime e `ruoli.md` §7.3.
-- **Ragionamento dell'Esperto**: in una conversazione dell'utente risultava spento, mentre il ruolo lo prevede
-  acceso. Non riprodotto nei test; da chiarire se l'ha spento l'utente.
-
+- **Ragionamento dell'Esperto**: chiarito, nessun difetto. Nella conversazione di prova l'aveva spento l'utente,
+  che aveva anche cambiato tre scelte. Con il ragionamento acceso il ruolo lavora meglio.
 - **Profili per modello** (`profiles` nel ruolo): i ruoli escono senza. Servono i risultati della prova con
   Ollama qui sopra. I valori della mente (temperatura 0,2 / 0,3 / 0,6) sono ipotesi non provate su Gemma 4.
 - **Ragionamento e risposte brevi**: con il ragionamento acceso il modello può pensare a lungo anche con
