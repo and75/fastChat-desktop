@@ -789,9 +789,9 @@ try {
     const dialog = page.getByTestId('settings-dialog')
     await dialog.getByRole('tab', { name: 'Conoscenza' }).click()
     const library = dialog.getByTestId('knowledge-library')
-    // la libreria parte con la base integrata nell'app, installata da un pacchetto all'avvio
+    // la libreria parte con le basi integrate nell'app, installate dai pacchetti all'avvio: la Guida e le tre dei ruoli
     await library.getByTestId('library-base').filter({ hasText: /Guida di FastChat[\s\S]*Pacchetto/ }).waitFor()
-    assert.equal(await library.getByTestId('library-base').count(), 1)
+    await waitUntil(async () => (await library.getByTestId('library-base').count()) === 4)
     await library.getByTestId('library-new-name').fill('Archivio aziendale')
     await library.getByTestId('library-create').click()
     const editor = library.getByTestId('library-base-editor')
@@ -843,7 +843,8 @@ try {
     // scollega: la base resta nella libreria
     await panel.getByTestId('knowledge-unlink').click()
     await waitUntil(async () => (await panel.getByTestId('knowledge-linked-base').count()) === 0)
-    assert.equal((await page.evaluate(() => window.api.knowledge.bases())).data.length, 2)
+    // la base creata, più le quattro integrate nell'app
+    assert.equal((await page.evaluate(() => window.api.knowledge.bases())).data.length, 5)
     // ricollega, poi elimina dalla libreria: la conferma dice quante conversazioni la usano, e sparisce dalla conversazione
     await panel.getByTestId('knowledge-link-select').selectOption({ label: 'Archivio (2 documenti)' })
     await panel.getByTestId('knowledge-linked-base').waitFor()
@@ -869,7 +870,7 @@ try {
     await library.getByTestId('library-base-delete').click()
     await library.getByText('Collegata a 1 conversazione').waitFor()
     await library.getByTestId('library-base-delete-confirm').click()
-    await waitUntil(async () => (await library.getByTestId('library-base').count()) === 2)
+    await waitUntil(async () => (await library.getByTestId('library-base').count()) === 5)
     // la base installata dal pacchetto: sola lettura, modello dichiarato, provenienza
     await library.getByTestId('library-base').filter({ hasText: /Archivio[\s\S]*Pacchetto/ }).click()
     const packed = library.getByTestId('library-base-editor')
@@ -1012,19 +1013,24 @@ try {
     // la Guida integrata: installata, senza azioni
     const guide = item('Guida di FastChat')
     await guide.locator('[data-testid="store-item-state"][data-state="installed"]').first().waitFor()
-    assert.equal(await guide.getByRole('button').count(), 0)
+    // nessuna azione sulla variante italiana, integrata; le altre lingue si scelgono dalla scheda
+    assert.equal(await guide.getByTestId('store-item-install').count() + await guide.getByTestId('store-item-remove').count(), 0)
     await store.getByTestId('store-source').filter({ hasText: 'Catalogo incluso nell’app' }).waitFor()
-    // ruoli: i due in bozza inclusi nell'app, installati e non rimovibili; ciascuno con la sua lingua e ciò che richiede
+    // ruoli: i due inclusi nell'app, installati e non rimovibili; ciascuno con la sua lingua e ciò che richiede
     await store.getByTestId('store-tab-identity').click()
     const expert = item('Esperto di prompt engineering')
     await expert.locator('[data-testid="store-item-state"][data-state="installed"]').first().waitFor()
     await expert.getByTestId('store-item-language').filter({ hasText: 'Italiano' }).waitFor()
-    await expert.getByTestId('store-item-part').filter({ hasText: 'Scrivere buoni prompt' }).waitFor()
+    await expert.getByTestId('store-item-part').filter({ hasText: 'Tecniche di prompt' }).waitFor()
     assert.equal(await store.getByTestId('store-item-install').count(), 0)
     assert.equal(await store.getByTestId('store-item-remove').count(), 0)
     // filtro per lingua accanto alla ricerca: pulsanti, non un menu
     const filter = store.getByTestId('store-language-filter')
-    assert.deepEqual(await filter.getByRole('radio').allTextContents(), ['Tutte le lingue', 'Italiano'])
+    assert.deepEqual(await filter.getByRole('radio').allTextContents(), ['Tutte le lingue', 'Italiano', 'Français'])
+    // in francese: gli stessi due ruoli, da installare
+    await filter.getByRole('radio', { name: 'Français' }).click()
+    assert.equal(await store.getByTestId('store-item').count(), 2)
+    await item('Expert en prompt engineering').getByTestId('store-item-install').waitFor()
     await filter.getByRole('radio', { name: 'Italiano' }).click()
     assert.equal(await store.getByTestId('store-item').count(), 2)
     await store.getByTestId('store-search').fill('uso dell\'app')
@@ -1230,16 +1236,16 @@ try {
     const panel = page.getByTestId('conversation-panel')
     await page.getByTestId('role-menu-open').click()
     const menu = page.getByTestId('role-menu')
-    // il Generalista per primo, poi i ruoli installati (qui le due bozze incluse nell'app)
+    // il Generalista per primo, poi i ruoli installati (qui i due inclusi nell'app)
     await menu.getByTestId('role-option').nth(2).waitFor()
     assert.deepEqual(await menu.getByTestId('role-option').evaluateAll((els) => els.map((e) => e.querySelector('span span')?.textContent)), [
       'Generalista',
-      'Assistente di FastChat (bozza)',
-      'Esperto di prompt engineering (bozza)'
+      'Assistente di FastChat',
+      'Esperto di prompt engineering'
     ])
     await menu.getByTestId('role-option').filter({ hasText: 'Esperto di prompt engineering' }).click()
     await openTab('Modello')
-    await panel.getByTestId('role-name').filter({ hasText: 'Esperto di prompt engineering (bozza)' }).waitFor()
+    await panel.getByTestId('role-name').filter({ hasText: 'Esperto di prompt engineering' }).waitFor()
     // la mente del ruolo: temperatura 0,3 (opzione «Asciutto»), ragionamento acceso, documenti spenti in partenza
     let conv = await latestConversation()
     assert.equal(conv.roleId, 'app.fastchat.ruolo.prompt.it')
@@ -1284,7 +1290,7 @@ try {
     // situazione e anteprima: le istruzioni del ruolo, poi la situazione con il suo titolo
     await writeSituation('Classifico email di assistenza')
     const preview = await page.getByTestId('system-preview').textContent()
-    assert.match(preview, /^Sei un esperto di prompt engineering[\s\S]*Motiva ogni istruzione in una riga\.[\s\S]*\n\n# Situazione\nClassifico email di assistenza$/)
+    assert.match(preview, /^Sei un esperto di prompt engineering[\s\S]*Nei prompt che scrivi motiva ogni istruzione in una riga\.[\s\S]*\n\n# Situazione\nClassifico email di assistenza$/)
 
     // ciò che parte verso il modello è ciò che l'anteprima mostra
     const before = chatRequests().length
@@ -1298,11 +1304,13 @@ try {
     assert.ok(sent.messages[0].content.startsWith(preview), sent.messages[0].content.slice(0, 400))
     assert.equal(sent.options.temperature, 0.6)
 
-    // scheda Conoscenza: la base del ruolo sta a parte, in sola lettura; se non è installata lo si dice
+    // scheda Conoscenza: le basi del ruolo (tecniche ed esempi) stanno a parte, in sola lettura
     await openTab('Conoscenza')
     const roleBases = panel.getByTestId('role-bases')
     await roleBases.waitFor()
-    assert.equal((await roleBases.getByTestId('role-base').count()) + (await roleBases.getByTestId('role-base-missing').count()), 1)
+    await roleBases.getByTestId('role-base').filter({ hasText: 'Tecniche di prompt' }).waitFor()
+    await roleBases.getByTestId('role-base').filter({ hasText: 'Prompt deboli e migliorati' }).waitFor()
+    assert.equal(await roleBases.getByTestId('role-base-missing').count(), 0)
     assert.equal(await roleBases.getByTestId('knowledge-unlink').count(), 0)
   })
 
@@ -1317,7 +1325,7 @@ try {
     await dialog.getByText('Porta con te il riassunto').waitFor()
     await dialog.getByTestId('role-change-confirm').filter({ hasText: 'Apri la nuova conversazione' }).click()
     await dialog.waitFor({ state: 'detached' })
-    await panel.getByTestId('role-name').filter({ hasText: 'Assistente di FastChat (bozza)' }).waitFor()
+    await panel.getByTestId('role-name').filter({ hasText: 'Assistente di FastChat' }).waitFor()
     let conv = await latestConversation()
     assert.notEqual(conv.id, started.id)
     assert.equal(conv.roleId, 'app.fastchat.ruolo.assistente.it')

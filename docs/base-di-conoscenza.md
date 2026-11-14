@@ -59,7 +59,8 @@ Il formato con cui una base si esporta, si installa e si distribuirà dallo stor
 - **Esporta** (Impostazioni → Conoscenza): solo basi locali con tutti i documenti pronti; il pacchetto porta i
   vettori del modello della base, dichiarato nel manifest con dimensioni e impronta.
 - **Pacchetti integrati**: i file in `packs/` vengono installati o aggiornati all'avvio (`npm run packs:build`
-  li rigenera dalla documentazione). Oggi: «Guida di FastChat», di solo testo, e i ruoli inclusi nell'app.
+  li rigenera dalla documentazione). Oggi: «Guida di FastChat» in italiano, di solo testo, e i due ruoli italiani con le loro basi. La Guida in
+  francese e in inglese e i ruoli francesi si installano dallo Store.
 - **Ruoli**: un pacchetto `identity` si installa con le basi che il ruolo richiede (altri pacchetti, cercati
   accanto al file o nel catalogo dello Store). Se una base manca il ruolo funziona comunque, e la scheda
   «Conoscenza» lo segnala. Rimuovendo il ruolo, le basi arrivate con lui se ne vanno solo se nessun altro
@@ -93,7 +94,7 @@ Voce del catalogo:
   "file": "items/it.fastchat.prompt/1.0.0.fcpack", "sha256": "…", "size": 2341 }
 ```
 
-Altri campi: `builtin` (integrata), `group` (varianti per lingua), `model` (ruoli: modello consigliato o richiesto), `requires`, `contains` (pacchetti).
+Altri campi: `builtin` (integrata), `group` (varianti per lingua), `model` (ruoli: modello consigliato o richiesto), `requires`, `contains` (pacchetti), `forRole` (base di un ruolo: si installa con lui e lo Store non la mostra come scheda a sé).
 
 ## 0.4 Tipi di base in una conversazione
 

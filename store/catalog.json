@@ -5,20 +5,65 @@
     {
       "id": "app.fastchat.guida",
       "type": "knowledge",
-      "builtin": true,
-      "version": "1.0.0+45944d39",
+      "group": "app.fastchat.guida",
+      "version": "1.0.0+dc37cd06",
       "author": "FastChat",
       "language": "it",
       "price": 0,
+      "builtin": true,
       "name": {
         "it": "Guida di FastChat",
         "en": "FastChat Guide",
         "fr": "Guide de FastChat"
       },
       "summary": {
-        "it": "Come funziona l’app: basi di conoscenza, plugin, impostazioni.",
-        "en": "How the app works: knowledge bases, plugins, settings.",
-        "fr": "Comment fonctionne l’application : bases de connaissances, plugins, paramètres."
+        "it": "Come funziona FastChat: uso dell'app, ruoli, basi di conoscenza, Store.",
+        "en": "How FastChat works: using the app, roles, knowledge bases, Store.",
+        "fr": "Comment fonctionne FastChat : utilisation de l'application, rôles, bases de connaissances, Store."
+      }
+    },
+    {
+      "id": "app.fastchat.guida.fr",
+      "type": "knowledge",
+      "group": "app.fastchat.guida",
+      "version": "1.0.0+cb8b4f42",
+      "author": "FastChat",
+      "language": "fr",
+      "price": 0,
+      "size": 13710,
+      "file": "items/app.fastchat.guida.fr/1.0.0+cb8b4f42.fcpack",
+      "sha256": "31793cb82b375fcd7e75a696c355220f13c49fa729cdfec8cd7aca38303d272c",
+      "name": {
+        "it": "Guida di FastChat",
+        "en": "FastChat Guide",
+        "fr": "Guide de FastChat"
+      },
+      "summary": {
+        "it": "Come funziona FastChat: uso dell'app, ruoli, basi di conoscenza, Store.",
+        "en": "How FastChat works: using the app, roles, knowledge bases, Store.",
+        "fr": "Comment fonctionne FastChat : utilisation de l'application, rôles, bases de connaissances, Store."
+      }
+    },
+    {
+      "id": "app.fastchat.guida.en",
+      "type": "knowledge",
+      "group": "app.fastchat.guida",
+      "version": "1.0.0+766a5a50",
+      "author": "FastChat",
+      "language": "en",
+      "price": 0,
+      "size": 12533,
+      "file": "items/app.fastchat.guida.en/1.0.0+766a5a50.fcpack",
+      "sha256": "bbb033eee373069e078f70f92e41177d27647fd629721f9f1c260b3a4d02c5e8",
+      "name": {
+        "it": "Guida di FastChat",
+        "en": "FastChat Guide",
+        "fr": "Guide de FastChat"
+      },
+      "summary": {
+        "it": "Come funziona FastChat: uso dell'app, ruoli, basi di conoscenza, Store.",
+        "en": "How FastChat works: using the app, roles, knowledge bases, Store.",
+        "fr": "Comment fonctionne FastChat : utilisation de l'application, rôles, bases de connaissances, Store."
       }
     },
     {
@@ -43,42 +88,214 @@
       }
     },
     {
-      "id": "app.fastchat.ruolo.assistente.it",
-      "type": "identity",
-      "group": "app.fastchat.ruolo.assistente",
-      "builtin": true,
-      "version": "0.1.0+b9a17044",
+      "id": "app.fastchat.kb.assistente.it",
+      "type": "knowledge",
+      "forRole": true,
+      "version": "1.0.0+934804dc",
       "author": "FastChat",
       "language": "it",
       "price": 0,
+      "builtin": true,
+      "name": {
+        "it": "Come rispondere a una domanda d'uso",
+        "en": "How to answer a usage question",
+        "fr": "Comment répondre à une question d'utilisation"
+      },
+      "summary": {
+        "it": "Regole dell'Assistente di FastChat per rispondere a domande sull'uso dell'app.",
+        "en": "Rules the FastChat Assistant follows when answering questions about using the app.",
+        "fr": "Règles de l'Assistant de FastChat pour répondre aux questions sur l'utilisation de l'application."
+      }
+    },
+    {
+      "id": "app.fastchat.kb.assistente.fr",
+      "type": "knowledge",
+      "forRole": true,
+      "version": "1.0.0+590872d9",
+      "author": "FastChat",
+      "language": "fr",
+      "price": 0,
+      "size": 1675,
+      "file": "items/app.fastchat.kb.assistente.fr/1.0.0+590872d9.fcpack",
+      "sha256": "5679f83ad916afe0182063420ac2ca139e4e70c8d4a56cd4d2194e5087d5fb05",
+      "name": {
+        "it": "Come rispondere a una domanda d'uso",
+        "en": "How to answer a usage question",
+        "fr": "Comment répondre à une question d'utilisation"
+      },
+      "summary": {
+        "it": "Regole dell'Assistente di FastChat per rispondere a domande sull'uso dell'app.",
+        "en": "Rules the FastChat Assistant follows when answering questions about using the app.",
+        "fr": "Règles de l'Assistant de FastChat pour répondre aux questions sur l'utilisation de l'application."
+      }
+    },
+    {
+      "id": "app.fastchat.kb.prompt-tecniche.it",
+      "type": "knowledge",
+      "forRole": true,
+      "version": "1.0.0+00c1e881",
+      "author": "FastChat",
+      "language": "it",
+      "price": 0,
+      "builtin": true,
+      "name": {
+        "it": "Tecniche di prompt",
+        "en": "Prompt techniques",
+        "fr": "Techniques de prompt"
+      },
+      "summary": {
+        "it": "Le tecniche che l'Esperto di prompt engineering applica quando scrive un prompt.",
+        "en": "The techniques the Prompt engineering expert applies when writing a prompt.",
+        "fr": "Les techniques que l'Expert en prompt engineering applique quand il écrit un prompt."
+      }
+    },
+    {
+      "id": "app.fastchat.kb.prompt-tecniche.fr",
+      "type": "knowledge",
+      "forRole": true,
+      "version": "1.0.0+cde28a7d",
+      "author": "FastChat",
+      "language": "fr",
+      "price": 0,
+      "size": 2146,
+      "file": "items/app.fastchat.kb.prompt-tecniche.fr/1.0.0+cde28a7d.fcpack",
+      "sha256": "3194c4e507f174bf527ab214d3859f9e2c89f7e365031a7b6d895befdb627744",
+      "name": {
+        "it": "Tecniche di prompt",
+        "en": "Prompt techniques",
+        "fr": "Techniques de prompt"
+      },
+      "summary": {
+        "it": "Le tecniche che l'Esperto di prompt engineering applica quando scrive un prompt.",
+        "en": "The techniques the Prompt engineering expert applies when writing a prompt.",
+        "fr": "Les techniques que l'Expert en prompt engineering applique quand il écrit un prompt."
+      }
+    },
+    {
+      "id": "app.fastchat.kb.prompt-esempi.it",
+      "type": "knowledge",
+      "forRole": true,
+      "version": "1.0.0+28a47228",
+      "author": "FastChat",
+      "language": "it",
+      "price": 0,
+      "builtin": true,
+      "name": {
+        "it": "Prompt deboli e migliorati",
+        "en": "Weak and improved prompts",
+        "fr": "Prompts faibles et améliorés"
+      },
+      "summary": {
+        "it": "Esempi di prompt riscritti, che l'Esperto di prompt engineering imita.",
+        "en": "Examples of rewritten prompts, which the Prompt engineering expert imitates.",
+        "fr": "Exemples de prompts réécrits, que l'Expert en prompt engineering imite."
+      }
+    },
+    {
+      "id": "app.fastchat.kb.prompt-esempi.fr",
+      "type": "knowledge",
+      "forRole": true,
+      "version": "1.0.0+dc184bbd",
+      "author": "FastChat",
+      "language": "fr",
+      "price": 0,
+      "size": 1998,
+      "file": "items/app.fastchat.kb.prompt-esempi.fr/1.0.0+dc184bbd.fcpack",
+      "sha256": "45296a0bc757541a8624357b1a6277cc7b9235d360089302b1d96e6581487a06",
+      "name": {
+        "it": "Prompt deboli e migliorati",
+        "en": "Weak and improved prompts",
+        "fr": "Prompts faibles et améliorés"
+      },
+      "summary": {
+        "it": "Esempi di prompt riscritti, che l'Esperto di prompt engineering imita.",
+        "en": "Examples of rewritten prompts, which the Prompt engineering expert imitates.",
+        "fr": "Exemples de prompts réécrits, que l'Expert en prompt engineering imite."
+      }
+    },
+    {
+      "id": "app.fastchat.ruolo.assistente.it",
+      "type": "identity",
+      "group": "app.fastchat.ruolo.assistente",
+      "version": "1.0.0+559a6647",
+      "author": "FastChat",
+      "language": "it",
+      "price": 0,
+      "builtin": true,
       "model": {
         "name": "gemma4:e4b",
         "required": false
       },
       "requires": [
+        "app.fastchat.kb.assistente.it",
         "app.fastchat.guida"
       ],
-      "name": "Assistente di FastChat (bozza)",
+      "name": "Assistente di FastChat",
       "summary": "Risponde a domande sull'uso dell'app."
+    },
+    {
+      "id": "app.fastchat.ruolo.assistente.fr",
+      "type": "identity",
+      "group": "app.fastchat.ruolo.assistente",
+      "version": "1.0.0+a12bf3ce",
+      "author": "FastChat",
+      "language": "fr",
+      "price": 0,
+      "size": 1775,
+      "file": "items/app.fastchat.ruolo.assistente.fr/1.0.0+a12bf3ce.fcpack",
+      "sha256": "a98ab6ea0d1803873142927bd257e72d6d7f63f2f28c532f8e42ebd9b62b7c60",
+      "model": {
+        "name": "gemma4:e4b",
+        "required": false
+      },
+      "requires": [
+        "app.fastchat.kb.assistente.fr",
+        "app.fastchat.guida.fr"
+      ],
+      "name": "Assistant de FastChat",
+      "summary": "Répond aux questions sur l'utilisation de l'application."
     },
     {
       "id": "app.fastchat.ruolo.prompt.it",
       "type": "identity",
       "group": "app.fastchat.ruolo.prompt",
-      "builtin": true,
-      "version": "0.1.0+9e6f4a75",
+      "version": "1.0.0+34be3b35",
       "author": "FastChat",
       "language": "it",
       "price": 0,
+      "builtin": true,
       "model": {
         "name": "gemma4:e4b",
         "required": false
       },
       "requires": [
-        "it.fastchat.prompt"
+        "app.fastchat.kb.prompt-tecniche.it",
+        "app.fastchat.kb.prompt-esempi.it"
       ],
-      "name": "Esperto di prompt engineering (bozza)",
+      "name": "Esperto di prompt engineering",
       "summary": "Scrive e migliora i prompt per modelli locali."
+    },
+    {
+      "id": "app.fastchat.ruolo.prompt.fr",
+      "type": "identity",
+      "group": "app.fastchat.ruolo.prompt",
+      "version": "1.0.0+eaf50759",
+      "author": "FastChat",
+      "language": "fr",
+      "price": 0,
+      "size": 1997,
+      "file": "items/app.fastchat.ruolo.prompt.fr/1.0.0+eaf50759.fcpack",
+      "sha256": "a167a0c44f1170d864d432fcf30b1d34f780f87791524e7ae47dded759e114fb",
+      "model": {
+        "name": "gemma4:e4b",
+        "required": false
+      },
+      "requires": [
+        "app.fastchat.kb.prompt-tecniche.fr",
+        "app.fastchat.kb.prompt-esempi.fr"
+      ],
+      "name": "Expert en prompt engineering",
+      "summary": "Écrit et améliore les prompts pour les modèles locaux."
     },
     {
       "id": "it.fastchat.sito-web",

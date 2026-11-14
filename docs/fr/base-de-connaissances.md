@@ -61,8 +61,9 @@ Le format sous lequel une base s'exporte, s'installe et se distribue depuis le S
 - **Exporter** (Paramètres → Connaissances) : seulement les bases locales dont tous les documents sont prêts ; le
   paquet contient les vecteurs du modèle de la base, déclaré dans le manifeste avec ses dimensions et son empreinte.
 - **Paquets intégrés** : les fichiers de `packs/` sont installés ou mis à jour au démarrage
-  (`npm run packs:build` les régénère à partir de la documentation). Aujourd'hui : « Guide de FastChat », en
-  texte seul, et les rôles inclus dans l'application.
+  (`npm run packs:build` les régénère à partir de la documentation). Aujourd'hui : « Guide de FastChat » en
+  italien, en texte seul, et les deux rôles italiens avec leurs bases. Le Guide en français et en anglais et les
+  rôles français s'installent depuis le Store.
 - **Rôles** : un paquet `identity` s'installe avec les bases que le rôle requiert (d'autres paquets, cherchés à
   côté du fichier ou dans le catalogue du Store). Si une base manque, le rôle fonctionne quand même, et l'onglet
   « Connaissances » le signale. Quand on supprime le rôle, les bases arrivées avec lui ne partent que si aucun
@@ -114,7 +115,8 @@ paramètres).
 ```
 
 Autres champs : `builtin` (intégré), `group` (variantes par langue), `model` (rôles : modèle conseillé ou requis),
-`requires`, `contains` (packs).
+`requires`, `contains` (packs), `forRole` (base d'un rôle : elle s'installe avec lui et le Store ne la montre pas
+comme une fiche à part).
 
 ## 0.4 Types de base dans une conversation
 

@@ -99,22 +99,28 @@ describe('pacchetti integrati nell\'app', () => {
     expect(pack.manifest.embedding).toBeUndefined()
     expect(pack.vectors).toBeNull()
     const docs = pack.knowledge!.documents
-    expect(docs.map((d) => d.title)).toEqual(['FastChat', 'Basi di conoscenza'])
+    expect(docs.map((d) => d.title)).toEqual(['FastChat', 'Basi di conoscenza', "Manuale d'uso"])
     const chunks = docs.flatMap((d) => d.chunks)
     expect(chunks.length).toBeGreaterThan(10)
     expect(chunks.every((c) => c.text.length > 0 && c.text.length <= 1600)).toBe(true)
     expect(chunks.some((c) => c.locator?.includes('Scelta del contenuto'))).toBe(true)
   })
-  it('i ruoli in bozza (packs/) si leggono con il lettore dell\'app e rispettano le regole dei ruoli', async () => {
-    for (const [file, id, base] of [
-      ['ruolo-assistente-it.fcpack', 'app.fastchat.ruolo.assistente.it', 'app.fastchat.guida'],
-      ['ruolo-prompt-it.fcpack', 'app.fastchat.ruolo.prompt.it', 'it.fastchat.prompt']
-    ]) {
-      const pack = await readPack(readFileSync(resolve(__dirname, '../packs', file)))
-      expect(pack.manifest).toMatchObject({ id, type: 'identity', language: 'it' })
-      expect(pack.manifest.name).toMatch(/\(bozza\)$/)
+  it('i ruoli italiani (packs/) si leggono con il lettore dell\'app, rispettano le regole dei ruoli e hanno le loro basi accanto', async () => {
+    const read = async (file: string) => readPack(readFileSync(resolve(__dirname, '../packs', file)))
+    for (const [file, id, name, bases] of [
+      ['ruolo-assistente-it.fcpack', 'app.fastchat.ruolo.assistente.it', 'Assistente di FastChat', { 'app.fastchat.kb.assistente.it': 'kb-assistente-it.fcpack', 'app.fastchat.guida': 'fastchat-guida.fcpack' }],
+      ['ruolo-prompt-it.fcpack', 'app.fastchat.ruolo.prompt.it', 'Esperto di prompt engineering', { 'app.fastchat.kb.prompt-tecniche.it': 'kb-prompt-tecniche-it.fcpack', 'app.fastchat.kb.prompt-esempi.it': 'kb-prompt-esempi-it.fcpack' }]
+    ] as const) {
+      const pack = await read(file)
+      expect(pack.manifest).toMatchObject({ id, name, type: 'identity', language: 'it' })
+      expect(pack.manifest.version).toMatch(/^1\.0\.0\+[0-9a-f]{8}$/)
       expect(pack.role!.parameters!.length).toBeGreaterThan(4)
-      expect(pack.role!.bases).toEqual([expect.objectContaining({ id: base })])
+      expect(pack.role!.bases!.map((b) => b.id)).toEqual(Object.keys(bases))
+      for (const [baseId, baseFile] of Object.entries(bases)) {
+        const base = await read(baseFile)
+        expect(base.manifest).toMatchObject({ id: baseId, type: 'knowledge', language: 'it' })
+        expect(base.knowledge!.documents.flatMap((d) => d.chunks).length).toBeGreaterThan(0)
+      }
     }
   })
 })

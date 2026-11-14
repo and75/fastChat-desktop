@@ -87,11 +87,29 @@ describe('store: catalogo e stati', () => {
     expect(new Set(catalog.items.map((i) => i.type))).toEqual(new Set(['knowledge', 'identity', 'plugin']))
     for (const item of catalog.items) {
       // un ruolo è scritto in una lingua: titolo e descrizione sono quelli, non tradotti
-      if (item.type === 'identity') expect(item).toMatchObject({ builtin: true, language: 'it', group: expect.stringMatching(/^app\.fastchat\.ruolo\./), name: expect.any(String) })
+      if (item.type === 'identity') {
+        expect(item).toMatchObject({ language: expect.stringMatching(/^(it|fr)$/), group: expect.stringMatching(/^app\.fastchat\.ruolo\./), name: expect.any(String) })
+        // gli italiani sono integrati nell'app, i francesi si installano; ciò che richiedono è nel catalogo, nella stessa lingua
+        expect(!!item.builtin).toBe(item.language === 'it')
+        for (const id of item.requires ?? []) expect(catalog.items.find((i) => i.id === id), id).toMatchObject({ type: 'knowledge', language: item.language })
+      }
       else for (const field of [item.name, item.summary]) expect(Object.keys(field as object).sort()).toEqual(['en', 'fr', 'it'])
       if (item.file) expect(createHash('sha256').update(readFileSync(join(repoStore, item.file))).digest('hex')).toBe(item.sha256)
     }
     expect(catalog.items.find((i) => i.id === 'app.fastchat.guida')).toMatchObject({ builtin: true, type: 'knowledge' })
+    // ciò che non è integrato ha il suo file
+    for (const item of catalog.items) if (item.type !== 'plugin') expect(!!item.file, item.id).toBe(!item.builtin)
+    // schede: la Guida è una sola, in tre lingue; le basi dei ruoli non sono schede; ogni ruolo in due lingue
+    const entries = storeEntries(catalog, new Map())
+    expect(storeGroups(entries, { type: 'knowledge', locale: 'it' }).map((g) => [g.key, g.variants.map((v) => v.language)])).toEqual([
+      ['app.fastchat.guida', ['it', 'fr', 'en']],
+      ['it.fastchat.prompt', ['it']]
+    ])
+    expect(storeGroups(entries, { type: 'identity', locale: 'it' }).map((g) => [g.key, g.variants.map((v) => v.language)])).toEqual([
+      ['app.fastchat.ruolo.assistente', ['it', 'fr']],
+      ['app.fastchat.ruolo.prompt', ['it', 'fr']]
+    ])
+    expect(storeLanguages(catalog.items, 'knowledge')).toEqual(['it', 'fr', 'en'])
   })
 })
 
@@ -132,12 +150,27 @@ describe('store: installazione', () => {
     const state = () => Object.fromEntries(view.items.map((i) => [i.id, i.state]))
     expect(state()).toEqual({
       'app.fastchat.guida': 'installed',
+      'app.fastchat.guida.fr': 'available',
+      'app.fastchat.guida.en': 'available',
       'it.fastchat.prompt': 'available',
-      // i ruoli in bozza inclusi nell'app
+      // i ruoli italiani e le loro basi sono inclusi nell'app; i francesi si installano
+      'app.fastchat.kb.assistente.it': 'installed',
+      'app.fastchat.kb.assistente.fr': 'available',
+      'app.fastchat.kb.prompt-tecniche.it': 'installed',
+      'app.fastchat.kb.prompt-tecniche.fr': 'available',
+      'app.fastchat.kb.prompt-esempi.it': 'installed',
+      'app.fastchat.kb.prompt-esempi.fr': 'available',
       'app.fastchat.ruolo.assistente.it': 'installed',
+      'app.fastchat.ruolo.assistente.fr': 'available',
       'app.fastchat.ruolo.prompt.it': 'installed',
+      'app.fastchat.ruolo.prompt.fr': 'available',
       'it.fastchat.sito-web': 'soon'
     })
+    // ai ruoli inclusi non manca nessuna base
+    for (const id of ['app.fastchat.ruolo.assistente.it', 'app.fastchat.ruolo.prompt.it']) {
+      const role = (await getRole(h.db, id))!
+      for (const wanted of role.definition.bases ?? []) expect((await knowledge.installedPacks()).has(wanted.id), wanted.id).toBe(true)
+    }
     expect(view.items.find((i) => i.id === 'app.fastchat.ruolo.prompt.it')).toMatchObject({ removable: false, builtin: true })
     await expect(store.remove('app.fastchat.ruolo.prompt.it')).rejects.toThrow(/non trovata/)
     expect(await store.owns('app.fastchat.ruolo.prompt.it')).toBe(true)
@@ -173,6 +206,25 @@ describe('store: installazione', () => {
     view = await store.remove('it.fastchat.prompt')
     expect(state()['it.fastchat.prompt']).toBe('available')
     expect((await knowledge.status(conv)).linked).toEqual([])
+  })
+
+  it('ruolo francese dal catalogo dell\'app: si installa con le sue basi e la Guida francese, e si rimuove con loro', async () => {
+    const { knowledge, store } = services()
+    await knowledge.installBuiltin(resolve(__dirname, '../packs'))
+    const ID = 'app.fastchat.ruolo.assistente.fr'
+    let view = await store.install(ID)
+    const state = () => Object.fromEntries(view.items.map((i) => [i.id, [i.state, i.removable]]))
+    expect(state()).toMatchObject({ [ID]: ['installed', true], 'app.fastchat.kb.assistente.fr': ['installed', true], 'app.fastchat.guida.fr': ['installed', true], 'app.fastchat.guida.en': ['available', false] })
+    expect(await getRole(h.db, ID)).toMatchObject({ name: 'Assistant de FastChat', language: 'fr', group: 'app.fastchat.ruolo.assistente', origin: 'package', meta: { store: true } })
+    const guide = (await knowledge.installedPacks()).get('app.fastchat.guida.fr')!
+    expect(guide).toMatchObject({ name: 'Guide de FastChat', meta: { forRole: true, store: true } })
+    expect((await listDocuments(h.db, guide.id)).map((d) => d.title)).toEqual(['FastChat', 'Bases de connaissances', "Manuel d'utilisation"])
+    // via il ruolo, via le basi arrivate con lui; quelle dell'app restano
+    view = await store.remove(ID)
+    expect(state()).toMatchObject({ [ID]: ['available', false], 'app.fastchat.kb.assistente.fr': ['available', false], 'app.fastchat.guida.fr': ['available', false], 'app.fastchat.guida': ['installed', false] })
+    // la Guida inglese è una base a sé
+    view = await store.install('app.fastchat.guida.en')
+    expect(state()['app.fastchat.guida.en']).toEqual(['installed', true])
   })
 
   // ---------------------------------------------------------------- ruoli nello Store (passo 2.6)

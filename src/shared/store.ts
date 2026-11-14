@@ -39,6 +39,8 @@ export interface StoreItem {
   sha256?: string
   /** Integrata nell'app: già installata, non si rimuove. */
   builtin?: boolean
+  /** Base che un ruolo porta con sé: si installa con il ruolo, lo Store non la mostra come scheda a sé. */
+  forRole?: boolean
 }
 
 export interface StoreCatalog {
@@ -174,7 +176,7 @@ export function matchesQuery(item: StoreItem, query: string): boolean {
 
 /** Lingue dei contenuti di una categoria, per il filtro: nell'ordine in cui compaiono nel catalogo. */
 export function storeLanguages(items: ReadonlyArray<StoreItem>, type: StoreItemType): string[] {
-  return [...new Set(items.filter((i) => i.type === type && i.language).map((i) => i.language!.toLowerCase()))]
+  return [...new Set(items.filter((i) => i.type === type && i.language && !i.forRole).map((i) => i.language!.toLowerCase()))]
 }
 
 /**
@@ -187,7 +189,7 @@ export function storeGroups(items: ReadonlyArray<StoreEntry>, filter: StoreFilte
   const language = filter.language?.toLowerCase() || null
   const groups = new Map<string, StoreEntry[]>()
   for (const item of items) {
-    if (item.type !== filter.type) continue
+    if (item.type !== filter.type || item.forRole) continue
     const key = item.group ?? item.id
     groups.set(key, [...(groups.get(key) ?? []), item])
   }

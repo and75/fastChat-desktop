@@ -1,7 +1,7 @@
 # Ruoli — decisioni e piano di esecuzione
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
-1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1–2.6; 2.7 in corso (testi scritti, ⏸ Controllo 4: rilettura dell'utente).
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1–2.6; fatto anche il 2.7 (testi approvati dall'utente al Controllo 4, pacchetti definitivi); resta il 2.8.
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -337,6 +337,7 @@ installare ruoli dallo Store nella propria lingua.
 | 2.4 Pacchetti | Fatto | `role.json` nel `.fcpack`; `installRole`, `removeRole`, `roleHealth`; ruoli integrati all'avvio |
 | 2.5 Interfaccia dei ruoli | Fatto · Controllo 3 superato | «Parla con un…», parametri, Situazione, cambio di ruolo, basi del ruolo; due ruoli in bozza in `packs/` |
 | 2.6 Store | Fatto | Ruoli installabili e rimovibili dallo Store; varianti per lingua, ricerca in tutte le lingue, filtro; migrazione 0017 |
+| 2.7 Contenuti | Fatto | Testi dei ruoli e basi in italiano e francese, Guida in tre lingue; pacchetti definitivi; `forRole` nel catalogo |
 
 Scelte fatte nel passo 2.1:
 
@@ -459,9 +460,9 @@ Scelte fatte nel passo 2.6:
 - **«Altri ruoli nello Store…»** apre lo Store sulla scheda dei ruoli.
 - **Da fare al 2.7**: le varianti francesi non esistono ancora; la scelta della lingua mostra solo «Italiano».
 
-Passo 2.7, in corso (⏸ Controllo 4: l'utente rilegge i testi):
+Passo 2.7, fatto (Controllo 4 superato: testi riletti e approvati dall'utente):
 
-- **Testi scritti, non ancora nei pacchetti**: `roles/{assistente,prompt}.{it,fr}.json` e, in `store/sources/`,
+- **Testi**: `roles/{assistente,prompt}.{it,fr}.json` e, in `store/sources/`,
   `assistente-comportamento`, `prompt-tecniche`, `prompt-esempi`, `manuale` (ciascuno `.it.md` e `.fr.md`).
   `tests/roles-content.test.ts` controlla che i ruoli siano validi e che le due lingue abbiano la stessa struttura.
 - **Da rileggere** nel documento «FastChat — testi dei ruoli da rileggere»
@@ -476,11 +477,16 @@ Passo 2.7, in corso (⏸ Controllo 4: l'utente rilegge i testi):
   `docs/en/knowledge-base.md`, `store/sources/manuale.en.md`, con le etichette dell'interfaccia inglese.
 - **Deciso**: modello consigliato `gemma4:e4b` per entrambi i ruoli. Senza profili per modello finché l'utente
   non esegue la prova con Ollama.
-- **Dopo l'ok**: `scripts/build-packs.mjs` deve costruire ruoli e basi nelle due lingue (id delle basi:
-  `app.fastchat.kb.assistente.{it,fr}`, `app.fastchat.kb.prompt-tecniche.{it,fr}`,
-  `app.fastchat.kb.prompt-esempi.{it,fr}`, Guida francese `app.fastchat.guida.fr`, Guida inglese `app.fastchat.guida.en`), togliere «(bozza)», aggiornare
-  il catalogo; il manuale italiano si aggiunge alla Guida di oggi. **Non eseguire `npm run packs:build` prima**:
-  i ruoli italiani in `roles/` puntano già alle basi nuove, che ancora non esistono come pacchetti.
+- **Pacchetti definitivi** (`scripts/build-packs.mjs`, senza «(bozza)», versione 1.0.0):
+  - **integrati nell'app** (`packs/`): Guida italiana `app.fastchat.guida` (tre documenti), i due ruoli italiani e
+    le loro basi `app.fastchat.kb.{assistente,prompt-tecniche,prompt-esempi}.it`;
+  - **nello Store** (`store/items/`): i due ruoli francesi con le basi `….fr`, la Guida francese
+    `app.fastchat.guida.fr` e la Guida inglese `app.fastchat.guida.en`.
+  - Scelta fatta senza chiedere, da confermare: italiano integrato, le altre lingue dallo Store (così «Parla con
+    un…» non parte con quattro ruoli). Le tre Guide sono una scheda sola dello Store (`group`).
+- **`forRole` nel catalogo**: le basi dei ruoli si installano con il ruolo e non sono schede dello Store; compaiono
+  in «Richiede» sulla scheda del ruolo. Nella libreria (Impostazioni → Conoscenza) si vedono, come già le basi
+  arrivate con un ruolo dallo Store: nasconderle è una scelta aperta.
 - Rispetto a `ruoli.md` §7: le opzioni di «Prima di rispondere» non impostano più il ragionamento (già acceso
   nella mente di partenza); le frasi di «Stile del prompt» dicono «nei prompt che scrivi».
 

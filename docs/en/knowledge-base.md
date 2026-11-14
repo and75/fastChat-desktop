@@ -58,8 +58,8 @@ The format in which a base is exported, installed and distributed from the Store
 - **Export** (Settings → Knowledge): local bases only, with all documents ready; the package carries the
   vectors of the base's model, declared in the manifest with dimensions and fingerprint.
 - **Built-in packages**: the files in `packs/` are installed or updated at start-up (`npm run packs:build`
-  regenerates them from the documentation). Today: “FastChat Guide”, text-only, and the roles included in the
-  app.
+  regenerates them from the documentation). Today: “FastChat Guide” in Italian, text-only, and the two Italian roles with their bases. The Guide in French
+  and in English and the French roles are installed from the Store.
 - **Roles**: an `identity` package is installed with the bases the role requires (other packages, looked for
   next to the file or in the Store catalogue). If a base is missing the role works anyway, and the
   “Knowledge” tab reports it. When the role is removed, the bases that came with it go only if no other role
@@ -92,7 +92,7 @@ Catalogue item:
   "file": "items/it.fastchat.prompt/1.0.0.fcpack", "sha256": "…", "size": 2341 }
 ```
 
-Other fields: `builtin` (built in), `group` (language variants), `model` (roles: recommended or required model), `requires`, `contains` (bundles).
+Other fields: `builtin` (built in), `group` (language variants), `model` (roles: recommended or required model), `requires`, `contains` (bundles), `forRole` (a role's base: installed with the role, and the Store does not show it as a card of its own).
 
 ## 0.4 Types of base in a conversation
 
