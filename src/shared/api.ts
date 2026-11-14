@@ -167,7 +167,7 @@ export interface Api {
   }
   templates: {
     list(): Promise<Result<BriefTemplate[]>>
-    /** Salva brief e impostazioni della conversazione come template. */
+    /** Salva ruolo, scelte, situazione e impostazioni della conversazione come template. */
     create(conversationId: string, name: string): Promise<Result<BriefTemplate>>
     remove(id: string): Promise<Result<void>>
   }

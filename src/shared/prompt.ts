@@ -1,5 +1,5 @@
 // Funzioni pure per comporre i prompt. Condivise: il main le usa per le chiamate a Ollama,
-// il renderer per l'anteprima del system prompt nel BriefPanel.
+// il renderer per l'anteprima del system prompt nella scheda «Situazione».
 import { localeTag, t } from './i18n'
 import { OLLAMA_DEFAULTS, type Brief, type ContextPart, type PlanStep, type ResponseStyle } from './types'
 

@@ -69,13 +69,13 @@
     {
       "id": "it.fastchat.prompt",
       "type": "knowledge",
-      "version": "1.0.0+3320bf8e",
+      "version": "1.0.0+c452560a",
       "author": "FastChat",
       "language": "it",
       "price": 0,
-      "size": 2341,
-      "file": "items/it.fastchat.prompt/1.0.0+3320bf8e.fcpack",
-      "sha256": "64e3c9385373dad9220ff69577a2951d0baf2781fa3369c7328015bbde4169f0",
+      "size": 2356,
+      "file": "items/it.fastchat.prompt/1.0.0+c452560a.fcpack",
+      "sha256": "63db160d7daf64f113828e6b5d4c9f1dea0ca583c89f217c5b926d660c87a91d",
       "name": {
         "it": "Scrivere buoni prompt",
         "en": "Writing good prompts",

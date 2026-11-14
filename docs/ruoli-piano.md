@@ -1,7 +1,7 @@
 # Ruoli — decisioni e piano di esecuzione
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
-1.7), che va eseguita sul computer dell'utente. **Seconda consegna in corso**: fatti i passi 2.1–2.6; fatto anche il 2.7 (testi approvati dall'utente al Controllo 4, pacchetti definitivi); resta il 2.8.
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna completa sul branch** (passi 2.1–2.8), **non rilasciata**: si attende il Controllo 5 dell'utente; la release parte solo con la sua conferma esplicita.
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -338,6 +338,7 @@ installare ruoli dallo Store nella propria lingua.
 | 2.5 Interfaccia dei ruoli | Fatto · Controllo 3 superato | «Parla con un…», parametri, Situazione, cambio di ruolo, basi del ruolo; due ruoli in bozza in `packs/` |
 | 2.6 Store | Fatto | Ruoli installabili e rimovibili dallo Store; varianti per lingua, ricerca in tutte le lingue, filtro; migrazione 0017 |
 | 2.7 Contenuti | Fatto | Testi dei ruoli e basi in italiano e francese, Guida in tre lingue; pacchetti definitivi; `forRole` nel catalogo |
+| 2.8 Chiusura | Fatto | Verifica completa, app impacchettata, documentazione; ⏸ Controllo 5 |
 
 Scelte fatte nel passo 2.1:
 
@@ -482,13 +483,24 @@ Passo 2.7, fatto (Controllo 4 superato: testi riletti e approvati dall'utente):
     le loro basi `app.fastchat.kb.{assistente,prompt-tecniche,prompt-esempi}.it`;
   - **nello Store** (`store/items/`): i due ruoli francesi con le basi `….fr`, la Guida francese
     `app.fastchat.guida.fr` e la Guida inglese `app.fastchat.guida.en`.
-  - Scelta fatta senza chiedere, da confermare: italiano integrato, le altre lingue dallo Store (così «Parla con
-    un…» non parte con quattro ruoli). Le tre Guide sono una scheda sola dello Store (`group`).
+  - **Confermato dall'utente**: italiano integrato, le altre lingue dallo Store (così «Parla con un…» non parte
+    con quattro ruoli). Le tre Guide sono una scheda sola dello Store (`group`).
 - **`forRole` nel catalogo**: le basi dei ruoli si installano con il ruolo e non sono schede dello Store; compaiono
   in «Richiede» sulla scheda del ruolo. Nella libreria (Impostazioni → Conoscenza) si vedono, come già le basi
-  arrivate con un ruolo dallo Store: nasconderle è una scelta aperta.
+  arrivate con un ruolo dallo Store (**confermato dall'utente**).
 - Rispetto a `ruoli.md` §7: le opzioni di «Prima di rispondere» non impostano più il ragionamento (già acceso
   nella mente di partenza); le frasi di «Stile del prompt» dicono «nei prompt che scrivi».
+
+Passo 2.8, fatto (⏸ Controllo 5: l'utente guarda il risultato; nessuna release senza la sua conferma):
+
+- **Verifica**: typecheck, 358 test unitari, end-to-end (59 passi), anteprime rigenerate, installer Linux con
+  `npm run test:packaged` (ora controlla anche i ruoli inclusi, le loro basi e il catalogo dello Store).
+- **Nuovo passo end-to-end**: il ruolo francese si installa dallo Store con le sue basi, il modello riceve
+  istruzioni, titoli dei blocchi, tecniche ed esempi in francese; poi si rimuove con le sue basi.
+- **`e2e/packaged.mjs`** non forzava la lingua (`FASTCHAT_LANG`): falliva su una macchina non italiana. Corretto.
+- **Pulizia**: tolti i testi d'interfaccia del Brief non più usati; «Scrivere buoni prompt» non parla più del Brief.
+- **`ruoli.md` §7** riscritto dai file `roles/*.it.json` approvati.
+- **Categoria «Pacchetti» dello Store**: resta visibile anche se vuota (deciso dall'utente).
 
 Scoperte durante il lavoro:
 
@@ -534,12 +546,13 @@ Scoperte durante il lavoro:
 
 ## Dove siamo
 
-- **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8). `main` e il branch
-  `claude/contesto-parametri-effettivi` coincidono, salvo questo documento.
-- **Seconda consegna** (ruoli): fatti i **passi 2.1** (il ruolo come dato), **2.2** (dati e conversione dei
-  Brief) e **2.3** (il prompt nasce da ruolo e situazione), **2.4** (pacchetti dei ruoli) e **2.5** (interfaccia). I ruoli
-  si scelgono e si regolano dall'app; ce ne sono due in bozza. Fatto anche il **passo 2.6** (Store). Si prosegue
-  dal **passo 2.7** (contenuti: testi dei ruoli, basi, francese), che richiede la rilettura dell'utente.
+- **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8).
+- **Seconda consegna** (ruoli): **completa sul branch** `claude/contesto-parametri-effettivi` (passi 2.1–2.8),
+  **non ancora rilasciata** e non ancora su `main`. Manca solo il **Controllo 5**: l'utente guarda il risultato
+  e decide se rilasciare.
+- Cosa c'è: ruoli scelti da «Parla con un…» e regolati nella scheda «Modello»; scheda «Situazione» al posto del
+  Brief; due ruoli italiani inclusi nell'app con le loro basi; ruoli francesi, Guida francese e Guida inglese
+  nello Store; testi riletti e approvati dall'utente.
 
 ## Cosa manca dalla prima consegna
 
@@ -550,13 +563,20 @@ Scoperte durante il lavoro:
 - **Test instabile** «finestra piccola» dell'end-to-end: fallisce circa una volta su dieci (topbar a −48 px dopo
   la rotella). Non dipende dai ruoli; potrebbe essere un vero difetto di impaginazione. Da indagare a parte.
 
-## Punti ancora da confermare con l'utente
+## Cosa resta aperto dopo la seconda consegna
 
-- Tag del modello consigliato per l'Esperto di prompt engineering (`gemma4:12b` non verificato; l'utente ha
-  `gemma4:e4b`).
-- Promemoria del ruolo: nelle prove brevi con Gemma 4 il ruolo regge senza. Decidere dopo prove lunghe se
+- **Profili per modello** (`profiles` nel ruolo): i ruoli escono senza. Servono i risultati della prova con
+  Ollama qui sopra. I valori della mente (temperatura 0,2 / 0,3 / 0,6) sono ipotesi non provate su Gemma 4.
+- **Ragionamento e risposte brevi**: con il ragionamento acceso il modello può pensare a lungo anche con
+  lunghezza «Conciso». Da verificare con l'Esperto di prompt engineering.
+- **Promemoria del ruolo**: nelle prove brevi con Gemma 4 il ruolo regge senza. Decidere dopo prove lunghe se
   tenerlo nell'interfaccia.
 - Riga «Riassunto di una conversazione avuta con: *ruolo precedente*» al cambio di ruolo: opzione da provare.
+- **Interfaccia francese**: « Modèles » indica sia la scheda del modello sia i template. Segnalato all'utente,
+  non deciso.
+- **Guida inglese**: esiste solo la Guida; i ruoli sono in italiano e francese.
+- **Aggiornare i testi**: una modifica a `README.md`, `docs/base-di-conoscenza.md` o a un manuale va riportata
+  nelle altre due lingue, poi `npm run packs:build`.
 
 ## Come lavora l'utente (preferenze espresse)
 
@@ -575,10 +595,11 @@ Scoperte durante il lavoro:
 | Cosa | Comando |
 |---|---|
 | Typecheck | `npm run typecheck` |
-| Test unitari (354) | `npx vitest run` |
+| Test unitari (358) | `npx vitest run` |
 | End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
 | Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
 | Pacchetti e catalogo dello Store | `npm run packs:build` |
+| App impacchettata (Linux) | `npm run dist:linux && xvfb-run -a node e2e/packaged.mjs` |
 | Nuova migrazione | `npx drizzle-kit generate --name <nome> < /dev/null` |
 
 - Commit in italiano, uno per passo del piano.
@@ -605,5 +626,6 @@ Scoperte durante il lavoro:
 ## Messaggio di apertura suggerito per la nuova sessione
 
 > Riprendiamo il progetto dei ruoli di FastChat. Leggi `docs/ruoli.md` e `docs/ruoli-piano.md` (soprattutto la
-> Parte 3). La prima consegna è rilasciata; partiamo dalla seconda, passo 2.1. Prima di scrivere codice dimmi in
-> breve cosa farai nel passo e aspetta il mio ok.
+> Parte 3). La seconda consegna è completa sul branch `claude/contesto-parametri-effettivi`, non rilasciata.
+> Ti dico io da dove ripartire: rilascio, profili per modello dopo la prova con Ollama, o altro. Prima di
+> scrivere codice dimmi in breve cosa farai e aspetta il mio ok.

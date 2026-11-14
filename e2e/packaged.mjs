@@ -14,7 +14,7 @@ const fake = await startFakeOllama([{ name: 'llama3.2:3b', capabilities: ['compl
 const app = await electron.launch({
   executablePath: exe,
   args: ['--no-sandbox'],
-  env: { ...process.env, OLLAMA_URL: fake.url, FASTCHAT_USER_DATA: userData }
+  env: { ...process.env, OLLAMA_URL: fake.url, FASTCHAT_USER_DATA: userData, FASTCHAT_LANG: 'it' }
 })
 try {
   const page = await app.firstWindow()
@@ -25,7 +25,16 @@ try {
   await page.getByLabel('Messaggio').press('Enter')
   await page.getByTestId('message-assistant').filter({ hasText: 'Ciao mondo!' }).waitFor()
   assert.equal(existsSync(join(userData, 'chats.db')), true)
-  console.log('✓ app impacchettata: avvio, migrazioni, modelli e chat ok')
+  // i pacchetti integrati sono nell'installer: i ruoli inclusi compaiono in «Parla con un…», con le loro basi
+  await page.getByTestId('role-menu-open').click()
+  for (const name of ['Assistente di FastChat', 'Esperto di prompt engineering']) await page.getByTestId('role-menu').getByTestId('role-option').filter({ hasText: name }).waitFor()
+  await page.keyboard.press('Escape')
+  const packs = (await page.evaluate(() => window.api.knowledge.bases())).data.map((b) => b.packageId).filter(Boolean).sort()
+  assert.deepEqual(packs, ['app.fastchat.guida', 'app.fastchat.kb.assistente.it', 'app.fastchat.kb.prompt-esempi.it', 'app.fastchat.kb.prompt-tecniche.it'])
+  // e il catalogo dello Store offre le altre lingue
+  const catalog = (await page.evaluate(() => window.api.store.catalog())).data
+  assert.equal(catalog.items.find((i) => i.id === 'app.fastchat.ruolo.prompt.fr')?.state, 'available')
+  console.log('✓ app impacchettata: avvio, migrazioni, modelli, chat, ruoli inclusi e Store ok')
 } finally {
   await app.close()
   await fake.close()

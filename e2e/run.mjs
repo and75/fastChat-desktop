@@ -1360,6 +1360,68 @@ try {
     await store.waitFor({ state: 'detached' })
   })
 
+  await step('ruolo in un\'altra lingua: dallo Store si installa la variante francese con le sue basi; il modello riceve il prompt in francese', async () => {
+    const panel = page.getByTestId('conversation-panel')
+    await page.getByTestId('role-menu-open').click()
+    await page.getByTestId('role-menu-store').click()
+    const store = page.getByTestId('store-dialog')
+    const card = (name) => store.getByTestId('store-item').filter({ has: page.getByTestId('store-item-name').filter({ hasText: name }) })
+    // la scheda del ruolo ha le due lingue: scegliendo «Français» mostra la variante francese, da installare
+    await card('Esperto di prompt engineering').getByTestId('store-item-language').filter({ hasText: 'Français' }).click()
+    const french = card('Expert en prompt engineering')
+    // (i titoli delle basi seguono la lingua dell'interfaccia)
+    await french.getByTestId('store-item-part').filter({ hasText: 'Tecniche di prompt' }).waitFor()
+    await french.getByTestId('store-item-install').click()
+    await french.locator('[data-testid="store-item-state"][data-state="installed"]').first().waitFor()
+    await store.getByTestId('dialog-close').click()
+    await store.waitFor({ state: 'detached' })
+    // le sue basi sono arrivate con lui, e vengono indicizzate
+    const bases = async () => (await page.evaluate(() => window.api.knowledge.bases())).data.filter((b) => b.packageId?.startsWith('app.fastchat.kb.prompt-') && b.packageId.endsWith('.fr'))
+    await waitUntil(async () => {
+      const found = await bases()
+      return found.length === 2 && found.every((b) => b.documents > 0 && b.ready === b.documents)
+    })
+    // ora è in «Parla con un…», accanto a quello italiano
+    await page.getByTestId('role-menu-open').click()
+    await page.getByTestId('role-menu').getByTestId('role-option').filter({ hasText: 'Expert en prompt engineering' }).click()
+    await openTab('Modello')
+    await panel.getByTestId('role-name').filter({ hasText: 'Expert en prompt engineering' }).waitFor()
+    const conv = await latestConversation()
+    assert.equal(conv.roleId, 'app.fastchat.ruolo.prompt.fr')
+    // le sezioni restano nella lingua dell'interfaccia, le scelte del ruolo sono nella sua
+    await page.evaluate(() => document.querySelectorAll('[data-testid="role-panel"] details[data-group]').forEach((d) => (d.open = true)))
+    await panel.locator('[data-parameter="stile"]').getByRole('radio').first().waitFor()
+    await openTab('Conoscenza')
+    await panel.getByTestId('role-bases').getByTestId('role-base').filter({ hasText: /Techniques de prompt|Tecniche di prompt/ }).waitFor()
+    await panel.getByTestId('role-bases').getByTestId('role-base').filter({ hasText: /Prompts faibles et améliorés|Prompt deboli e migliorati/ }).waitFor()
+    // il modello riceve tutto in francese: istruzioni del ruolo, titoli dei blocchi, tecniche ed esempi
+    const before = chatRequests().length
+    const box = page.getByRole('textbox', { name: 'Messaggio' })
+    await box.fill('Regarde ce prompt')
+    await box.press('Enter')
+    await page.getByTestId('message-assistant').first().waitFor()
+    await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
+    const system = chatRequests()[before].body.messages[0].content
+    assert.ok(system.startsWith('Tu es un expert en prompt engineering'), system.slice(0, 200))
+    for (const expected of ['# Comment travailler', '# Exemples', '<exemple>']) assert.ok(system.includes(expected), `manca «${expected}»`)
+    assert.ok(!system.includes('# Come lavorare') && !system.includes('<esempio>'), 'nessun titolo in italiano nel prompt di un ruolo francese')
+
+    // rimozione dallo Store: se ne vanno il ruolo e le basi arrivate con lui; i ruoli dell'app restano
+    await page.getByTestId('role-menu-open').click()
+    await page.getByTestId('role-menu-store').click()
+    await store.getByTestId('store-language-filter').getByRole('radio', { name: 'Français' }).click()
+    await french.getByTestId('store-item-remove').click()
+    await french.getByTestId('store-item-remove-confirm').click()
+    await french.getByTestId('store-item-install').waitFor()
+    await store.getByTestId('store-language-filter').getByRole('radio', { name: 'Tutte le lingue' }).click()
+    await store.getByTestId('dialog-close').click()
+    await store.waitFor({ state: 'detached' })
+    await waitUntil(async () => (await bases()).length === 0)
+    await page.getByTestId('role-menu-open').click()
+    assert.equal(await page.getByTestId('role-menu').getByTestId('role-option').filter({ hasText: 'Expert en prompt engineering' }).count(), 0)
+    await page.keyboard.press('Escape')
+  })
+
   await step('impostazioni: verifica URL, tema scuro, modello predefinito', async () => {
     await page.getByRole('button', { name: 'Impostazioni' }).click()
     const dialog = page.getByTestId('settings-dialog')

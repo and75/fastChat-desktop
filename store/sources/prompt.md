@@ -4,7 +4,7 @@ Indicazioni pratiche per ottenere risposte migliori da un modello linguistico lo
 
 ## Dire chi è il modello e a chi parla
 
-Un ruolo chiaro orienta tono e livello di dettaglio. «Sei un tutor di matematica per ragazzi di terza media» produce spiegazioni diverse da «Sei un revisore tecnico». In FastChat il ruolo si scrive nel campo Ruolo del brief e vale per tutta la conversazione.
+Un ruolo chiaro orienta tono e livello di dettaglio. «Sei un tutor di matematica per ragazzi di terza media» produce spiegazioni diverse da «Sei un revisore tecnico». In FastChat il ruolo si sceglie da «Parla con un…», oppure si descrive nella scheda «Situazione», e vale per tutta la conversazione.
 
 Indica anche il destinatario: un principiante, un collega esperto, un cliente. Il modello adatta lessico ed esempi.
 
@@ -34,7 +34,7 @@ Scrivi cosa non deve fare: non inventare dati, non superare una certa lunghezza,
 
 ## Controllare e correggere
 
-Leggi la risposta e di' cosa non va, in modo specifico: «il punto tre è sbagliato perché…», «accorcia il secondo paragrafo». Una correzione mirata funziona meglio che ripetere la domanda. Se la conversazione ha preso una strada sbagliata, conviene ripartire da una conversazione nuova con un brief migliore.
+Leggi la risposta e di' cosa non va, in modo specifico: «il punto tre è sbagliato perché…», «accorcia il secondo paragrafo». Una correzione mirata funziona meglio che ripetere la domanda. Se la conversazione ha preso una strada sbagliata, conviene ripartire da una conversazione nuova con una situazione scritta meglio.
 
 ## Temperatura e ripetibilità
 
