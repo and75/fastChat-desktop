@@ -568,7 +568,8 @@ Scoperte durante il lavoro:
   prodotti erano rigidi (etichette, ordini secchi, delimitatori inutili). Causa: tecniche ed esempi scritti a
   tavolino. Riscritti in italiano partendo dalle guide ufficiali di Anthropic, Google (Gemini e Gemma) e OpenAI:
   `store/sources/prompt-tecniche.it.md`, `store/sources/prompt-esempi.it.md`, frasi di cinque opzioni e
-  istruzione fissa in `roles/prompt.it.json`. **Da fare**: rilettura dell'utente, poi francese allineato,
+  istruzione fissa in `roles/prompt.it.json`. Gli esempi partono da prompt veri (guida di OpenAI,
+  `f/awesome-chatgpt-prompts`, `danielmiessler/fabric`): provenienza e licenze in `store/sources/FONTI.md`. **Da fare**: rilettura dell'utente, poi francese allineato,
   `npm run packs:build`, test ed end-to-end (le frasi attese cambiano), `ruoli.md` §7. I pacchetti in `packs/`
   e nello Store sono ancora quelli della 0.2.0.
 - **Ragionamento dell'Esperto**: in una conversazione dell'utente risultava spento, mentre il ruolo lo prevede
