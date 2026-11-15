@@ -588,6 +588,17 @@ Scoperte durante il lavoro:
   - **«Se non sai, chiedi»**: «Fa domande di chiarimento» è il predefinito; «Risponde subito» elenca le ipotesi.
   - Frasi condizionali per il dato mancante e per l'esempio del formato; due frasi in più nelle tecniche (gli
     esempi mostrano risposte riuscite; paragrafi brevi).
+  - Prova sulla terza build (gemma4:e4b, ragionamento acceso): tre domande in 80 secondi, poi il prompt in due
+    minuti e mezzo (prima sei e più). Difetto segnalato dall'utente: **esempi nel prompt anche senza la tecnica
+    selezionata**. Corretto: tolto l'esempio dalla frase di «Modello locale piccolo» e dalle tecniche; regola
+    fissa «niente esempi a meno che una regola lo chieda»; nelle tecniche, gli esempi servono per i formati
+    precisi, non per i compiti creativi. Resta: regola sul dato mancante ancora applicata a sproposito.
+  - **Misure dal CSV dell'utente** (gemma4:e4b, due chiamate): generazione a circa 10 token/s, cioè il collo di
+    bottiglia (118 s su 143, oltre metà di ragionamento); prompt di circa 2.400 token riletto per intero a ogni
+    domanda in 24–28 s (nessun riuso della cache: chiamata del titolo in mezzo, oppure esempi che cambiano dentro
+    il messaggio di sistema); `num_ctx` a 131.072, forse troppo per la macchina. **Prossime misure chieste
+    all'utente**: memoria a 16.384; ragionamento spento; terza domanda nella stessa conversazione. Poi decidere:
+    `mind.numCtx` nel ruolo, esempi accanto alla domanda (`src/shared/compose.ts`), `mind.think: false`.
   - **Da verificare con l'utente**: tempi di risposta; la stessa richiesta con il ragionamento spento (se regge,
     il ruolo può partire senza); prove rimaste: migliorare «Traduci in inglese», diagnosi, richiesta vaga, prompt
     di sistema senza spiegazione, prompt con esempi.

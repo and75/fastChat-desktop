@@ -30,7 +30,7 @@ Si le modèle a tendance à faire des réponses longues ou courtes, dis-le : « 
 
 ## Utiliser des exemples
 
-Un ou plusieurs exemples de la réponse attendue fixent le format et le ton mieux qu'une description. Trois à cinq exemples suffisent presque toujours. Ils doivent être différents les uns des autres : s'ils se ressemblent trop, le modèle copie aussi les détails sans rapport. Ils doivent aussi avoir tous la même structure, parce que c'est elle que le modèle imite. Un exemple montre une réponse réussie : les cas limites, comme un texte trop court ou une donnée absente, se traitent par une règle, pas par un exemple de réponse ratée.
+Les exemples servent quand la réponse doit avoir un format précis : un ou plusieurs exemples le fixent alors mieux qu'une description. Dans une tâche créative, comme un récit, un exemple pousse le modèle à le recopier : mieux vaut décrire le ton et le style avec des mots. Trois à cinq exemples suffisent presque toujours. Ils doivent être différents les uns des autres : s'ils se ressemblent trop, le modèle copie aussi les détails sans rapport. Ils doivent aussi avoir tous la même structure, parce que c'est elle que le modèle imite. Un exemple montre une réponse réussie : les cas limites, comme un texte trop court ou une donnée absente, se traitent par une règle, pas par un exemple de réponse ratée.
 
 Garde les exemples séparés des instructions, par exemple chacun entre `<exemple>` et `</exemple>`.
 
@@ -52,7 +52,7 @@ Un prompt qui demande beaucoup de choses à la fois donne de moins bons résulta
 
 ## Petits modèles locaux et grands modèles
 
-Un petit modèle, ou un modèle utilisé sans raisonnement, travaille comme un collaborateur débutant : il a besoin d'instructions explicites, d'une seule tâche par prompt et de voir le format de la réponse dans un exemple. Les règles les plus importantes (rôle, contraintes, format) vont au début.
+Un petit modèle, ou un modèle utilisé sans raisonnement, travaille comme un collaborateur débutant : il a besoin d'instructions explicites et d'une seule tâche par prompt. Les règles les plus importantes (rôle, contraintes, format) vont au début.
 
 Un grand modèle, ou un modèle avec le raisonnement activé, travaille comme un collègue expérimenté : on peut lui donner l'objectif et les critères de qualité, en lui laissant les détails. Inutile de lui demander de « raisonner étape par étape » dans la réponse : il le fait déjà de lui-même.
 

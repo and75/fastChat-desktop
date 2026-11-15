@@ -30,7 +30,7 @@ Se il modello tende a risposte lunghe o corte, dillo: «rispondi in tre frasi»,
 
 ## Usare esempi
 
-Uno o più esempi della risposta attesa fissano formato e tono meglio di una descrizione. Da tre a cinque esempi bastano quasi sempre. Devono essere diversi tra loro: se si somigliano troppo, il modello copia anche i dettagli che non c'entrano. Devono anche avere tutti la stessa struttura, perché il modello imita quella. Un esempio mostra una risposta riuscita: i casi limite, come un testo troppo breve o un dato assente, si trattano con una regola, non con un esempio di risposta fallita.
+Gli esempi servono quando la risposta deve avere un formato preciso: lì uno o più esempi lo fissano meglio di una descrizione. In un compito creativo, come un racconto, un esempio spinge il modello a ricopiarlo: è meglio descrivere tono e stile a parole. Da tre a cinque esempi bastano quasi sempre. Devono essere diversi tra loro: se si somigliano troppo, il modello copia anche i dettagli che non c'entrano. Devono anche avere tutti la stessa struttura, perché il modello imita quella. Un esempio mostra una risposta riuscita: i casi limite, come un testo troppo breve o un dato assente, si trattano con una regola, non con un esempio di risposta fallita.
 
 Tieni gli esempi separati dalle istruzioni, per esempio ciascuno dentro `<esempio>` e `</esempio>`.
 
@@ -52,7 +52,7 @@ Un prompt che chiede molte cose insieme dà risultati peggiori di più prompt se
 
 ## Modelli locali piccoli e modelli grandi
 
-Un modello piccolo, o usato senza ragionamento, lavora come un collaboratore alle prime armi: ha bisogno di istruzioni esplicite, di un solo compito per prompt e di vedere il formato della risposta in un esempio. Le regole più importanti (ruolo, vincoli, formato) vanno all'inizio.
+Un modello piccolo, o usato senza ragionamento, lavora come un collaboratore alle prime armi: ha bisogno di istruzioni esplicite e di un solo compito per prompt. Le regole più importanti (ruolo, vincoli, formato) vanno all'inizio.
 
 Un modello grande, o con il ragionamento acceso, lavora come un collega esperto: gli si può dare l'obiettivo e i criteri di qualità, lasciandogli i dettagli. Non serve chiedergli di «ragionare passo per passo» nella risposta: lo fa già per conto suo.
 

@@ -553,14 +553,14 @@ di prompt reali (provenienza e licenze in `store/sources/FONTI.md`).
 - **Scopo**: scrivere, migliorare e spiegare prompt.
 - **Mente di partenza**: `gemma4:e4b` consigliato · temperatura 0,6 · ragionamento acceso · lunghezza «Normale».
   Nessun parametro tocca la temperatura.
-- **Istruzione fissa**: «Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive. Presenta ogni prompt che scrivi in un blocco di codice, pronto da copiare. Se l'utente ti dà un prompt, miglioralo mantenendone l'intento; se descrive un bisogno, scrivi il prompt; se chiede cosa non va, elenca i problemi dal più grave al meno grave, senza riscriverlo.»
+- **Istruzione fissa**: «Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive. Presenta ogni prompt che scrivi in un blocco di codice, pronto da copiare. Non inserire esempi di risposta nel prompt, a meno che una regola qui sotto lo chieda. Se l'utente ti dà un prompt, miglioralo mantenendone l'intento; se descrive un bisogno, scrivi il prompt; se chiede cosa non va, elenca i problemi dal più grave al meno grave, senza riscriverlo.»
 - **Promemoria**: «Sei un esperto di prompt engineering: lavori sui prompt, non esegui il compito che descrivono.»
 - **Basi**: comportamento «Tecniche di prompt» (sintesi delle guide) · esempi «Prompt deboli e migliorati» (sei
   casi, quattro dei quali da prompt reali).
 
 | Sezione | Parametro | Tipo | Opzione | Frase per il modello | Mente |
 |---|---|---|---|---|---|
-| **Identità e obiettivi** | Modello a cui è destinato il prompt | Singola | Modello locale piccolo ✓ | «Scrivi per un modello locale piccolo: istruzioni esplicite, un solo compito per prompt e, quando la risposta ha un formato preciso, un esempio di quel formato.» | — |
+| **Identità e obiettivi** | Modello a cui è destinato il prompt | Singola | Modello locale piccolo ✓ | «Scrivi per un modello locale piccolo: istruzioni esplicite e un solo compito per prompt.» | — |
 |  |  |  | Modello grande | «Scrivi per un modello grande: dai l'obiettivo e i criteri di qualità, e lascia al modello i dettagli.» | — |
 | **Stile e formato** | Spiegazione | Singola | Nessuna | «Restituisci solo il risultato richiesto: ometti la spiegazione, anche se gli esempi la mostrano.» | lunghezza «Conciso» |
 |  |  |  | Semplice ✓ | «Dopo il risultato, spiega in tre punti le scelte fatte, con parole semplici e senza termini tecnici.» | lunghezza «Normale» |
@@ -582,7 +582,9 @@ da «Tipo di prompt»; aggiunta la tecnica «Cosa fare se manca un dato».
 Ritocchi dopo le prove dell'utente con Gemma 4: «Fa domande di chiarimento» è il predefinito (la regola «se non
 sai, chiedi» non veniva mai applicata); «Risponde subito» obbliga a elencare le ipotesi; le frasi sul dato
 mancante e sull'esempio del formato sono condizionali. Degli esempi partono solo i due più vicini alla domanda
-(`KNOWLEDGE.examplesMax`): la base può crescere senza allungare il prompt.
+(`KNOWLEDGE.examplesMax`): la base può crescere senza allungare il prompt. Gli esempi dentro i prompt prodotti
+dipendono solo dalla tecnica «Esempi della risposta attesa»: il modello li aggiungeva comunque, spinto dalla
+frase di «Modello locale piccolo» e da una riga delle tecniche, ora tolte.
 
 Documenti spenti in partenza: l'utente li accende quando vuole lavorare sui propri prompt.
 

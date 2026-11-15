@@ -1307,6 +1307,9 @@ try {
     // (se la base di comportamento del ruolo è installata, le sue tecniche seguono la situazione)
     assert.ok(sent.messages[0].content.startsWith(preview), sent.messages[0].content.slice(0, 400))
     assert.equal(sent.options.temperature, 0.6)
+    // gli esempi nel prompt dipendono solo dalla tecnica scelta: senza, il ruolo dice di non metterli
+    assert.ok(sent.messages[0].content.includes('Non inserire esempi di risposta nel prompt, a meno che una regola qui sotto lo chieda.'))
+    assert.ok(!sent.messages[0].content.includes('un esempio di quel formato') && !sent.messages[0].content.includes('formato della risposta in un esempio'))
 
     // registro: dal monitor si rilegge il prompt esatto partito verso il modello, con i titoli delle tecniche
     await openTab('Modello')
