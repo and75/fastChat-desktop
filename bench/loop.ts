@@ -8,7 +8,7 @@ export interface LoopDeps {
   /** Esegue una variante su tutti i casi indicati (e la giudica, se c'è un giudice). */
   run(variant: Variant, cases: BenchCase[]): Promise<CaseResult[]>
   /** Chiede la variante successiva; null se il correttore non risponde. */
-  propose(best: Variant, results: CaseResult[], name: string, history: string[]): Promise<{ changes: string[]; diagnosis: string; documentNotes?: string[]; outcome: { variant: Variant } | { rejected: string } } | null>
+  propose(best: Variant, results: CaseResult[], name: string, history: string[]): Promise<{ changes: string[]; diagnosis: string; documentNotes?: string[]; examples?: Array<{ title: string; source: string }>; outcome: { variant: Variant } | { rejected: string } } | null>
   /** Una variante accettata come candidata: da salvare su disco prima di provarla. */
   onVariant?(variant: Variant): void | Promise<void>
   log?(line: string): void
@@ -72,6 +72,7 @@ export async function runLoop(baseline: Variant, cases: BenchCase[], options: Pi
       continue
     }
     const candidate = proposed.outcome.variant
+    for (const example of proposed.examples ?? []) notes.push(`Giro ${round}, esempio aggiunto «${example.title}» — fonte: ${example.source || 'nessuna'}. Da rileggere, e da registrare in store/sources/FONTI.md se la variante viene applicata.`)
     await deps.onVariant?.(candidate)
     results.push(...(await deps.run(candidate, cases)))
     const score = scoreOf(results, candidate.name, options.models, 'test')

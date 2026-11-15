@@ -10,6 +10,7 @@ import { BenchError } from './harness'
 import { proposeVariant } from './improve'
 import { createJudge } from './judge'
 import { runLoop } from './loop'
+import { fetchSources, loadSources, sourceList } from './sources'
 import { buildReport } from './report'
 import { runVariant } from './run'
 import type { BenchCase, CaseResult, RunOptions, Variant } from './types'
@@ -32,6 +33,8 @@ const HELP = `Banco di prova dei ruoli di FastChat
   --no-judge            solo misure e controlli a regole fisse, anche se c'è una chiave Anthropic
   --rounds <n>          giri di «correggi e riprova» dopo la prima misura (predefinito: 0, cioè solo misura)
   --apply <cartella>    copia nel repository la variante migliore di un giro già fatto, e termina
+  --fetch-sources       scarica (o aggiorna) le fonti che il correttore consulta, e termina
+  --no-sources          il correttore lavora senza le fonti
   --url <url>           indirizzo di Ollama (predefinito: OLLAMA_URL o http://127.0.0.1:11434)
   --out <cartella>      dove scrivere i risultati (predefinito: bench/runs/<data>); se esiste, riprende
   --dry-run             elenca cosa verrebbe eseguito, senza chiamare nulla
@@ -96,6 +99,8 @@ async function main(): Promise<void> {
       'no-judge': { type: 'boolean', default: false },
       rounds: { type: 'string', default: '0' },
       apply: { type: 'string' },
+      'fetch-sources': { type: 'boolean', default: false },
+      'no-sources': { type: 'boolean', default: false },
       url: { type: 'string' },
       out: { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
@@ -104,6 +109,12 @@ async function main(): Promise<void> {
   })
   if (values.help) return void console.log(HELP)
   if (values.apply) return applyBest(resolve(values.apply))
+  if (values['fetch-sources']) {
+    console.log('Scarico le fonti del correttore in bench/sources-cache/ (cartella ignorata da git):')
+    const fetched = await fetchSources((line) => console.log(line))
+    if (fetched.some((f) => !f.ok)) process.exitCode = 1
+    return
+  }
   if (!['role', 'on', 'off'].includes(values.think)) fail(`--think vuole role, on oppure off (ricevuto: ${values.think})`)
   const reps = Number(values.reps)
   const numCtx = Number(values['num-ctx'])
@@ -128,6 +139,14 @@ async function main(): Promise<void> {
   console.log(judging ? `Giudice: ${values['judge-model']} (richieste, istruzioni del ruolo e risposte dei modelli vengono inviate ad Anthropic)` : values['no-judge'] ? 'Giudice: disattivato' : 'Giudice: nessuno — manca ANTHROPIC_API_KEY; eseguo solo misure e controlli a regole fisse')
   if (rounds > 0 && !judging) fail('Il ciclo di correzione (--rounds) ha bisogno di Claude: imposta ANTHROPIC_API_KEY e non usare --no-judge.')
   if (rounds > 0) console.log(`Correzione: fino a ${rounds} giri; in tutto al massimo ${total} esecuzioni.`)
+  // Le fonti del correttore: quelle già scaricate; se mancano, si scaricano ora (un errore non ferma il ciclo).
+  let sources = rounds > 0 && !values['no-sources'] ? loadSources() : []
+  if (rounds > 0 && !values['no-sources'] && !values['dry-run'] && sources.length < sourceList().length) {
+    console.log('Scarico le fonti del correttore:')
+    await fetchSources((line) => console.log(line))
+    sources = loadSources()
+  }
+  if (rounds > 0) console.log(values['no-sources'] ? 'Fonti del correttore: nessuna (--no-sources)' : `Fonti del correttore: ${sources.length} di ${sourceList().length}, ${Math.round(sources.reduce((n, s) => n + s.text.length, 0) / 1000)} mila caratteri`)
   if (values['dry-run']) {
     for (const c of cases) console.log(`  ${c.split === 'train' ? 'lavoro   ' : 'controllo'}  ${c.id.padEnd(22)} atteso: ${c.expect.padEnd(9)} ${c.request.slice(0, 70)}`)
     console.log(`\nStima: da due a tre minuti per esecuzione con un modello a circa 10 token al secondo, quindi ${(Math.round((total * 2.5) / 6) / 10).toString().replace('.', ',')} ore circa.`)
@@ -181,17 +200,18 @@ async function main(): Promise<void> {
       // Ripresa: una variante già proposta in un giro precedente si rilegge, non si richiede di nuovo.
       const saved = join(variantDir(name), 'proposal.json')
       if (existsSync(saved)) {
-        const { changes, diagnosis, documentNotes } = JSON.parse(readFileSync(saved, 'utf8')) as { changes: string[]; diagnosis: string; documentNotes?: string[] }
-        return { changes, diagnosis, documentNotes, outcome: { variant: loadVariant(variantDir(name)) } }
+        const { changes, diagnosis, documentNotes, examples } = JSON.parse(readFileSync(saved, 'utf8')) as { changes: string[]; diagnosis: string; documentNotes?: string[]; examples?: Array<{ title: string; source: string }> }
+        return { changes, diagnosis, documentNotes, examples, outcome: { variant: loadVariant(variantDir(name)) } }
       }
       try {
-        const proposed = await proposeVariant(claude!.ask, best, results, name, history)
+        const proposed = await proposeVariant(claude!.ask, best, results, name, history, sources)
         if (!proposed) return null
+        const examples = proposed.proposal.examples.map((e) => ({ title: e.title, source: e.source }))
         if ('variant' in proposed.outcome) {
           saveVariant(variantDir(name), proposed.outcome.variant)
-          writeFileSync(saved, JSON.stringify({ changes: proposed.proposal.changes, diagnosis: proposed.proposal.diagnosis, documentNotes: proposed.proposal.documentNotes }, null, 2) + '\n')
+          writeFileSync(saved, JSON.stringify({ changes: proposed.proposal.changes, diagnosis: proposed.proposal.diagnosis, documentNotes: proposed.proposal.documentNotes, examples }, null, 2) + '\n')
         }
-        return { changes: proposed.proposal.changes, diagnosis: proposed.proposal.diagnosis, documentNotes: proposed.proposal.documentNotes, outcome: proposed.outcome }
+        return { changes: proposed.proposal.changes, diagnosis: proposed.proposal.diagnosis, documentNotes: proposed.proposal.documentNotes, examples, outcome: proposed.outcome }
       } catch (err) {
         console.error(`Correttore non disponibile: ${describeAnthropicError(err)}`)
         return null

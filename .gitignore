@@ -7,3 +7,4 @@ dist/
 test-results/
 *.tsbuildinfo
 bench/runs/
+bench/sources-cache/

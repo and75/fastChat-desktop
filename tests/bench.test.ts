@@ -6,6 +6,7 @@ import type { Ask } from '../bench/claude'
 import { createJudge, CRITERIA, judgePrompt } from '../bench/judge'
 import { applyProposal, improvePrompt, proposeVariant, type Proposal } from '../bench/improve'
 import { runLoop, scoreOf } from '../bench/loop'
+import { fetchSources, htmlToText, sourceList, sourcesBlock, sourceText } from '../bench/sources'
 import { buildReport, summarize } from '../bench/report'
 import { runVariant } from '../bench/run'
 import type { BenchCase, CaseResult, Turn, Variant } from '../bench/types'
@@ -169,7 +170,7 @@ describe('banco di prova: correzione e riprova', () => {
   const TECNICHE = 'app.fastchat.kb.prompt-tecniche.it'
   const ESEMPI = 'app.fastchat.kb.prompt-esempi.it'
   const empty: Proposal = { diagnosis: 'd', changes: ['c'], instructions: '', options: [], examples: [], documentNotes: [] }
-  const example = { title: 'Scrivere un prompt per una lettera', request: 'Mi serve un prompt per una lettera di reclamo al condominio.', response: '```\nSei un consulente. Scrivi una lettera di reclamo breve e cortese.\n```\n\nPerché è scritto così:\n1. Dice il ruolo.\n2. Dice il tono.\n3. Dice la lunghezza.' }
+  const example = { source: 'awesome-chatgpt-prompts', title: 'Scrivere un prompt per una lettera', request: 'Mi serve un prompt per una lettera di reclamo al condominio.', response: '```\nSei un consulente. Scrivi una lettera di reclamo breve e cortese.\n```\n\nPerché è scritto così:\n1. Dice il ruolo.\n2. Dice il tono.\n3. Dice la lunghezza.' }
 
   it('una proposta cambia istruzione e frasi delle opzioni e può solo aggiungere esempi; i documenti riletti non si toccano', () => {
     const ok = applyProposal(base, { ...empty, instructions: 'Sei un esperto di prompt.', options: [{ parameter: 'metodo', option: 'subito', instruction: 'Rispondi subito e dichiara le ipotesi.' }], examples: [example] }, 'giro-1')
@@ -226,7 +227,15 @@ describe('banco di prova: correzione e riprova', () => {
     expect(text).not.toContain('controllo-1')
     expect(text).toContain('<giri_precedenti>\n1. prima modifica → scartata')
     expect(text).toContain('Controlli automatici falliti: c (male)')
-    const proposed = await proposeVariant(async () => ({ ...empty, instructions: 'Nuova istruzione.' }) as never, base, results, 'giro-1', [])
+    // le fonti arrivano al correttore in testa alla richiesta, separate dai testi e dai casi
+    const received: Array<{ context?: string; user: string }> = []
+    const source = { ...sourceList()[0], text: 'Explain the why behind a rule.' }
+    const proposed = await proposeVariant(async (input) => (received.push({ context: input.context, user: input.user }), { ...empty, instructions: 'Nuova istruzione.' }) as never, base, results, 'giro-1', [], [source])
+    expect(received[0].context).toBe(`<fonti>\n<fonte id="anthropic-best-practices" tipo="guida" titolo="${source.title}" licenza="${source.license}" indirizzo="${source.url}">\nExplain the why behind a rule.\n</fonte>\n</fonti>`)
+    expect(received[0].user).not.toContain('<fonti>')
+    // senza fonti la richiesta parte lo stesso, senza il blocco
+    await proposeVariant(async (input) => (received.push({ context: input.context, user: input.user }), null), base, results, 'giro-1', [])
+    expect(received[1].context).toBeUndefined()
     expect(proposed!.outcome).toMatchObject({ variant: { name: 'giro-1' } })
     // un esempio che ricalca una richiesta di prova (anche di controllo) fa scartare la proposta
     const copied = await proposeVariant(async () => ({ ...empty, examples: [{ ...example, request: 'r' }] }) as never, base, results, 'giro-1', [])
@@ -249,7 +258,7 @@ describe('banco di prova: correzione e riprova', () => {
       async propose(best, _results, name) {
         proposedFrom.push(`${name}<-${best.name}`)
         if (name === 'giro-3') return { changes: [], diagnosis: 'nulla da cambiare', documentNotes: ['«una frase delle tecniche» spinge a mettere esempi'], outcome: { rejected: 'nessuna modifica proposta' } }
-        return { changes: [`modifica ${name}`], diagnosis: 'causa', outcome: { variant: { ...base, name } } }
+        return { changes: [`modifica ${name}`], diagnosis: 'causa', examples: name === 'giro-2' ? [{ title: 'Un esempio nuovo', source: 'fabric-summarize' }] : [], outcome: { variant: { ...base, name } } }
       },
       onVariant: (v) => void saved.push(v.name)
     })
@@ -263,6 +272,7 @@ describe('banco di prova: correzione e riprova', () => {
     expect(outcome.notes.join('\n')).toMatch(/«giro-1»: 0% sui casi di controllo contro 50% — scartata/)
     expect(outcome.notes.join('\n')).toMatch(/«giro-2»: 100% sui casi di controllo contro 50% — \*\*tenuta\*\*/)
     expect(outcome.notes.join('\n')).toMatch(/Giro 3: proposta scartata prima della prova/)
+    expect(outcome.notes.join('\n')).toMatch(/Giro 2, esempio aggiunto «Un esempio nuovo» — fonte: fabric-summarize/)
     // le segnalazioni sui documenti finiscono nel rapporto, non nei testi
     expect(outcome.notes.join('\n')).toMatch(/Giro 3, segnalazione sui documenti \(non applicata, da valutare a mano\): «una frase delle tecniche»/)
     expect(outcome.notes.at(-1)).toMatch(/la variante migliore è «giro-2»/)
@@ -274,5 +284,29 @@ describe('banco di prova: correzione e riprova', () => {
     const flat = await runLoop(base, cases, { models: ['m'] }, 1, { run: async (v, subset) => subset.map((c) => result(v.name, c, true)), propose: async (_b, _r, name) => ({ changes: ['x'], diagnosis: 'd', outcome: { variant: { ...base, name } } }) })
     expect(flat.best).toBe(base)
     expect(flat.notes.at(-1)).toMatch(/nessuna variante ha fatto meglio/)
+  })
+})
+
+describe('banco di prova: fonti del correttore', () => {
+  it('l\'elenco copre le fonti usate per tecniche ed esempi; il testo si ripulisce e le raccolte si riducono', () => {
+    const list = sourceList()
+    expect(list.map((s) => s.id)).toEqual(expect.arrayContaining(['anthropic-best-practices', 'google-prompt-design', 'google-gemma4-format', 'openai-prompt-engineering', 'fabric-summarize', 'awesome-chatgpt-prompts']))
+    expect(list.every((s) => /^https:\/\//.test(s.url) && s.license && s.title)).toBe(true)
+    expect(htmlToText('<html><body><nav>menu</nav><article><h2>Titolo</h2><p>Uno &amp; due</p><script>x()</script><li>punto</li></article></body></html>')).toBe('## Titolo\n\nUno & due\n\npunto')
+    const guide = list.find((s) => s.kind === 'guida')!
+    expect(sourceText(guide, '# Guida\n\nTesto.')).toBe('# Guida\n\nTesto.')
+    expect(sourceText(guide, 'x'.repeat(100_000))).toMatch(/fonte troncata a 90000 caratteri\]$/)
+    const collection = list.find((s) => s.kind === 'raccolta')!
+    expect(sourceText(collection, 'act,prompt,for_devs\nStoryteller,"I want you to act as a storyteller, with ""quotes"".",FALSE\nPoet,"Write, please",FALSE\n')).toBe('## Storyteller\nI want you to act as a storyteller, with "quotes".\n\n## Poet\nWrite, please')
+    expect(sourcesBlock([])).toBe('')
+  })
+
+  it('lo scaricamento segnala ciò che non riesce senza fermarsi', async () => {
+    const lines: string[] = []
+    const fake = (async (url: string) => (String(url).includes('openai') ? new Response('no', { status: 403 }) : new Response(String(url).endsWith('.csv') ? `act,prompt\nA,"${'p'.repeat(300)}"\n` : `# ${url}\n\n${'testo '.repeat(60)}`))) as unknown as typeof fetch
+    const outcome = await fetchSources((line) => lines.push(line), fake)
+    expect(outcome.filter((o) => !o.ok).map((o) => [o.id, o.detail])).toEqual([['openai-prompt-engineering', 'HTTP 403']])
+    expect(lines).toHaveLength(sourceList().length)
+    expect(lines.some((l) => l.includes('NON scaricata'))).toBe(true)
   })
 })

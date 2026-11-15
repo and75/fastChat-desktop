@@ -25,6 +25,7 @@ npm run bench -- --models gemma4:e4b --think off   # stessa prova con il ragiona
 npm run bench -- --models gemma4:e4b --num-ctx 8192 --cases racconto-subito,lavoro-vago
 npm run bench -- --models gemma4:e4b --rounds 2    # misura, poi due giri di «correggi e riprova»
 npm run bench -- --apply bench/runs/<data>         # porta nei sorgenti la variante migliore di quel giro
+npm run bench -- --fetch-sources                   # scarica o aggiorna le fonti che il correttore consulta
 ```
 
 | Opzione | Significato | Predefinito |
@@ -40,6 +41,8 @@ npm run bench -- --apply bench/runs/<data>         # porta nei sorgenti la varia
 | `--no-judge` | Solo misure e controlli, anche se c'è una chiave | — |
 | `--rounds` | Giri di «correggi e riprova» dopo la prima misura | 0 |
 | `--apply` | Copia nei sorgenti la variante migliore di un giro già fatto, e termina | — |
+| `--fetch-sources` | Scarica o aggiorna le fonti del correttore, e termina | — |
+| `--no-sources` | Il correttore lavora senza le fonti | — |
 | `--url` | Indirizzo di Ollama | `OLLAMA_URL` o `http://127.0.0.1:11434` |
 | `--out` | Cartella dei risultati; se esiste già, riprende da dove si era fermato | `bench/runs/<data>` |
 
@@ -96,7 +99,22 @@ essere applicata. Non può nemmeno cambiare parametri, opzioni, predefiniti o ef
 che tocca la struttura, non supera i controlli dei ruoli, o porta un esempio non valido (troppo lungo, con un
 titolo già usato, o che ricalca la richiesta di un caso di prova) viene scartata prima della prova.
 
-Gli esempi aggiunti li scrive Claude: non vengono da fonti, e vanno riletti prima di applicarli.
+### Le fonti del correttore
+
+Il correttore consulta le stesse fonti da cui sono nati le tecniche e gli esempi (`store/sources/FONTI.md`): le
+guide di prompt engineering di Anthropic, Google e OpenAI, alcuni prompt di `fabric` e i primi 150 prompt di
+`awesome-chatgpt-prompts`. L'elenco è in `bench/sources.json`.
+
+Si scaricano una volta in `bench/sources-cache/`, cartella ignorata da git: le guide dei fornitori sono testi
+protetti, da consultare e non da ridistribuire. Il primo `--rounds` le scarica da solo; `--fetch-sources` le
+aggiorna. Una fonte che non si scarica viene segnalata e saltata, senza fermare il ciclo.
+
+Le fonti vengono allegate a ogni richiesta di correzione (circa 250 mila caratteri, cioè qualche decina di
+migliaia di token per giro: è la voce più grossa del costo della correzione). Il giudice non le riceve.
+
+Quando aggiunge un esempio, il correttore dichiara da quale fonte nasce; il rapporto lo riporta. Se l'esempio
+viene applicato, la provenienza va registrata in `store/sources/FONTI.md`. Un esempio senza fonte è scritto da
+Claude: in ogni caso gli esempi nuovi vanno riletti prima di applicarli.
 
 Alla fine `report.md` racconta ogni giro (diagnosi, modifiche, esito). Se una variante ha vinto, trovi anche
 `proposal.diff` con le differenze rispetto ai testi di partenza. **Nulla viene scritto nei sorgenti** finché non
@@ -107,7 +125,7 @@ lanci `--apply`. Dopo l'applicazione restano da fare a mano la rilettura, l'alli
 
 - Le chiamate ai modelli locali restano sul computer.
 - Ad Anthropic vanno, per il giudizio: le richieste di prova, le istruzioni del ruolo e le risposte dei modelli.
-  Per la correzione: tutti i testi del ruolo e i risultati dei casi di lavoro. Sono testi di prova, senza dati
+  Per la correzione: tutti i testi del ruolo, i risultati dei casi di lavoro e le fonti scaricate. Sono testi di prova, senza dati
   personali; non metterne nei casi.
 - Costo: una richiesta al giudice per caso, una al correttore per giro. Alla fine il banco stampa richieste e
   token usati; per un ciclo completo con due giri la stima è di pochi dollari.

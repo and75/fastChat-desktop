@@ -5,7 +5,8 @@ import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import type { z } from 'zod'
 
 /** Chiede a un modello una risposta che rispetti lo schema; null se il modello declina o la risposta non è valida. */
-export type Ask = <Schema extends z.ZodType>(input: { system: string; user: string; schema: Schema; maxTokens?: number }) => Promise<z.infer<Schema> | null>
+/** `context` è materiale lungo e stabile (le fonti): va in testa alla richiesta e si mette in cache tra un giro e l'altro. */
+export type Ask = <Schema extends z.ZodType>(input: { system: string; user: string; context?: string; schema: Schema; maxTokens?: number }) => Promise<z.infer<Schema> | null>
 
 export interface Claude {
   model: string
@@ -20,7 +21,7 @@ export const hasAnthropicKey = (): boolean => !!(process.env.ANTHROPIC_API_KEY |
 export function createClaude(model = 'claude-opus-5-5'): Claude {
   const client = new Anthropic()
   const usage = { input: 0, output: 0, calls: 0 }
-  const ask: Ask = async ({ system, user, schema, maxTokens = 16000 }) => {
+  const ask: Ask = async ({ system, user, context, schema, maxTokens = 16000 }) => {
     // In streaming: una risposta lunga (un documento riscritto) non incontra i limiti di tempo di una richiesta sola.
     const stream = client.beta.messages.stream({
       model,
@@ -29,7 +30,7 @@ export function createClaude(model = 'claude-opus-5-5'): Claude {
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       system,
-      messages: [{ role: 'user', content: user }],
+      messages: [{ role: 'user', content: context ? [{ type: 'text', text: context, cache_control: { type: 'ephemeral' } }, { type: 'text', text: user }] : user }],
       output_config: { effort: 'medium', format: betaZodOutputFormat(schema) }
     })
     const message = await stream.finalMessage()
