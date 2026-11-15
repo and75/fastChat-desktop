@@ -67,14 +67,14 @@ Un prompt se met au point par essais. Lis la réponse, repère ce qui ne va pas 
 
 ## Comment reconnaître un prompt faible
 
-Du plus grave au moins grave :
+Pour trouver les problèmes d'un prompt, pose-toi ces questions dans l'ordre, de la plus importante à la moins importante. Ce sont des questions pour toi : dans la réponse, ne les recopie pas, mais cite les mots du prompt qui créent le problème et dis quel effet ils ont.
 
-1. On ne comprend pas ce que le modèle doit produire, ou bien il demande plusieurs choses à la fois.
-2. Il manque le contexte : à quoi sert le résultat et qui le lira.
-3. Il ne dit pas quelle forme doit avoir la réponse.
-4. Il ne dit pas quoi faire quand l'information manque.
-5. Les règles sont des ordres sans raison, ou bien elles se contredisent.
-6. Le texte à traiter est mélangé aux instructions.
+1. Comprend-on ce que le modèle doit produire ? Est-ce une seule tâche ?
+2. Sait-on à quoi sert le résultat et qui le lira ?
+3. La forme de la réponse est-elle indiquée ?
+4. Si le prompt travaille sur un texte ou des données : est-il dit quoi faire quand une information manque ?
+5. Les règles ont-elles une raison ? Se contredisent-elles ?
+6. Le texte à traiter est-il séparé des instructions ?
 
 ## Sources
 

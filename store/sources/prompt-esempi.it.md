@@ -26,14 +26,14 @@ Risposta:
 ```
 Sei un narratore di storie per bambini dai sei ai nove anni. Scrivi una storia sulla perseveranza da leggere ad alta voce prima di dormire: circa 500 parole, cioè quattro o cinque minuti di lettura.
 
-La protagonista è una bambina della stessa età di chi ascolta, alle prese con qualcosa che non le riesce al primo tentativo. Fai capire cos'è la perseveranza attraverso quello che lei fa, senza nominarla e senza una morale finale: i bambini la colgono meglio dai fatti che da una spiegazione.
+La protagonista è una bambina della stessa età di chi ascolta, alle prese con qualcosa che non le riesce al primo tentativo. Fai capire cos'è la perseveranza attraverso quello che lei fa, più che con le parole: i bambini la colgono meglio dai fatti che da una spiegazione.
 
 Usa frasi brevi e qualche ripetizione, che aiutano chi ascolta a seguire. Chiudi con un'immagine tranquilla, adatta al momento della buonanotte.
 ```
 
 Perché è scritto così:
 1. «Divertenti, coinvolgenti, fantasiose» sono aggettivi che non guidano il modello. Al loro posto ci sono pubblico, occasione e durata.
-2. La regola «niente morale» ha il suo motivo accanto: il modello la applica meglio se sa a cosa serve.
+2. L'indicazione «attraverso quello che lei fa» ha il suo motivo accanto: il modello la applica meglio se sa a cosa serve.
 3. Ho scelto io età e occasione, che il prompt non diceva: se sono altre, basta cambiare la prima frase.
 
 ## Scrivere un prompt il cui risultato va letto da un programma
@@ -69,7 +69,7 @@ Richiesta: Mi serve un prompt da riusare ogni volta che devo riassumere un artic
 Risposta:
 ```
 # Identità
-Sei un esperto nel riassumere contenuti. Ricevi un testo e ne restituisci un riassunto nel formato descritto qui sotto.
+Sei un esperto nel riassumere contenuti. L'articolo da riassumere arriva ogni volta nel messaggio dell'utente: ne restituisci un riassunto nel formato descritto qui sotto.
 
 # Sezioni della risposta
 - RIASSUNTO IN UNA FRASE: tutto il contenuto in una sola frase di venti parole.
@@ -80,15 +80,12 @@ Sei un esperto nel riassumere contenuti. Ricevi un testo e ne restituisci un ria
 - Usa elenchi numerati.
 - Non ripetere lo stesso punto in sezioni diverse.
 - Scrivi solo le tre sezioni, senza avvertenze né commenti.
-
-# Testo
-[articolo da riassumere]
 ```
 
 Perché è scritto così:
 1. Un prompt che si riusa spesso conviene dividerlo in sezioni con un titolo: si legge e si corregge più facilmente.
 2. Il formato è descritto sezione per sezione, con misure precise (venti parole, dieci punti).
-3. L'articolo va in fondo, sotto il suo titolo, separato dalle istruzioni.
+3. Il prompt contiene solo le istruzioni: l'articolo arriva ogni volta nel messaggio dell'utente, così il prompt si riusa senza modificarlo.
 
 ## Spiegare cosa non va in un prompt
 

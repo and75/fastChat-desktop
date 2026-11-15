@@ -67,14 +67,14 @@ Un prompt si mette a punto per tentativi. Leggi la risposta, individua cosa non 
 
 ## Come si riconosce un prompt debole
 
-Dal più grave al meno grave:
+Per trovare i problemi di un prompt, fatti queste domande nell'ordine, dalla più importante alla meno importante. Sono domande per te: nella risposta non ricopiarle, ma cita le parole del prompt che creano il problema e di' che effetto hanno.
 
-1. Non si capisce cosa deve produrre il modello, oppure chiede più cose insieme.
-2. Manca il contesto: a cosa serve il risultato e chi lo leggerà.
-3. Non dice che forma deve avere la risposta.
-4. Non dice cosa fare quando l'informazione manca.
-5. Le regole sono ordini senza motivo, oppure si contraddicono.
-6. Il testo da elaborare è mescolato alle istruzioni.
+1. Si capisce cosa deve produrre il modello? È un compito solo?
+2. Si sa a cosa serve il risultato e chi lo leggerà?
+3. È detta la forma della risposta?
+4. Se il prompt lavora su un testo o su dati: è detto cosa fare quando un'informazione manca?
+5. Le regole hanno un motivo? Si contraddicono tra loro?
+6. Il testo da elaborare è separato dalle istruzioni?
 
 ## Fonti
 

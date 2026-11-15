@@ -564,6 +564,14 @@ Scoperte durante il lavoro:
 
 ## Cosa resta aperto dopo la seconda consegna
 
+- **Prime prove vere del banco** (gemma4:e4b, giudice Opus): voto 3,9–4,3 su 5, circa 100 s per caso a 11
+  token/s con il modello tutto in GPU (la memoria grande non è la causa della lentezza; il ragionamento è il
+  60–70% dei token). Ciclo di correzione, 2 giri: nessuna variante tenuta, guadagni (+2, +4 punti) dentro il
+  rumore (4 punti con 5 casi e una ripetizione): usare `--reps 3`. Applicate a mano, approvate dall'utente, tre
+  correzioni ai documenti segnalate dal correttore: l'elenco «prompt debole» è ora in forma di domande (il
+  modello lo ricopiava come diagnosi), l'esempio del prompt di sistema non ha più il segnaposto dell'articolo,
+  l'esempio «Agisci come…» non ha più «senza una morale finale». Non ancora misurate. Prossimo: confronto
+  `--models gemma4:e4b,qwen3:4b`.
 - **Banco di prova, chiave Anthropic rifiutata** (segnalato dall'utente, due volte): il banco ora legge solo
   `ANTHROPIC_API_KEY` (ripulita da virgolette e spazi, ignorando `ANTHROPIC_AUTH_TOKEN` e
   `ANTHROPIC_BASE_URL`), mostra un'impronta della chiave e la risposta esatta di Anthropic, e prova la chiave

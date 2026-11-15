@@ -26,14 +26,14 @@ Réponse :
 ```
 Tu es un conteur d'histoires pour des enfants de six à neuf ans. Écris une histoire sur la persévérance, à lire à voix haute avant de dormir : environ 500 mots, soit quatre ou cinq minutes de lecture.
 
-L'héroïne est une petite fille du même âge que ceux qui écoutent, aux prises avec quelque chose qu'elle ne réussit pas du premier coup. Fais comprendre ce qu'est la persévérance par ce qu'elle fait, sans la nommer et sans morale finale : les enfants la saisissent mieux par les faits que par une explication.
+L'héroïne est une petite fille du même âge que ceux qui écoutent, aux prises avec quelque chose qu'elle ne réussit pas du premier coup. Fais comprendre ce qu'est la persévérance par ce qu'elle fait, plus que par les mots : les enfants la saisissent mieux par les faits que par une explication.
 
 Utilise des phrases courtes et quelques répétitions, qui aident à suivre quand on écoute. Termine sur une image paisible, adaptée au moment du coucher.
 ```
 
 Pourquoi il est écrit ainsi :
 1. « Divertissantes, captivantes, pleines d'imagination » sont des adjectifs qui ne guident pas le modèle. À leur place, il y a le public, l'occasion et la durée.
-2. La règle « pas de morale » est accompagnée de sa raison : le modèle l'applique mieux s'il sait à quoi elle sert.
+2. L'indication « par ce qu'elle fait » est accompagnée de sa raison : le modèle l'applique mieux s'il sait à quoi elle sert.
 3. J'ai choisi moi-même l'âge et l'occasion, que le prompt ne disait pas : s'ils sont différents, il suffit de changer la première phrase.
 
 ## Écrire un prompt dont le résultat est lu par un programme
@@ -69,7 +69,7 @@ Demande : J'ai besoin d'un prompt à réutiliser chaque fois que je dois résume
 Réponse :
 ```
 # Identité
-Tu es un expert du résumé de contenus. Tu reçois un texte et tu en renvoies un résumé au format décrit ci-dessous.
+Tu es un expert du résumé de contenus. L'article à résumer arrive à chaque fois dans le message de l'utilisateur : tu en renvoies un résumé au format décrit ci-dessous.
 
 # Sections de la réponse
 - RÉSUMÉ EN UNE PHRASE : tout le contenu en une seule phrase de vingt mots.
@@ -80,15 +80,12 @@ Tu es un expert du résumé de contenus. Tu reçois un texte et tu en renvoies u
 - Utilise des listes numérotées.
 - Ne répète pas le même point dans des sections différentes.
 - Écris seulement les trois sections, sans avertissements ni commentaires.
-
-# Texte
-[article à résumer]
 ```
 
 Pourquoi il est écrit ainsi :
 1. Un prompt que l'on réutilise souvent gagne à être divisé en sections avec un titre : il se lit et se corrige plus facilement.
 2. Le format est décrit section par section, avec des mesures précises (vingt mots, dix points).
-3. L'article va à la fin, sous son titre, séparé des instructions.
+3. Le prompt ne contient que les instructions : l'article arrive à chaque fois dans le message de l'utilisateur, ainsi le prompt se réutilise sans modification.
 
 ## Expliquer ce qui ne va pas dans un prompt
 
