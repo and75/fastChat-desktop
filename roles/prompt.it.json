@@ -47,7 +47,7 @@
         {
           "id": "semplice",
           "label": "Semplice",
-          "instruction": "Dopo il risultato, spiega in tre punti le scelte fatte, con parole semplici e senza termini tecnici.",
+          "instruction": "Dopo un prompt che hai scritto, spiega in tre punti le scelte fatte, con parole semplici e senza termini tecnici. Dopo un elenco di problemi non aggiungere spiegazioni.",
           "mind": {
             "style": "normal"
           }
@@ -55,7 +55,7 @@
         {
           "id": "tecnica",
           "label": "Tecnica",
-          "instruction": "Dopo il risultato, spiega in tre punti le scelte fatte, usando i termini del prompt engineering.",
+          "instruction": "Dopo un prompt che hai scritto, spiega in tre punti le scelte fatte, usando i termini del prompt engineering. Dopo un elenco di problemi non aggiungere spiegazioni.",
           "mind": {
             "style": "normal"
           }

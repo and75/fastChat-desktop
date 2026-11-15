@@ -563,8 +563,8 @@ di prompt reali (provenienza e licenze in `store/sources/FONTI.md`).
 | **Identità e obiettivi** | Modello a cui è destinato il prompt | Singola | Modello locale piccolo ✓ | «Scrivi per un modello locale piccolo: istruzioni esplicite e un solo compito per prompt.» | — |
 |  |  |  | Modello grande | «Scrivi per un modello grande: dai l'obiettivo e i criteri di qualità, e lascia al modello i dettagli.» | — |
 | **Stile e formato** | Spiegazione | Singola | Nessuna | «Restituisci solo il risultato richiesto: ometti la spiegazione, anche se gli esempi la mostrano.» | lunghezza «Conciso» |
-|  |  |  | Semplice ✓ | «Dopo il risultato, spiega in tre punti le scelte fatte, con parole semplici e senza termini tecnici.» | lunghezza «Normale» |
-|  |  |  | Tecnica | «Dopo il risultato, spiega in tre punti le scelte fatte, usando i termini del prompt engineering.» | lunghezza «Normale» |
+|  |  |  | Semplice ✓ | «Dopo un prompt che hai scritto, spiega in tre punti le scelte fatte, con parole semplici e senza termini tecnici. Dopo un elenco di problemi non aggiungere spiegazioni.» | lunghezza «Normale» |
+|  |  |  | Tecnica | «Dopo un prompt che hai scritto, spiega in tre punti le scelte fatte, usando i termini del prompt engineering. Dopo un elenco di problemi non aggiungere spiegazioni.» | lunghezza «Normale» |
 |  | Tipo di prompt | Singola | Messaggio da incollare in chat ✓ | «Scrivi il prompt come un messaggio unico in prosa, da incollare in una chat, senza titoli di sezione.» | — |
 |  |  |  | Prompt di sistema da riusare | «Scrivi il prompt come prompt di sistema da riusare, diviso in sezioni con un titolo: identità, istruzioni, formato della risposta.» | — |
 | **Regole** | Tecniche da usare | Multipla | Ruolo esplicito ✓ | «Quando scrivi o riscrivi un prompt, aprilo dichiarando chi deve essere il modello.» | — |

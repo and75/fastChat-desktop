@@ -35,7 +35,7 @@ In «problems» elenca al massimo tre difetti, dal più grave, ciascuno in una f
 const EXPECTED = {
   prompt: 'Scrivere subito il prompt, in un blocco di codice.',
   ask: 'La richiesta non dice per chi è il risultato o a cosa serve: fare due o tre domande brevi e fermarsi; scrivere il prompt solo dopo le risposte dell\'utente.',
-  diagnosis: 'Elencare i problemi del prompt, dal più grave al meno grave, senza riscriverlo.'
+  diagnosis: 'Elencare i problemi del prompt, dal più grave al meno grave, senza riscriverlo. L\'elenco è già la risposta completa: la spiegazione in tre punti vale solo dopo un prompt scritto, quindi la sua assenza qui non è un difetto.'
 } as const
 
 /** Le istruzioni del ruolo come il modello le ha ricevute: il messaggio di sistema fino alle tecniche. */

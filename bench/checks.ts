@@ -88,7 +88,8 @@ export function runChecks(testCase: BenchCase, choices: RoleChoices, turns: Turn
   if (testCase.creative) {
     const delimiter = /<[a-zà-ù_-]+>[\s\S]*<\/[a-zà-ù_-]+>|"""/i.test(prompt)
     add('niente-delimitatori-inutili', !delimiter, delimiter ? 'delimitatori in un prompt che non ha un testo da elaborare' : 'nessun delimitatore')
-    const missing = /se (non|manca)[^.\n]{0,60}(specificat|indicat|fornit)/i.exec(prompt)
+    // «Se manca…», «Se non è specificato…», ma anche «Se durante la narrazione un elemento chiave … manca».
+    const missing = /\bse\b[^.\n]{0,120}?\b(manca|mancano|mancant[ei]|non (è|sono|viene|vengono|hai|disponi)[^.\n]{0,30}(specificat|indicat|fornit|present|dettagli))/i.exec(prompt)
     add('niente-regola-sul-dato-mancante', !missing, missing ? `regola sul dato mancante fuori posto: «${missing[0]}»` : 'nessuna regola sul dato mancante')
   }
   return checks

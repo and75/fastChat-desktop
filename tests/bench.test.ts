@@ -45,6 +45,8 @@ describe('banco di prova: controlli a regole fisse', () => {
     expect(failed(prompt, subito, ['Sei uno scrittore. Scrivi un racconto.'])).toEqual(['blocco-di-codice'])
     // esempio non richiesto, delimitatore inutile, regola sul dato mancante in un compito creativo
     expect(failed(prompt, subito, [GOOD.replace('Scrivi un racconto breve.', 'Scrivi un racconto breve.\nSe non viene specificato il nome, inventalo.\n<esempio>\nC\'era una volta\n</esempio>')])).toEqual(['niente-esempi-non-richiesti', 'niente-delimitatori-inutili', 'niente-regola-sul-dato-mancante'])
+    // la frase vera della prima prova con Gemma 4: la regola sul dato mancante travestita da consiglio narrativo
+    expect(failed(prompt, subito, [GOOD.replace('Scrivi un racconto breve.', 'Scrivi un racconto breve. Se durante la narrazione un elemento chiave (come un\'azione specifica o un dialogo) manca, descrivi l\'emozione, senza inventare dialoghi.')])).toEqual(['niente-regola-sul-dato-mancante'])
     // con la tecnica «Esempi» scelta, l'esempio è atteso
     expect(failed({ ...prompt, creative: false }, { ...subito, tecniche: ['ruolo', 'esempi'] }, [GOOD.replace('breve.', 'breve.\nEsempio: C\'era una volta')])).toEqual([])
     // titoli di sezione in un messaggio; sezioni mancanti in un prompt di sistema
