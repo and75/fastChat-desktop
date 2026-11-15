@@ -82,7 +82,8 @@ export interface CaseResult {
   case: BenchCase
   /** Le scelte effettive del ruolo (predefiniti più quelle del caso). */
   choices: RoleChoices
-  settings: { think: boolean; numCtx: number | null; temperature: number | null }
+  /** `gpuShare`: quota del modello in GPU secondo Ollama a fine caso (0 = solo CPU, 1 = tutto in GPU); `loadedCtx`: memoria con cui è caricato. */
+  settings: { think: boolean; numCtx: number | null; temperature: number | null; gpuShare: number | null; loadedCtx: number | null }
   turns: Turn[]
   checks: Check[]
   verdict: Verdict | null
@@ -97,4 +98,6 @@ export interface RunOptions {
   /** role = come lo fissa il ruolo; on/off = forzato. */
   think: 'role' | 'on' | 'off'
   numCtx: number
+  /** auto = decide Ollama; off = GPU bloccata, tutto su CPU. */
+  gpu: 'auto' | 'off'
 }

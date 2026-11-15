@@ -22,6 +22,7 @@ npm run bench -- --dry-run                         # elenca i casi e stima i tem
 npm run bench -- --models gemma4:e4b               # tutti i casi dell'Esperto di prompt engineering
 npm run bench -- --models gemma4:e4b,gemma4:12b    # confronto tra modelli
 npm run bench -- --models gemma4:e4b --think off   # stessa prova con il ragionamento spento
+npm run bench -- --models gemma4:e4b --gpu off     # stessa prova con la GPU bloccata, tutto su CPU
 npm run bench -- --models gemma4:e4b --num-ctx 8192 --cases racconto-subito,lavoro-vago
 npm run bench -- --models gemma4:e4b --rounds 2    # misura, poi due giri di «correggi e riprova»
 npm run bench -- --apply bench/runs/<data>         # porta nei sorgenti la variante migliore di quel giro
@@ -36,6 +37,7 @@ npm run bench -- --fetch-sources                   # scarica o aggiorna le fonti
 | `--reps` | Ripetizioni di ogni caso | 1 |
 | `--think` | `role` (come lo fissa il ruolo), `on`, `off` | `role` |
 | `--num-ctx` | Memoria della conversazione, in token | 16384 |
+| `--gpu` | `auto` (decide Ollama) oppure `off` (GPU bloccata, tutto su CPU) | `auto` |
 | `--variant` | Prova una variante salvata invece dei testi del repository | — |
 | `--judge-model` | Modello Anthropic che giudica e corregge | `claude-opus-5-5` |
 | `--no-judge` | Solo misure e controlli, anche se c'è una chiave | — |
@@ -54,6 +56,18 @@ In `bench/runs/<data>/` (cartella ignorata da git):
   È il file da leggere e da condividere.
 - `results.jsonl`: una riga per caso, con il prompt esatto inviato, la risposta, il ragionamento e le misure.
 - `variants/<nome>/`: i testi provati (ruolo e basi), così ogni giro resta rileggibile.
+
+## CPU o GPU
+
+Con `--gpu auto` decide Ollama, secondo la memoria video libera e la memoria chiesta con `--num-ctx`. Con
+`--gpu off` il banco blocca la GPU: le risposte e l'indicizzazione delle basi girano su CPU (è la stessa
+impostazione che l'app salva per un modello da Impostazioni → Modelli).
+
+Il rapporto ha la colonna «Esecuzione», letta da Ollama alla fine di ogni caso: «100% GPU», «100% CPU», oppure
+la quota in GPU quando il modello è diviso tra le due. «—» vuol dire che Ollama non l'ha detta. Lo stesso dato
+si vede mentre il banco gira con `ollama ps`.
+
+Il banco non conosce le scelte CPU/GPU fatte nell'app: parte ogni volta da un archivio vuoto.
 
 ## I casi di prova
 

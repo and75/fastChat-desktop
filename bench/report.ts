@@ -23,6 +23,8 @@ export interface Summary {
   /** Quota dei token generati spesa in ragionamento. */
   thinkingShare: number | null
   promptTokens: number | null
+  /** Quota media del modello in GPU (0 = solo CPU, 1 = tutto in GPU); null se Ollama non l'ha detta. */
+  gpuShare: number | null
   errors: number
 }
 
@@ -43,6 +45,7 @@ export function summarize(results: CaseResult[], variant: string, model: string,
     tokensPerSecond: mean(turns.flatMap((t) => (t.measures.tokensPerSecond == null ? [] : [t.measures.tokensPerSecond]))),
     thinkingShare: output ? sum(turns.map((t) => t.measures.thinkingTokens)) / output : null,
     promptTokens: mean(turns.flatMap((t) => (t.measures.promptTokens == null ? [] : [t.measures.promptTokens]))),
+    gpuShare: mean(ok.flatMap((r) => (r.settings.gpuShare == null ? [] : [r.settings.gpuShare]))),
     errors: rows.length - ok.length
   }
 }
@@ -50,13 +53,16 @@ export function summarize(results: CaseResult[], variant: string, model: string,
 /** Il numero con cui si confrontano due varianti: il voto del giudice se c'è, altrimenti i controlli superati. */
 export const headline = (s: Summary): number | null => (s.score != null ? s.score / 5 : s.checks)
 
+/** Dove ha girato il modello, in parole: «100% GPU», «100% CPU», «40% GPU». */
+export const execution = (share: number | null): string => (share == null ? '—' : share >= 0.995 ? '100% GPU' : share <= 0.005 ? '100% CPU' : `${Math.round(share * 100)}% GPU`)
+
 const pairs = (results: CaseResult[]): Array<[string, string]> => [...new Set(results.map((r) => `${r.variant}\u0000${r.model}`))].map((k) => k.split('\u0000') as [string, string])
 
 function table(results: CaseResult[], split: Summary['split']): string {
   const rows = pairs(results).map(([variant, model]) => summarize(results, variant, model, split)).filter((s) => s.cases > 0)
   if (rows.length === 0) return '_Nessun caso._\n'
-  const lines = ['| Variante | Modello | Casi | Controlli superati | Voto del giudice | Tempo per caso | Token/s | Ragionamento | Prompt (token) | Errori |', '|---|---|---|---|---|---|---|---|---|---|']
-  for (const s of rows) lines.push(`| ${s.variant} | ${s.model} | ${s.cases} | ${percent(s.checks)} | ${s.score == null ? '—' : `${num(s.score)} / 5`} | ${seconds(s.totalMs)} | ${num(s.tokensPerSecond)} | ${percent(s.thinkingShare)} | ${s.promptTokens == null ? '—' : Math.round(s.promptTokens)} | ${s.errors} |`)
+  const lines = ['| Variante | Modello | Casi | Controlli superati | Voto del giudice | Tempo per caso | Token/s | Esecuzione | Ragionamento | Prompt (token) | Errori |', '|---|---|---|---|---|---|---|---|---|---|---|']
+  for (const s of rows) lines.push(`| ${s.variant} | ${s.model} | ${s.cases} | ${percent(s.checks)} | ${s.score == null ? '—' : `${num(s.score)} / 5`} | ${seconds(s.totalMs)} | ${num(s.tokensPerSecond)} | ${execution(s.gpuShare)} | ${percent(s.thinkingShare)} | ${s.promptTokens == null ? '—' : Math.round(s.promptTokens)} | ${s.errors} |`)
   return lines.join('\n') + '\n'
 }
 
@@ -64,7 +70,7 @@ function caseSection(r: CaseResult): string {
   const out: string[] = [`### ${r.case.id} · ${r.model} · ${r.variant}${r.rep > 1 ? ` · ripetizione ${r.rep}` : ''}`, '']
   out.push(`- Gruppo: ${r.case.split === 'train' ? 'di lavoro' : 'di controllo'} · atteso: ${r.case.expect}${r.case.note ? ` · ${r.case.note}` : ''}`)
   out.push(`- Scelte: ${Object.entries(r.choices).map(([k, v]) => `${k}=${Array.isArray(v) ? v.join('+') : v}`).join(', ')}`)
-  out.push(`- Impostazioni: ragionamento ${r.settings.think ? 'acceso' : 'spento'}, memoria ${r.settings.numCtx ?? '—'}, temperatura ${r.settings.temperature ?? '—'}`)
+  out.push(`- Impostazioni: ragionamento ${r.settings.think ? 'acceso' : 'spento'}, memoria ${r.settings.numCtx ?? '—'}, temperatura ${r.settings.temperature ?? '—'} · esecuzione: ${execution(r.settings.gpuShare ?? null)}${r.settings.loadedCtx ? ` (caricato con memoria ${r.settings.loadedCtx})` : ''}`)
   if (r.error) out.push(`- **Errore**: ${r.error}`)
   const failed = r.checks.filter((c) => !c.pass)
   out.push(`- Controlli: ${r.checks.length - failed.length}/${r.checks.length} superati${failed.length ? ` — falliti: ${failed.map((c) => `**${c.id}** (${c.detail})`).join('; ')}` : ''}`)
@@ -83,7 +89,7 @@ function caseSection(r: CaseResult): string {
 export interface ReportInput {
   role: string
   startedAt: string
-  options: { models: string[]; reps: number; think: string; numCtx: number; judge: string | null; rounds: number }
+  options: { models: string[]; reps: number; think: string; numCtx: number; gpu?: string; judge: string | null; rounds: number }
   results: CaseResult[]
   /** Racconto del ciclo: quale variante è stata tenuta e perché. */
   notes: string[]
@@ -94,7 +100,7 @@ export function buildReport(input: ReportInput): string {
   const { results } = input
   const out: string[] = [`# Banco di prova · ${input.role}`, '']
   out.push(`- Avviato: ${input.startedAt}`)
-  out.push(`- Modelli: ${input.options.models.join(', ')} · ripetizioni: ${input.options.reps} · ragionamento: ${input.options.think} · memoria: ${input.options.numCtx}`)
+  out.push(`- Modelli: ${input.options.models.join(', ')} · ripetizioni: ${input.options.reps} · ragionamento: ${input.options.think} · memoria: ${input.options.numCtx} · GPU: ${input.options.gpu === 'off' ? 'bloccata (solo CPU)' : 'decide Ollama'}`)
   out.push(`- Giudice: ${input.options.judge ?? 'nessuno (solo misure e controlli a regole fisse)'} · giri di correzione: ${input.options.rounds}`)
   if (input.notes.length) out.push('', '## Esito', '', ...input.notes.map((n) => `- ${n}`))
   out.push('', '## Casi di controllo', '', 'Il confronto tra varianti si fa su questi: il correttore non li ha mai visti.', '', table(results, 'test'))

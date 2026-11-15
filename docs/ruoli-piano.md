@@ -620,6 +620,8 @@ Scoperte durante il lavoro:
   dall'utente): ciò che vi trova di dannoso lo segnala nel rapporto. Consulta le stesse
   fonti di tecniche ed esempi (deciso dall'utente): elenco in `bench/sources.json`, scaricate in
   `bench/sources-cache/` (non nel repository), allegate a ogni richiesta di correzione; `--apply` porta la migliore nei sorgenti.
+  Opzione `--gpu off` per bloccare la GPU (risposte e indicizzazione su CPU); il rapporto riporta dove ha girato
+  il modello, letto da Ollama.
   **Verificato solo con Ollama finto e Claude simulato** (`tests/bench.test.ts`): la prima esecuzione vera, con
   Ollama e con la chiave, è dell'utente. Predefinito `--rounds 0`, per non avviare ore di lavoro e spesa senza
   che sia chiesto.

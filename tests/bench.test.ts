@@ -7,7 +7,7 @@ import { createJudge, CRITERIA, judgePrompt } from '../bench/judge'
 import { applyProposal, improvePrompt, proposeVariant, type Proposal } from '../bench/improve'
 import { runLoop, scoreOf } from '../bench/loop'
 import { fetchSources, htmlToText, sourceList, sourcesBlock, sourceText } from '../bench/sources'
-import { buildReport, summarize } from '../bench/report'
+import { buildReport, execution, summarize } from '../bench/report'
 import { runVariant } from '../bench/run'
 import type { BenchCase, CaseResult, Turn, Variant } from '../bench/types'
 import { loadBaseline } from '../bench/variant'
@@ -82,6 +82,7 @@ describe('banco di prova: esecuzione con il codice dell\'app', () => {
         // alla richiesta vaga fa una domanda; alla risposta dell'utente, e a tutto il resto, scrive il prompt
         respond: (messages) => (messages.at(-1)!.content.includes('prima partita') && messages.filter((m) => m.role === 'user').length === 1 ? 'Per chi è il racconto?' : GOOD)
       },
+      { name: 'grafico', capabilities: ['completion'], gpu: true, respond: () => GOOD },
       { name: 'embeddinggemma:latest', capabilities: ['embedding'] }
     ])
   })
@@ -94,12 +95,13 @@ describe('banco di prova: esecuzione con il codice dell\'app', () => {
       { id: 'subito', split: 'test', request: 'Scrivi un prompt per una poesia sull\'autunno', choices: { metodo: 'subito' }, expect: 'prompt', creative: true }
     ]
     const seen: string[] = []
-    const results = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['piccolo'], reps: 1, think: 'role', numCtx: 8192 }, { onResult: (r, p) => void seen.push(`${p.index}/${p.total} ${r.case.id}`) })
+    const results = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['piccolo'], reps: 1, think: 'role', numCtx: 8192, gpu: 'auto' }, { onResult: (r, p) => void seen.push(`${p.index}/${p.total} ${r.case.id}`) })
     expect(seen).toEqual(['1/2 vago', '2/2 subito'])
     const [vague, direct] = results
     expect(vague.error).toBeNull()
     // il ruolo fissa ragionamento e temperatura; la memoria è quella chiesta al banco
-    expect(vague.settings).toEqual({ think: true, numCtx: 8192, temperature: 0.6 })
+    // …e Ollama dice dove ha girato il modello: qui il modello finto non ha GPU
+    expect(vague.settings).toEqual({ think: true, numCtx: 8192, temperature: 0.6, gpuShare: 0, loadedCtx: 2048 })
     // due battute: la domanda dell'Esperto, poi il prompt dopo la risposta dell'utente
     expect(vague.turns.map((t) => t.user)).toEqual([cases[0].request, cases[0].reply])
     expect(vague.turns[0].answer).toBe('Per chi è il racconto?')
@@ -123,7 +125,7 @@ describe('banco di prova: esecuzione con il codice dell\'app', () => {
     expect(direct.checks.filter((c) => !c.pass)).toEqual([])
 
     // ripresa: ciò che è già fatto non si riesegue
-    const again = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['piccolo'], reps: 1, think: 'role', numCtx: 8192 }, { done: results })
+    const again = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['piccolo'], reps: 1, think: 'role', numCtx: 8192, gpu: 'auto' }, { done: results })
     expect(again).toEqual(results)
     expect(fake.requests.filter((r) => r.path === '/api/chat')).toHaveLength(3)
 
@@ -133,7 +135,7 @@ describe('banco di prova: esecuzione con il codice dell\'app', () => {
       asked.push(user)
       return { scores: Object.keys(CRITERIA).map((criterion, i) => ({ criterion, score: i === 0 ? 9 : 3.4, reason: ' motivo ' })), problems: ['uno', 'due', 'tre', 'quattro'] } as never
     }
-    const judged = await runVariant(variant, cases.slice(1), { ollamaUrl: fake.url, models: ['piccolo'], reps: 1, think: 'role', numCtx: 8192 }, { judge: createJudge(ask) })
+    const judged = await runVariant(variant, cases.slice(1), { ollamaUrl: fake.url, models: ['piccolo'], reps: 1, think: 'role', numCtx: 8192, gpu: 'auto' }, { judge: createJudge(ask) })
     expect(judged[0].verdict).toEqual({ scores: Object.keys(CRITERIA).map((criterion, i) => ({ criterion, score: i === 0 ? 5 : 3, reason: 'motivo' })), mean: 3.4, problems: ['uno', 'due', 'tre'] })
     expect(asked[0]).toContain('<atteso>\nScrivere subito il prompt')
     expect(asked[0]).toContain('elenca le ipotesi in una riga prima del prompt')
@@ -155,12 +157,39 @@ describe('banco di prova: esecuzione con il codice dell\'app', () => {
     expect(report).toContain('Controlli: ')
   }, 60_000)
 
+  it('GPU: decide Ollama, oppure bloccata per risposte e indicizzazione; il rapporto dice dove ha girato il modello', async () => {
+    const variant = loadBaseline('prompt.it')
+    const cases: BenchCase[] = [{ id: 'subito', split: 'test', request: 'Scrivi un prompt per una poesia', choices: { metodo: 'subito' }, expect: 'prompt' }]
+    const numGpu = (from: number): Array<number | undefined> => fake.requests.slice(from).filter((r) => r.path === '/api/chat' || r.path === '/api/embed').map((r) => (r.body as { options?: { num_gpu?: number } }).options?.num_gpu)
+    // «grafico» ha una GPU: lasciato libero, Ollama lo carica tutto lì
+    let from = fake.requests.length
+    const auto = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['grafico'], reps: 1, think: 'role', numCtx: 4096, gpu: 'auto' })
+    expect(numGpu(from).every((n) => n === undefined)).toBe(true)
+    expect(auto[0].settings.gpuShare).toBe(1)
+    // GPU bloccata: num_gpu = 0 in ogni richiesta, comprese quelle che indicizzano le basi del ruolo
+    from = fake.requests.length
+    const off = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['grafico'], reps: 1, think: 'role', numCtx: 4096, gpu: 'off' })
+    const sent = numGpu(from)
+    expect(sent.length).toBeGreaterThan(2)
+    expect(sent.every((n) => n === 0)).toBe(true)
+    expect(off[0].settings.gpuShare).toBe(0)
+    expect(summarize([...auto], 'base', 'grafico', 'test').gpuShare).toBe(1)
+    expect(execution(1)).toBe('100% GPU')
+    expect(execution(0)).toBe('100% CPU')
+    expect(execution(0.4)).toBe('40% GPU')
+    expect(execution(null)).toBe('—')
+    const report = buildReport({ role: 'prompt.it', startedAt: 'x', options: { models: ['grafico'], reps: 1, think: 'role', numCtx: 4096, gpu: 'off', judge: null, rounds: 0 }, results: off, notes: [] })
+    expect(report).toContain('GPU: bloccata (solo CPU)')
+    expect(report).toContain('| 100% CPU |')
+    expect(report).toContain('esecuzione: 100% CPU (caricato con memoria 2048)')
+  }, 60_000)
+
   it('ragionamento forzato; un modello che non c\'è dà un errore sul caso, non ferma il banco', async () => {
     const variant = loadBaseline('prompt.it')
     const cases: BenchCase[] = [{ id: 'subito', split: 'test', request: 'Scrivi un prompt per una poesia', choices: { metodo: 'subito' }, expect: 'prompt' }]
-    const off = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['piccolo'], reps: 1, think: 'off', numCtx: 4096 })
+    const off = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['piccolo'], reps: 1, think: 'off', numCtx: 4096, gpu: 'auto' })
     expect(off[0].settings.think).toBe(false)
-    const missing = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['assente'], reps: 1, think: 'role', numCtx: 4096 })
+    const missing = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['assente'], reps: 1, think: 'role', numCtx: 4096, gpu: 'auto' })
     expect(missing[0].checks.some((c) => !c.pass)).toBe(true)
   }, 60_000)
 })
@@ -209,7 +238,7 @@ describe('banco di prova: correzione e riprova', () => {
     expect(fr.variant.bases['app.fastchat.kb.prompt-esempi.fr'].files[0].text).toContain(`Demande : ${example.request}\n\nRéponse :\n`)
   })
 
-  const result = (variant: string, testCase: BenchCase, pass: boolean): CaseResult => ({ variant, model: 'm', rep: 1, case: testCase, choices: {}, settings: { think: true, numCtx: 1, temperature: 0.6 }, turns: [turn('risposta di prova')], checks: [{ id: 'c', pass, detail: pass ? 'bene' : 'male' }], verdict: null, error: null })
+  const result = (variant: string, testCase: BenchCase, pass: boolean): CaseResult => ({ variant, model: 'm', rep: 1, case: testCase, choices: {}, settings: { think: true, numCtx: 1, temperature: 0.6, gpuShare: null, loadedCtx: null }, turns: [turn('risposta di prova')], checks: [{ id: 'c', pass, detail: pass ? 'bene' : 'male' }], verdict: null, error: null })
   const cases: BenchCase[] = [
     { id: 'lavoro-1', split: 'train', request: 'r', expect: 'prompt' },
     { id: 'controllo-1', split: 'test', request: 'r', expect: 'prompt' },

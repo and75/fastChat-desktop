@@ -31,14 +31,16 @@ export async function runVariant(variant: Variant, cases: BenchCase[], options: 
             out.push(previous)
             continue
           }
-          const result: CaseResult = { variant: variant.name, model, rep, case: testCase, choices: bench.choices(testCase.choices), settings: { think: false, numCtx: null, temperature: null }, turns: [], checks: [], verdict: null, error: null }
+          const result: CaseResult = { variant: variant.name, model, rep, case: testCase, choices: bench.choices(testCase.choices), settings: { think: false, numCtx: null, temperature: null, gpuShare: null, loadedCtx: null }, turns: [], checks: [], verdict: null, error: null }
           try {
             const conv = await bench.open(model, testCase.choices, options)
-            result.settings = { think: conv.think, numCtx: conv.numCtx, temperature: conv.temperature }
+            result.settings = { think: conv.think, numCtx: conv.numCtx, temperature: conv.temperature, gpuShare: null, loadedCtx: null }
             const first: Turn = await bench.say(conv, testCase.request)
             result.turns.push(first)
             // Se l'Esperto ha fatto domande e il caso prevede la risposta dell'utente, la conversazione prosegue.
             if (testCase.reply && !first.error && splitAnswer(first.answer).blocks.length === 0) result.turns.push(await bench.say(conv, testCase.reply))
+            // Subito dopo la risposta il modello è ancora caricato: Ollama dice quanta parte sta in GPU.
+            Object.assign(result.settings, await bench.execution(model))
           } catch (err) {
             result.error = err instanceof Error ? err.message : String(err)
           }

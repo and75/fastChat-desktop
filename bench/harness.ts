@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path'
 import { createChatService } from '../src/main/chat'
 import { createContextLog } from '../src/main/contextLog'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { ensureRoles, getContextRequest, getSettings, listContextCalls, listDocuments, listMessages, saveRole, updateConversation } from '../src/main/db/repo'
+import { ensureRoles, getContextRequest, getSettings, listContextCalls, listDocuments, listMessages, saveModelSetting, saveRole, updateConversation } from '../src/main/db/repo'
 import { createEmbedder } from '../src/main/embedder'
 import { createKnowledge } from '../src/main/knowledge'
 import { createBuiltinRegistry } from '../src/main/knowledge/sources'
@@ -29,7 +29,7 @@ export class BenchError extends Error {}
  * Monta l'app su un database in memoria e ci carica una variante: il ruolo e le sue basi, indicizzate con il
  * modello di embedding delle Impostazioni (predefinito `embeddinggemma`), come farebbe l'installazione.
  */
-export async function createBench(variant: Variant, options: Pick<RunOptions, 'ollamaUrl'>) {
+export async function createBench(variant: Variant, options: Pick<RunOptions, 'ollamaUrl' | 'models' | 'gpu'>) {
   const issues = validateRole(variant.role)
   if (issues.length) throw new BenchError(`Il ruolo della variante «${variant.name}» non è valido: ${issues.map((i) => i.code).join(', ')}`)
 
@@ -37,8 +37,14 @@ export async function createBench(variant: Variant, options: Pick<RunOptions, 'o
   await runMigrations(h, join(repo, 'drizzle'))
   await ensureRoles(h.db)
   const work = mkdtempSync(join(tmpdir(), 'fastchat-bench-'))
+  // La stessa impostazione che l'app salva da Impostazioni → Modelli: il codice della chat la invia a ogni domanda.
+  if (options.gpu === 'off') for (const model of options.models) await saveModelSetting(h.db, model, { numGpu: 0 })
 
-  const ollama = createOllamaClient(() => options.ollamaUrl)
+  const client = createOllamaClient(() => options.ollamaUrl)
+  const cpuOnly = options.gpu === 'off'
+  // GPU bloccata: per le risposte vale l'impostazione per modello dell'app (num_gpu = 0, qui sotto); le basi del
+  // ruolo si indicizzano fuori da una conversazione, dove l'app non la applica, quindi qui la si impone.
+  const ollama = cpuOnly ? { ...client, embed: (model: string, texts: string[], opts?: { num_gpu?: number }) => client.embed(model, texts, { ...opts, num_gpu: 0 }) } : client
   const contextLog = createContextLog(h.db)
   const embedder = createEmbedder({ db: h.db, ollama, contextLog })
   const knowledge = createKnowledge({ db: h.db, embedder, registry: createBuiltinRegistry() })
@@ -140,9 +146,16 @@ export async function createBench(variant: Variant, options: Pick<RunOptions, 'o
     }
   }
 
+  /** Dove gira il modello secondo Ollama: quota in GPU e memoria con cui è caricato; null se non si può sapere. */
+  async function execution(model: string): Promise<{ gpuShare: number | null; loadedCtx: number | null }> {
+    const loaded = (await client.loadedModels().catch(() => [])).find((m) => m.name === model || m.name === `${model}:latest`)
+    return { gpuShare: loaded && loaded.size > 0 ? Math.round((loaded.sizeVram / loaded.size) * 100) / 100 : null, loadedCtx: loaded?.contextLength ?? null }
+  }
+
   return {
     open,
     say,
+    execution,
     /** Le scelte effettive: i predefiniti del ruolo più quelle indicate. */
     choices: (choices?: RoleChoices): RoleChoices => resolveChoices(variant.role, choices),
     close(): void {

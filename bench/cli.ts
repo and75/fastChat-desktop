@@ -28,6 +28,7 @@ const HELP = `Banco di prova dei ruoli di FastChat
   --reps <n>            ripetizioni di ogni caso (predefinito: 1)
   --think <role|on|off> ragionamento: come lo fissa il ruolo, sempre acceso, sempre spento (predefinito: role)
   --num-ctx <n>         memoria della conversazione in token (predefinito: 16384)
+  --gpu <auto|off>      auto: decide Ollama; off: GPU bloccata, tutto su CPU (predefinito: auto)
   --variant <cartella>  prova una variante salvata invece dei testi del repository
   --judge-model <id>    modello Anthropic che giudica le risposte (predefinito: claude-opus-5-5)
   --no-judge            solo misure e controlli a regole fisse, anche se c'è una chiave Anthropic
@@ -94,6 +95,7 @@ async function main(): Promise<void> {
       reps: { type: 'string', default: '1' },
       think: { type: 'string', default: 'role' },
       'num-ctx': { type: 'string', default: '16384' },
+      gpu: { type: 'string', default: 'auto' },
       variant: { type: 'string' },
       'judge-model': { type: 'string', default: 'claude-opus-5-5' },
       'no-judge': { type: 'boolean', default: false },
@@ -116,6 +118,7 @@ async function main(): Promise<void> {
     return
   }
   if (!['role', 'on', 'off'].includes(values.think)) fail(`--think vuole role, on oppure off (ricevuto: ${values.think})`)
+  if (!['auto', 'off'].includes(values.gpu)) fail(`--gpu vuole auto oppure off (ricevuto: ${values.gpu})`)
   const reps = Number(values.reps)
   const numCtx = Number(values['num-ctx'])
   const rounds = Number(values.rounds)
@@ -128,13 +131,13 @@ async function main(): Promise<void> {
   const cases = loadCases(role, values.cases?.split(',').map((s) => s.trim()).filter(Boolean))
   const models = values.models?.split(',').map((s) => s.trim()).filter(Boolean) ?? (baseline.role.mind?.model ? [baseline.role.mind.model] : [])
   if (models.length === 0) fail('Indica almeno un modello con --models: il ruolo non ne consiglia uno.')
-  const options: RunOptions = { ollamaUrl: values.url ?? process.env.OLLAMA_URL ?? 'http://127.0.0.1:11434', models, reps, think: values.think as RunOptions['think'], numCtx }
+  const options: RunOptions = { ollamaUrl: values.url ?? process.env.OLLAMA_URL ?? 'http://127.0.0.1:11434', models, reps, think: values.think as RunOptions['think'], numCtx, gpu: values.gpu as RunOptions['gpu'] }
 
   const perVariant = models.length * reps * cases.length
   const tests = models.length * reps * cases.filter((c) => c.split === 'test').length
   const total = perVariant + (rounds > 0 ? tests + rounds * perVariant : 0)
   console.log(`Ruolo ${role} · variante «${baseline.name}» · ${cases.length} casi × ${models.length} modelli × ${reps} ripetizioni = ${perVariant} esecuzioni per variante`)
-  console.log(`Ollama: ${options.ollamaUrl} · ragionamento: ${options.think} · memoria: ${numCtx}`)
+  console.log(`Ollama: ${options.ollamaUrl} · ragionamento: ${options.think} · memoria: ${numCtx} · GPU: ${options.gpu === 'off' ? 'bloccata, solo CPU' : 'decide Ollama'}`)
   const judging = !values['no-judge'] && hasAnthropicKey()
   console.log(judging ? `Giudice: ${values['judge-model']} (richieste, istruzioni del ruolo e risposte dei modelli vengono inviate ad Anthropic)` : values['no-judge'] ? 'Giudice: disattivato' : 'Giudice: nessuno — manca ANTHROPIC_API_KEY; eseguo solo misure e controlli a regole fisse')
   if (rounds > 0 && !judging) fail('Il ciclo di correzione (--rounds) ha bisogno di Claude: imposta ANTHROPIC_API_KEY e non usare --no-judge.')
@@ -226,7 +229,7 @@ async function main(): Promise<void> {
     if (diff) writeFileSync(join(out, 'proposal.diff'), diff)
     notes.push(`Per portare la variante migliore nei sorgenti del repository: npm run bench -- --apply ${out}${diff ? ' (le differenze sono in proposal.diff)' : ''}`)
   }
-  writeFileSync(join(out, 'report.md'), buildReport({ role, startedAt, options: { models, reps, think: options.think, numCtx, judge: claude && !judgeFailure ? claude.model : null, rounds }, results: outcome.results, notes }))
+  writeFileSync(join(out, 'report.md'), buildReport({ role, startedAt, options: { models, reps, think: options.think, numCtx, gpu: options.gpu, judge: claude && !judgeFailure ? claude.model : null, rounds }, results: outcome.results, notes }))
   if (claude) console.log(`Anthropic: ${claude.usage.calls} richieste, ${claude.usage.input} token in ingresso, ${claude.usage.output} in uscita`)
   for (const note of notes) console.log(`- ${note}`)
   console.log(`\nRapporto: ${join(out, 'report.md')}`)
