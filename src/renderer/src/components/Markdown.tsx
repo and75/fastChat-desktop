@@ -1,4 +1,4 @@
-import { memo, useRef } from 'react'
+import { isValidElement, memo, useRef } from 'react'
 import { t } from '@shared/i18n'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import { normalizeMath } from '@shared/math'
@@ -9,6 +9,20 @@ import remarkMath from 'remark-math'
 import { useCopy } from './CopyButton'
 import { CheckIcon, CopyIcon } from './icons'
 
+/** Linguaggi di un blocco che contiene testo, non codice: le righe lunghe vanno a capo. */
+const PROSE = new Set(['text', 'txt', 'plaintext', 'plain', 'none', 'markdown', 'md', 'prompt'])
+
+/**
+ * Un blocco senza linguaggio (o dichiarato come testo) contiene di solito prosa: un prompt, una lettera, un
+ * messaggio da copiare. Lì le righe vanno a capo; il codice vero conserva le sue righe e scorre in orizzontale.
+ */
+function isProse(children: React.ReactNode): boolean {
+  const code = Array.isArray(children) ? children.find((c) => isValidElement(c)) : children
+  const className = isValidElement<{ className?: string }>(code) ? (code.props.className ?? '') : ''
+  const language = /language-([\w+-]+)/.exec(className)?.[1]?.toLowerCase()
+  return !language || PROSE.has(language)
+}
+
 /** Blocco di codice con pulsante «Copia» in alto a destra (visibile al passaggio del mouse o col focus). */
 function CodeBlock({ children }: { children?: React.ReactNode }): React.JSX.Element {
   const pre = useRef<HTMLPreElement>(null)
@@ -17,7 +31,9 @@ function CodeBlock({ children }: { children?: React.ReactNode }): React.JSX.Elem
   const text = (): string => (pre.current?.querySelector('code') ?? pre.current)?.textContent?.replace(/\n$/, '') ?? ''
   return (
     <div className="group/code relative">
-      <pre ref={pre}>{children}</pre>
+      <pre ref={pre} data-wrap={isProse(children) ? '' : undefined}>
+        {children}
+      </pre>
       <button
         type="button"
         aria-label={copied ? t('copy.codeDone') : t('copy.code')}

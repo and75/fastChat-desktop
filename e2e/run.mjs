@@ -33,6 +33,8 @@ const fake = await startFakeOllama([
     delayMs: 60,
     chunks: [
       { content: 'Ecco **il codice**:\n\n```ts\nconst x = 1\n```\n\n' },
+      // un blocco senza linguaggio: testo da copiare (un prompt), con una riga molto lunga
+      { content: '```\n' + 'Sei un analista esperto e scrivi per chi non ha letto il testo. '.repeat(8).trim() + '\n```\n\n' },
       ...Array.from({ length: 60 }, (_, i) => ({ content: `parola${i} ` }))
     ]
   }
@@ -270,10 +272,15 @@ try {
     const saved = page.getByTestId('message-assistant').last()
 
     // blocco di codice: pulsante che compare al passaggio del mouse, copia solo il codice
-    await saved.locator('pre').hover()
-    await saved.getByRole('button', { name: 'Copia il codice' }).click()
+    await saved.locator('pre').first().hover()
+    await saved.getByRole('button', { name: 'Copia il codice' }).first().click()
     await saved.getByRole('button', { name: 'Codice copiato' }).waitFor()
     assert.equal(await readClipboard(), 'const x = 1')
+    // un blocco senza linguaggio è testo (un prompt): le righe lunghe vanno a capo, niente scorrimento orizzontale;
+    // il codice vero conserva le sue righe
+    const blocks = await saved.locator('pre').evaluateAll((els) => els.map((el) => ({ wrap: el.hasAttribute('data-wrap'), overflow: el.scrollWidth > el.clientWidth + 1, lines: Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)) })))
+    assert.deepEqual(blocks.map((b) => [b.wrap, b.overflow]), [[false, false], [true, false]])
+    assert.ok(blocks[1].lines > 2, 'la riga lunga occupa più righe')
 
     // risposta intera: testo Markdown originale, non quello reso
     await saved.getByRole('button', { name: 'Copia la risposta' }).click()
