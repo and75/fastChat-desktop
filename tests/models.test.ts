@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { benchmarkConfigs, pickBest, runBenchmark } from '../src/main/benchmark'
+import { benchmarkConfigs, contextHolds, contextLadder, pickBest, pickCtxLimit, runBenchmark } from '../src/main/benchmark'
 import { createChatService } from '../src/main/chat'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
 import { addMessage, createConversation, getModelSetting, listModelSettings, removeModelSetting, saveModelSetting } from '../src/main/db/repo'
@@ -15,6 +15,8 @@ beforeAll(async () => {
   fake = await startFakeOllama([
     // GPU dedicata: molto più veloce in GPU
     { name: 'veloce-gpu', capabilities: ['completion'], gpu: true, cpuTps: 8, gpuTps: 40, modelInfo: { 'fake.block_count': 32 } },
+    // sta in GPU solo fino a 8192 token di memoria: oltre, Ollama lo divide con la CPU
+    { name: 'stretto', capabilities: ['completion'], gpu: true, cpuTps: 8, gpuTps: 40, gpuCtxLimit: 8192, modelInfo: { 'fake.block_count': 32 } },
     // GPU integrata: la CPU è più veloce
     { name: 'igpu', capabilities: ['completion'], gpu: true, cpuTps: 12, gpuTps: 9, modelInfo: { 'fake.block_count': 32 } },
     // nessuna GPU per Ollama (Vulkan spento)
@@ -54,6 +56,63 @@ describe('test CPU/GPU', () => {
     const sent = fake.requests.filter((q) => q.path === '/api/chat').slice(-3).map((q) => (q.body as { options: Record<string, number> }).options)
     expect(sent.map((o) => o.num_gpu)).toEqual([0, 999, 16])
     expect(sent.every((o) => o.temperature === 0 && o.seed === 42)).toBe(true)
+  })
+
+  it('memoria: scala di prova, quando una memoria regge, e il tetto con l\'abbattimento di sicurezza', () => {
+    expect(contextLadder(null)).toEqual([])
+    expect(contextLadder(2048)).toEqual([])
+    expect(contextLadder(16384)).toEqual([4096, 8192, 16384])
+    // non una potenza di due: ci si ferma all'ultima che ci sta
+    expect(contextLadder(20000)).toEqual([4096, 8192, 16384])
+    const base = { evalTps: 40, vramShare: 1 }
+    expect(contextHolds(base, { evalTps: 39, vramShare: 1 })).toBe(true)
+    // entro il 15% di velocità e i 5 punti di GPU regge ancora
+    expect(contextHolds(base, { evalTps: 34.5, vramShare: 0.96 })).toBe(true)
+    expect(contextHolds(base, { evalTps: 33, vramShare: 1 })).toBe(false)
+    expect(contextHolds(base, { evalTps: 40, vramShare: 0.8 })).toBe(false)
+    expect(contextHolds(base, { evalTps: 40, vramShare: 1, error: 'memoria esaurita' })).toBe(false)
+    expect(contextHolds(base, { evalTps: null, vramShare: 1 })).toBe(false)
+    // solo CPU, o quota ignota: conta la velocità
+    expect(contextHolds({ evalTps: 8, vramShare: null }, { evalTps: 7.5, vramShare: null })).toBe(true)
+    const run = (numCtx: number, ok: boolean) => ({ numCtx, ok, promptTps: null, evalTps: 1, loadMs: null, vramShare: null })
+    expect(pickCtxLimit([])).toBeNull()
+    // reggono tutte: nessuna riduzione, il tetto è la più grande provata
+    expect(pickCtxLimit([run(4096, true), run(8192, true), run(16384, true)])).toBe(16384)
+    // cede a 32768: l'ultima che regge è 16384, il tetto sta un gradino sotto
+    expect(pickCtxLimit([run(4096, true), run(8192, true), run(16384, true), run(32768, false)])).toBe(8192)
+    // cede subito: resta la memoria della prima fase, e mai sotto il minimo consigliato per il modello
+    expect(pickCtxLimit([run(4096, false)])).toBe(2048)
+    expect(pickCtxLimit([run(4096, false)], 4096)).toBe(4096)
+    expect(pickCtxLimit([run(4096, true), run(8192, false)], 8192)).toBe(8192)
+  })
+
+  it('seconda fase: la configurazione scelta con memorie crescenti, fino alla prima che rallenta', async () => {
+    const ollama = createOllamaClient(() => fake.url)
+    const steps: string[] = []
+    // «stretto» sta in GPU fino a 8192 token; oltre, Ollama lo divide e la scrittura torna quella della CPU
+    const r = await runBenchmark(ollama, 'stretto', await ollama.showModel('stretto'), (s, n, label) => steps.push(`${s}/${n} ${label}`), undefined, { maxCtx: 65536, minCtx: 2048 })
+    expect(r.best).toBe(999)
+    // tre configurazioni, poi la memoria: si ferma a 16384, la prima che non regge (32768 e 65536 non si provano)
+    expect(steps).toEqual(['1/8 cpu', '2/8 gpu', '3/8 half:16', '4/8 ctx:4096', '5/8 ctx:8192', '6/8 ctx:16384'])
+    expect(r.contextRuns.map((x) => [x.numCtx, x.ok, x.evalTps, x.vramShare])).toEqual([
+      [4096, true, 40, 1],
+      [8192, true, 40, 1],
+      [16384, false, 8, 0.4]
+    ])
+    // l'ultima che regge è 8192: il tetto sta un gradino sotto
+    expect(r.ctxLimit).toBe(4096)
+    // le prove della memoria usano la configurazione scelta e la memoria in prova
+    const sent = fake.requests.filter((q) => q.path === '/api/chat').slice(-3).map((q) => (q.body as { options: Record<string, number> }).options)
+    expect(sent.map((o) => [o.num_gpu, o.num_ctx])).toEqual([[999, 4096], [999, 8192], [999, 16384]])
+
+    // un modello che regge fino in fondo: nessuna riduzione
+    const wide = await runBenchmark(ollama, 'veloce-gpu', await ollama.showModel('veloce-gpu'), () => undefined, undefined, { maxCtx: 8192 })
+    expect(wide.contextRuns.map((x) => x.ok)).toEqual([true, true])
+    expect(wide.ctxLimit).toBe(8192)
+    // senza un massimo da provare (come prima del test esteso) la seconda fase non parte e non c'è tetto
+    const plain = await runBenchmark(ollama, 'veloce-gpu', await ollama.showModel('veloce-gpu'), () => undefined)
+    expect(plain.contextRuns).toEqual([])
+    expect(plain.ctxLimit).toBeNull()
   })
 
   it('GPU integrata: vince la CPU', async () => {

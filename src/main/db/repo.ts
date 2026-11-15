@@ -483,12 +483,12 @@ export async function ensureRoles(db: Db): Promise<void> {
 // ---------------------------------------------------------------- configurazione per modello
 
 export async function listModelSettings(db: Db): Promise<ModelSetting[]> {
-  return (await db.select().from(modelSettings)).map((r) => ({ ...r, benchmark: r.benchmark ?? null }))
+  return (await db.select().from(modelSettings)).map((r) => ({ ...r, benchmark: r.benchmark ?? null, contextRuns: r.contextRuns ?? null }))
 }
 
 export async function getModelSetting(db: Db, model: string): Promise<ModelSetting | null> {
   const [row] = await db.select().from(modelSettings).where(eq(modelSettings.model, model))
-  return row ? { ...row, benchmark: row.benchmark ?? null } : null
+  return row ? { ...row, benchmark: row.benchmark ?? null, contextRuns: row.contextRuns ?? null } : null
 }
 
 /** Crea o aggiorna la configurazione di un modello (solo i campi indicati). */

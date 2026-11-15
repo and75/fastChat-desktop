@@ -223,7 +223,7 @@ export const it = {
   'bench.run': 'Esegui test CPU/GPU',
   'bench.repeat': 'Ripeti il test',
   'bench.progress': 'Test {step}/{steps}: {label}…',
-  'bench.title': 'Prova solo CPU, tutto su GPU e metà dei layer con la stessa domanda, misura la velocità e sceglie la più veloce (1–2 minuti)',
+  'bench.title': 'Prova solo CPU, tutto su GPU e metà dei layer con la stessa domanda e sceglie la più veloce; poi prova memorie crescenti finché la velocità regge, per fissare la memoria consigliata (2–4 minuti)',
   'bench.label.cpu': 'Solo CPU',
   'bench.label.gpu': 'Tutto su GPU',
   'bench.label.half': 'Metà su GPU ({n} layer)',
@@ -931,7 +931,15 @@ export const it = {
   'ctx.request.role.system': 'Sistema',
   'ctx.request.role.user': 'Utente',
   'ctx.request.role.assistant': 'Assistente',
-  'ctx.request.chars': '{n} caratteri'
+  'ctx.request.chars': '{n} caratteri',
+  'suggest.limited': ' Il test sul modello la limita a {limit} token: oltre, la risposta rallenta.',
+  'param.numCtx.aboveLimit': 'Oltre {limit} token il test su questo modello ha misurato un rallentamento.',
+  'bench.label.ctx': 'Memoria {n}',
+  'bench.ctx.title': 'Memoria',
+  'bench.ctx.slow': 'rallenta',
+  'bench.ctx.limit': 'Memoria consigliata: fino a {limit} token.',
+  'bench.ctx.limit.why': ' Con {failed} la scrittura scende a {tps} tok/s ({share} in GPU); il tetto sta un gradino sotto l\'ultima memoria che regge.',
+  'bench.ctx.limit.none': ' Nessun rallentamento misurato fino a questo valore.'
 } as const satisfies Record<string, string>
 
 export type Key = keyof typeof it

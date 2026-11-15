@@ -23,6 +23,8 @@ export interface FakeModel {
   cpuTps?: number
   gpuTps?: number
   gpu?: boolean
+  /** Memoria (num_ctx) oltre la quale il modello non sta più tutto in GPU: rallenta e Ollama lo divide. */
+  gpuCtxLimit?: number
   /** done_reason dell'ultimo chunk: 'length' simula una risposta tagliata al limite di token. Default 'stop'. */
   doneReason?: 'stop' | 'length'
   /** Ritardo tra un chunk e l'altro, ms. */
@@ -81,7 +83,7 @@ export function fakeEmbedding(text: string): number[] {
 export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> {
   const requests: FakeOllama['requests'] = []
   /** Modelli "caricati" e il num_gpu dell'ultima richiesta (per /api/ps). */
-  const loaded = new Map<string, number | undefined>()
+  const loaded = new Map<string, { numGpu: number | undefined; numCtx: number | undefined }>()
   const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
   const server: Server = createServer(async (req, res) => {
@@ -102,12 +104,14 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
 
     if (req.url === '/api/ps') {
       return json(res, 200, {
-        models: [...loaded.entries()].map(([name, numGpu]) => {
+        models: [...loaded.entries()].map(([name, { numGpu, numCtx }]) => {
           const m = models.find((x) => x.name === name)
+          const spilled = !!m?.gpuCtxLimit && (numCtx ?? 0) > m.gpuCtxLimit
           const size = m?.size ?? 2_000_000_000
           const layers = Number(m?.modelInfo?.['fake.block_count'] ?? 32)
-          const share = m?.gpu && numGpu !== undefined && numGpu > 0 ? Math.min(1, numGpu / layers) : m?.gpu && numGpu === undefined ? 1 : 0
-          return { name, size, size_vram: Math.round(size * share), context_length: 2048 }
+          const full = m?.gpu && numGpu !== undefined && numGpu > 0 ? Math.min(1, numGpu / layers) : m?.gpu && numGpu === undefined ? 1 : 0
+          const share = spilled ? full * 0.4 : full
+          return { name, size, size_vram: Math.round(size * share), context_length: numCtx ?? 2048 }
         })
       })
     }
@@ -154,9 +158,11 @@ export async function startFakeOllama(models: FakeModel[]): Promise<FakeOllama> 
     if (req.url === '/api/chat') {
       if (!model) return json(res, 404, { error: `model '${modelName}' not found` })
       const numGpu = (body as { options?: { num_gpu?: number } }).options?.num_gpu
-      loaded.set(model.name, numGpu)
+      const numCtx = (body as { options?: { num_ctx?: number } }).options?.num_ctx
+      loaded.set(model.name, { numGpu, numCtx })
       const onGpu = !!model.gpu && numGpu !== 0
-      const tpsNow = onGpu ? (model.gpuTps ?? 20) : (model.cpuTps ?? 10)
+      const spilled = onGpu && !!model.gpuCtxLimit && (numCtx ?? 0) > model.gpuCtxLimit
+      const tpsNow = spilled ? (model.cpuTps ?? 10) : onGpu ? (model.gpuTps ?? 20) : (model.cpuTps ?? 10)
       const think = (body as { think?: boolean }).think === true
       const format = (body as { format?: unknown }).format
       let chunks = model.chunks ?? [{ thinking: 'Ci penso. ' }, { content: 'Ciao' }, { content: ' mondo!' }]

@@ -18,6 +18,7 @@ import type {
   BasePurpose,
   ContextOrder,
   ContextRequest,
+  ContextRun,
   SystemSlot,
   RoleOrigin,
   RoleMeta
@@ -158,6 +159,8 @@ export const modelSettings = sqliteTable('model_settings', {
   digest: text('digest'),
   numGpu: integer('num_gpu'),
   benchmark: text('benchmark', { mode: 'json' }).$type<BenchmarkRun[]>(),
+  contextRuns: text('context_runs', { mode: 'json' }).$type<ContextRun[]>(),
+  ctxLimit: integer('ctx_limit'),
   benchmarkedAt: integer('benchmarked_at'),
   gpuAvailable: integer('gpu_available', { mode: 'boolean' }),
   dismissed: integer('dismissed', { mode: 'boolean' }).notNull().default(false)

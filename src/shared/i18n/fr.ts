@@ -225,7 +225,7 @@ export const fr: Record<Key, string> = {
   'bench.run': 'Lancer le test CPU/GPU',
   'bench.repeat': 'Refaire le test',
   'bench.progress': 'Test {step}/{steps} : {label}…',
-  'bench.title': 'Essaie CPU seulement, tout sur GPU et la moitié des couches avec la même question, mesure la vitesse et choisit la plus rapide (1–2 minutes)',
+  'bench.title': 'Essaie CPU seul, tout sur GPU et la moitié des couches avec la même question et choisit le plus rapide ; essaie ensuite des mémoires croissantes tant que la vitesse tient, pour fixer la mémoire conseillée (2–4 minutes)',
   'bench.label.cpu': 'CPU seulement',
   'bench.label.gpu': 'Tout sur GPU',
   'bench.label.half': 'Moitié sur GPU ({n} couches)',
@@ -931,5 +931,13 @@ export const fr: Record<Key, string> = {
   'ctx.request.role.system': 'Système',
   'ctx.request.role.user': 'Utilisateur',
   'ctx.request.role.assistant': 'Assistant',
-  'ctx.request.chars': '{n} caractères'
+  'ctx.request.chars': '{n} caractères',
+  'suggest.limited': ' Le test du modèle la limite à {limit} tokens : au-delà, la réponse ralentit.',
+  'param.numCtx.aboveLimit': 'Au-delà de {limit} tokens, le test de ce modèle a mesuré un ralentissement.',
+  'bench.label.ctx': 'Mémoire {n}',
+  'bench.ctx.title': 'Mémoire',
+  'bench.ctx.slow': 'ralentit',
+  'bench.ctx.limit': 'Mémoire conseillée : jusqu\'à {limit} tokens.',
+  'bench.ctx.limit.why': ' À {failed}, l\'écriture tombe à {tps} tok/s ({share} sur le GPU) ; le plafond se situe un cran sous la dernière mémoire qui tient.',
+  'bench.ctx.limit.none': ' Aucun ralentissement mesuré jusqu\'à cette valeur.'
 }

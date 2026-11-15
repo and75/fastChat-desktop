@@ -101,7 +101,7 @@ describe('banco di prova: esecuzione con il codice dell\'app', () => {
     expect(vague.error).toBeNull()
     // il ruolo fissa ragionamento e temperatura; la memoria è quella chiesta al banco
     // …e Ollama dice dove ha girato il modello: qui il modello finto non ha GPU
-    expect(vague.settings).toEqual({ think: true, numCtx: 8192, temperature: 0.6, gpuShare: 0, loadedCtx: 2048 })
+    expect(vague.settings).toEqual({ think: true, numCtx: 8192, temperature: 0.6, gpuShare: 0, loadedCtx: 8192 })
     // due battute: la domanda dell'Esperto, poi il prompt dopo la risposta dell'utente
     expect(vague.turns.map((t) => t.user)).toEqual([cases[0].request, cases[0].reply])
     expect(vague.turns[0].answer).toBe('Per chi è il racconto?')
@@ -181,7 +181,7 @@ describe('banco di prova: esecuzione con il codice dell\'app', () => {
     const report = buildReport({ role: 'prompt.it', startedAt: 'x', options: { models: ['grafico'], reps: 1, think: 'role', numCtx: 4096, gpu: 'off', judge: null, rounds: 0 }, results: off, notes: [] })
     expect(report).toContain('GPU: bloccata (solo CPU)')
     expect(report).toContain('| 100% CPU |')
-    expect(report).toContain('esecuzione: 100% CPU (caricato con memoria 2048)')
+    expect(report).toContain('esecuzione: 100% CPU (caricato con memoria 4096)')
   }, 60_000)
 
   it('ragionamento forzato; un modello che non c\'è dà un errore sul caso, non ferma il banco', async () => {

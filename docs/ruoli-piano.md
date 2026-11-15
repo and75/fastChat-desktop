@@ -564,6 +564,14 @@ Scoperte durante il lavoro:
 
 ## Cosa resta aperto dopo la seconda consegna
 
+- **Test sul modello, seconda fase: la memoria** (dopo la 0.2.0, non rilasciato). Scelta CPU/GPU a 2.048 token
+  come prima; poi la configurazione scelta si riprova con memorie crescenti (4.096, 8.192… fino a quella che
+  l'app consiglierebbe dalla RAM) e ci si ferma alla prima che rallenta la scrittura di oltre il 15% o toglie
+  più di 5 punti di GPU. Il tetto (`ctxLimit`) sta un gradino sotto l'ultima memoria che regge, mai sotto il
+  minimo del modello; limita la memoria consigliata (`suggestNumCtx`) e compare in Impostazioni → Modelli e
+  come avviso sul cursore. Codice in `src/main/benchmark.ts`, dati in `model_settings` (migrazione 0019).
+  Verificato solo con l'Ollama finto: le soglie (15%, 5 punti) vanno confermate sulla macchina dell'utente.
+  I modelli già testati vanno ritestati per avere il tetto.
 - **Esperto di prompt engineering, testi in revisione** (dopo la 0.2.0): alla prima prova con Gemma 4 i prompt
   prodotti erano rigidi (etichette, ordini secchi, delimitatori inutili). Causa: tecniche ed esempi scritti a
   tavolino. Riscritti in italiano partendo dalle guide ufficiali di Anthropic, Google (Gemini e Gemma) e OpenAI:

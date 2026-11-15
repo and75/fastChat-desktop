@@ -6,6 +6,8 @@ import type { OllamaClient } from './ollama'
 export interface CalibrateDeps {
   ollama: OllamaClient
   system(): SystemInfo | Promise<SystemInfo>
+  /** Tetto della memoria misurato dal test sul modello, se è stato fatto. */
+  ctxLimit?(model: string): Promise<number | null>
 }
 
 /** Campi che la calibrazione riempie. */
@@ -20,7 +22,7 @@ export async function suggestFor(deps: CalibrateDeps, model: string): Promise<Su
   try {
     const [caps, models] = await Promise.all([deps.ollama.showModel(model), deps.ollama.listModels()])
     const modelBytes = models.find((m) => m.name === model)?.size ?? null
-    return suggestSettings({ system: await deps.system(), modelBytes, caps })
+    return suggestSettings({ system: await deps.system(), modelBytes, caps, ctxLimit: (await deps.ctxLimit?.(model).catch(() => null)) ?? null })
   } catch {
     return null
   }

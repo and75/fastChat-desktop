@@ -689,7 +689,10 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
 
   // Stessi calcoli del main: ciò che si mostra come "suggerito" è ciò che la calibrazione scriverebbe.
   const effective = resolveSettings(conversation, caps)
-  const input = { system, modelBytes, caps: caps ?? null }
+  const runSetting = useModels((s) => s.modelSettings[conversation.model])
+  // Il tetto misurato dal test sul modello entra nel suggerimento, come nel main.
+  const ctxLimit = runSetting?.ctxLimit ?? null
+  const input = { system, modelBytes, caps: caps ?? null, ctxLimit }
   const suggested = suggestSettings(input)
   const machineCtx = suggestNumCtx(input)
   const ctxSteps = contextSteps(maxNumCtx(caps))
@@ -697,7 +700,6 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
   const allSuggested =
     effective.temperature === suggested.temperature && effective.topP === suggested.topP && effective.numCtx === suggested.numCtx
 
-  const runSetting = useModels((s) => s.modelSettings[conversation.model])
   const runInfo = useModels((s) => s.models.find((m) => m.name === conversation.model))
   const bestRun = runSetting?.benchmark?.find((r) => r.numGpu === runSetting.numGpu)
   const runSummary =
@@ -807,7 +809,9 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
           warning={(v) =>
             v < minCtx
               ? t('param.numCtx.belowMin', { min: fmt(minCtx) })
-              : null
+              : ctxLimit && v > ctxLimit
+                ? t('param.numCtx.aboveLimit', { limit: fmt(ctxLimit) })
+                : null
           }
           onChange={(v) => save({ numCtx: v })}
         />

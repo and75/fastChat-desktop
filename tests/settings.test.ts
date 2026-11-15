@@ -72,6 +72,18 @@ describe('memoria della conversazione suggerita dalla RAM', () => {
     expect(suggestNumCtx({ system: mac(16), modelBytes: null, caps })).toBeNull()
   })
 
+  it('tetto misurato dal test sul modello: la memoria consigliata non lo supera, e lo si dice', () => {
+    const input = { system: pc(32), modelBytes: 5 * GB, caps: big(262_144) }
+    expect(suggestNumCtx(input)).toBe(131_072)
+    expect(suggestNumCtx({ ...input, ctxLimit: 16384 })).toBe(16384)
+    // un tetto più alto di ciò che la RAM consente non alza il suggerimento
+    expect(suggestNumCtx({ ...input, ctxLimit: 262_144 })).toBe(131_072)
+    expect(suggestNumCtx({ ...input, ctxLimit: null })).toBe(131_072)
+    expect(suggestSettings({ ...input, ctxLimit: 16384 }).numCtx).toBe(16384)
+    expect(describeSuggestion({ ...input, ctxLimit: 16384 })).toBe('Calcolato su 32 GB di RAM e un modello da 5 GB. Il test sul modello la limita a 16.384 token: oltre, la risposta rallenta.')
+    expect(describeSuggestion({ ...input, ctxLimit: 262_144 })).toBe('Calcolato su 32 GB di RAM e un modello da 5 GB.')
+  })
+
   it('describeSuggestion', () => {
     expect(describeSuggestion({ system: mac(16), modelBytes: 5 * GB, caps })).toBe('Calcolato su 16 GB di RAM unificata e un modello da 5 GB.')
     expect(describeSuggestion({ system: pc(32), modelBytes: 5 * GB, caps })).toBe('Calcolato su 32 GB di RAM e un modello da 5 GB.')

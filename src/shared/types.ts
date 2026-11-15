@@ -521,6 +521,19 @@ export interface BenchmarkRun {
   error?: string
 }
 
+/** Una prova del test con una data memoria (num_ctx), nella configurazione CPU/GPU scelta. */
+export interface ContextRun {
+  numCtx: number
+  promptTps: number | null
+  evalTps: number | null
+  loadMs: number | null
+  /** Quota del modello finita davvero in GPU (da /api/ps), 0–1. */
+  vramShare: number | null
+  /** La velocità regge e il modello resta dov'era: la memoria è utilizzabile senza penalità. */
+  ok: boolean
+  error?: string
+}
+
 /** Configurazione di esecuzione di un modello, salvata nel database. */
 export interface ModelSetting {
   model: string
@@ -529,6 +542,10 @@ export interface ModelSetting {
   /** Layer sulla GPU inviati come num_gpu; null = automatico (decide Ollama). */
   numGpu: number | null
   benchmark: BenchmarkRun[] | null
+  /** Seconda fase del test: la stessa prova con memorie crescenti, fino alla prima che rallenta. */
+  contextRuns: ContextRun[] | null
+  /** Tetto della memoria suggerita, dal test: un gradino sotto l'ultima memoria che regge. null = nessun tetto. */
+  ctxLimit: number | null
   benchmarkedAt: number | null
   /** Ollama vede una GPU utilizzabile per questo modello (dal test); null = non si sa. */
   gpuAvailable: boolean | null

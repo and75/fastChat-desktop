@@ -224,7 +224,7 @@ export const en: Record<Key, string> = {
   'bench.run': 'Run CPU/GPU test',
   'bench.repeat': 'Repeat the test',
   'bench.progress': 'Test {step}/{steps}: {label}…',
-  'bench.title': 'Tries CPU only, all on GPU and half the layers with the same question, measures speed and picks the fastest (1–2 minutes)',
+  'bench.title': 'Tries CPU only, all on GPU and half the layers with the same question and picks the fastest; then tries growing memory sizes while speed holds, to set the recommended memory (2–4 minutes)',
   'bench.label.cpu': 'CPU only',
   'bench.label.gpu': 'All on GPU',
   'bench.label.half': 'Half on GPU ({n} layers)',
@@ -932,5 +932,13 @@ export const en: Record<Key, string> = {
   'ctx.request.role.system': 'System',
   'ctx.request.role.user': 'User',
   'ctx.request.role.assistant': 'Assistant',
-  'ctx.request.chars': '{n} characters'
+  'ctx.request.chars': '{n} characters',
+  'suggest.limited': ' The model test limits it to {limit} tokens: beyond that, answers slow down.',
+  'param.numCtx.aboveLimit': 'Beyond {limit} tokens the test on this model measured a slowdown.',
+  'bench.label.ctx': 'Memory {n}',
+  'bench.ctx.title': 'Memory',
+  'bench.ctx.slow': 'slows down',
+  'bench.ctx.limit': 'Recommended memory: up to {limit} tokens.',
+  'bench.ctx.limit.why': ' At {failed} writing drops to {tps} tok/s ({share} on GPU); the ceiling sits one step below the last memory that holds.',
+  'bench.ctx.limit.none': ' No slowdown measured up to this value.'
 }

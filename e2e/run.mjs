@@ -1492,6 +1492,10 @@ try {
     assert.equal(saved.numGpu, 0)
     assert.equal(saved.gpuAvailable, false)
     assert.deepEqual(saved.benchmark.map((r) => r.numGpu), [0, 999])
+    // seconda fase: la stessa configurazione con memorie crescenti; qui nessuna rallenta, il tetto è la più grande provata
+    assert.ok(saved.contextRuns.length >= 1 && saved.contextRuns.every((r) => r.ok))
+    assert.equal(saved.contextRuns[0].numCtx, 4096)
+    assert.equal(saved.ctxLimit, saved.contextRuns.at(-1).numCtx)
     // le richieste successive del modello portano num_gpu
     const box = page.getByRole('textbox', { name: 'Messaggio' })
     await box.fill('Ciao')
@@ -1510,6 +1514,8 @@ try {
     assert.equal(await manager.getByTestId('model-row').count(), 7) // + embeddinggemma, scaricato per la memoria
     const llama = manager.getByTestId('model-row').filter({ hasText: 'llama3.2:3b' })
     assert.equal(await llama.getByTestId('benchmark-table').locator('tbody tr').count(), 2)
+    await llama.getByTestId('benchmark-ctx-limit').filter({ hasText: 'Memoria consigliata: fino a' }).waitFor()
+    assert.ok((await llama.getByTestId('benchmark-context-table').locator('tbody tr').count()) >= 1)
     await page.screenshot({ path: join(root, 'test-results', 'e2e-models.png') })
     // esecuzione scelta a mano per un altro modello
     await manager.getByTestId('model-row').filter({ hasText: 'qwen3:4b' }).getByTestId('num-gpu-select').selectOption('gpu')

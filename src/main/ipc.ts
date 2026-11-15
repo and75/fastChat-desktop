@@ -22,7 +22,7 @@ import {
 } from '@shared/types'
 import { normalizeSteps } from '@shared/prompt'
 import { LANGUAGE_SETTINGS, resolveLocale, setLocale, t } from '@shared/i18n'
-import type { SystemInfo } from '@shared/settings'
+import { maxNumCtx, minNumCtx, suggestNumCtx, type SystemInfo } from '@shared/settings'
 import { calibrationPatch, type CalibrateDeps } from './calibrate'
 import { createChatService } from './chat'
 import { createRoleSession } from './roleSession'
@@ -37,6 +37,7 @@ import {
   getSettings,
   listConversations,
   listContextCalls,
+  getModelSetting,
   getContextRequest,
   listModelSettings,
   removeModelSetting,
@@ -119,7 +120,7 @@ const requireId = (id: unknown): string => {
 export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps): void {
   const watched = new WeakSet<WebContents>()
   const system = async (): Promise<SystemInfo> => systemInfo(getOllamaUrl(), (await getSettings(db)).kvCacheType)
-  const calibrate: CalibrateDeps = { ollama, system }
+  const calibrate: CalibrateDeps = { ollama, system, ctxLimit: async (model) => (await getModelSetting(db, model))?.ctxLimit ?? null }
   // Monitor del contesto: ogni chiamata registrata arriva a tutte le finestre.
   const contextLog = createContextLog(db, (call) => {
     for (const w of BrowserWindow.getAllWindows()) if (!w.webContents.isDestroyed()) w.webContents.send(IPC.contextCallAdded, call)
@@ -217,13 +218,25 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   handle(IPC.modelsBenchmark, async (e, name: string) => {
     const model = requireId(name)
     const caps = await ollama.showModel(model).catch(() => null)
-    const digest = (await ollama.listModels().catch(() => [])).find((m) => m.name === model)?.digest ?? null
-    const result = await runBenchmark(ollama, model, caps, (step, steps, label) => {
-      if (!e.sender.isDestroyed()) e.sender.send(IPC.benchmarkProgress, { model, step, steps, label } satisfies BenchmarkProgress)
-    })
+    const info = (await ollama.listModels().catch(() => [])).find((m) => m.name === model)
+    const digest = info?.digest ?? null
+    // La memoria si prova fin dove l'app la suggerirebbe senza il test: dal calcolo sulla RAM, o il massimo del modello.
+    const maxCtx = suggestNumCtx({ system: await system(), modelBytes: info?.size ?? null, caps }) ?? maxNumCtx(caps)
+    const result = await runBenchmark(
+      ollama,
+      model,
+      caps,
+      (step, steps, label) => {
+        if (!e.sender.isDestroyed()) e.sender.send(IPC.benchmarkProgress, { model, step, steps, label } satisfies BenchmarkProgress)
+      },
+      undefined,
+      { maxCtx, minCtx: minNumCtx(caps) }
+    )
     return saveModelSetting(db, model, {
       numGpu: result.best,
       benchmark: result.runs,
+      contextRuns: result.contextRuns,
+      ctxLimit: result.ctxLimit,
       benchmarkedAt: Date.now(),
       gpuAvailable: result.gpuAvailable,
       digest,

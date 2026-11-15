@@ -59,7 +59,12 @@ export interface SuggestNumCtxInput {
   /** Dimensione del file del modello (pesi), da /api/tags. */
   modelBytes: number | null
   caps: ModelCapabilities | null
+  /** Tetto misurato dal test sul modello (un gradino sotto l'ultima memoria che non rallenta); assente = nessuno. */
+  ctxLimit?: number | null
 }
+
+/** Il valore entro il tetto del test, se c'è (mai sotto il minimo utilizzabile). */
+const withinLimit = (numCtx: number, ctxLimit: number | null | undefined): number => (ctxLimit ? Math.min(numCtx, Math.max(ctxLimit, MIN_NUM_CTX)) : numCtx)
 
 /** Potenza di 2 minore o uguale a n (n ≥ 1). */
 export const floorPow2 = (n: number): number => 2 ** Math.floor(Math.log2(n))
@@ -72,13 +77,14 @@ export const maxNumCtx = (caps: ModelCapabilities | null | undefined): number =>
  * Calcolo di massima dalla RAM: (RAM − pesi) ÷ costo per token, arrotondato alla potenza di 2
  * inferiore, tra il minimo consigliato (minNumCtx) e il massimo del modello. null se mancano RAM o modello.
  */
-export function suggestNumCtx({ system, modelBytes, caps }: SuggestNumCtxInput): number | null {
+export function suggestNumCtx({ system, modelBytes, caps, ctxLimit }: SuggestNumCtxInput): number | null {
   if (!system?.ramBytes || !modelBytes) return null
   // Nessuna quota prudenziale: tutta la RAM meno i pesi del modello. L'utente abbassa se serve.
   const forContext = system.ramBytes - modelBytes
   const perToken = (caps?.kvBytesPerToken ?? DEFAULT_KV_BYTES_PER_TOKEN) * KV_CACHE_SCALE[system.kvCacheType]
   const tokens = forContext > 0 ? floorPow2(forContext / perToken) : 0
-  return Math.max(MIN_NUM_CTX, minNumCtx(caps), Math.min(tokens, maxNumCtx(caps)))
+  // Il test sul modello può aver misurato che oltre una certa memoria la risposta rallenta: non la si supera.
+  return withinLimit(Math.max(MIN_NUM_CTX, minNumCtx(caps), Math.min(tokens, maxNumCtx(caps))), ctxLimit)
 }
 
 /** Riga per l'interfaccia: da dove viene il suggerimento. */
@@ -86,12 +92,16 @@ export function describeSuggestion(input: SuggestNumCtxInput): string {
   const gb = (b: number): string => `${Math.round(b / 1024 ** 3)} GB`
   if (!input.system?.ramBytes) return t('suggest.remote')
   if (!input.modelBytes) return t('suggest.noSize')
-  return t('suggest.computed', {
+  const computed = t('suggest.computed', {
     ram: gb(input.system.ramBytes),
     unified: input.system.unified ? t('suggest.unified') : '',
     model: gb(input.modelBytes),
     kv: input.system.kvCacheType === 'f16' ? '.' : t('suggest.kv', { type: input.system.kvCacheType })
   })
+  // Se il test sul modello ha abbassato il valore, lo si dice: il calcolo sulla RAM da solo darebbe di più.
+  const free = suggestNumCtx({ ...input, ctxLimit: null })
+  const capped = suggestNumCtx(input)
+  return free != null && capped != null && capped < free ? computed + t('suggest.limited', { limit: capped.toLocaleString('it-IT') }) : computed
 }
 
 // ---------------------------------------------------------------- riserva per la risposta
@@ -119,7 +129,7 @@ export interface SuggestedSettings {
  */
 export function suggestSettings(input: SuggestNumCtxInput): SuggestedSettings {
   const { caps } = input
-  const numCtx = suggestNumCtx(input) ?? Math.min(caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx, maxNumCtx(caps))
+  const numCtx = suggestNumCtx(input) ?? withinLimit(Math.min(caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx, maxNumCtx(caps)), input.ctxLimit)
   return {
     temperature: caps?.defaults.temperature ?? OLLAMA_DEFAULTS.temperature,
     topP: caps?.defaults.topP ?? OLLAMA_DEFAULTS.topP,
