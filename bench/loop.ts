@@ -8,7 +8,7 @@ export interface LoopDeps {
   /** Esegue una variante su tutti i casi indicati (e la giudica, se c'è un giudice). */
   run(variant: Variant, cases: BenchCase[]): Promise<CaseResult[]>
   /** Chiede la variante successiva; null se il correttore non risponde. */
-  propose(best: Variant, results: CaseResult[], name: string, history: string[]): Promise<{ changes: string[]; diagnosis: string; outcome: { variant: Variant } | { rejected: string } } | null>
+  propose(best: Variant, results: CaseResult[], name: string, history: string[]): Promise<{ changes: string[]; diagnosis: string; documentNotes?: string[]; outcome: { variant: Variant } | { rejected: string } } | null>
   /** Una variante accettata come candidata: da salvare su disco prima di provarla. */
   onVariant?(variant: Variant): void | Promise<void>
   log?(line: string): void
@@ -65,6 +65,7 @@ export async function runLoop(baseline: Variant, cases: BenchCase[], options: Pi
       notes.push(`Giro ${round}: il correttore non ha risposto. Ciclo interrotto.`)
       break
     }
+    for (const note of proposed.documentNotes ?? []) notes.push(`Giro ${round}, segnalazione sui documenti (non applicata, da valutare a mano): ${note}`)
     if ('rejected' in proposed.outcome) {
       notes.push(`Giro ${round}: proposta scartata prima della prova (${proposed.outcome.rejected}). Diagnosi: ${proposed.diagnosis}`)
       history.push(`Proposta non accettabile (${proposed.outcome.rejected}).`)

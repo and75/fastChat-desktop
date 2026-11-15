@@ -85,9 +85,18 @@ Con `--rounds N` il banco:
 3. prova la nuova versione su tutti i casi e la tiene **solo se migliora sui casi di controllo** oltre il rumore;
    il giro successivo parte dalla migliore.
 
-Il correttore può cambiare l'istruzione fissa del ruolo, le frasi delle opzioni e i documenti delle basi
-(tecniche, esempi). Non può cambiare parametri, opzioni, predefiniti né effetti sulla mente: una proposta che
-tocca la struttura, non supera i controlli dei ruoli o stravolge un documento viene scartata prima della prova.
+Il correttore può:
+
+- cambiare l'istruzione fissa del ruolo e le frasi delle opzioni;
+- **aggiungere** esempi nuovi in coda al documento degli esempi, al massimo due per giro.
+
+Non può riscrivere il documento delle tecniche né modificare o togliere gli esempi esistenti: sono testi riletti
+da una persona. Se ritiene dannosa una loro frase la **segnala**, e la segnalazione finisce nel rapporto senza
+essere applicata. Non può nemmeno cambiare parametri, opzioni, predefiniti o effetti sulla mente. Una proposta
+che tocca la struttura, non supera i controlli dei ruoli, o porta un esempio non valido (troppo lungo, con un
+titolo già usato, o che ricalca la richiesta di un caso di prova) viene scartata prima della prova.
+
+Gli esempi aggiunti li scrive Claude: non vengono da fonti, e vanno riletti prima di applicarli.
 
 Alla fine `report.md` racconta ogni giro (diagnosi, modifiche, esito). Se una variante ha vinto, trovi anche
 `proposal.diff` con le differenze rispetto ai testi di partenza. **Nulla viene scritto nei sorgenti** finché non

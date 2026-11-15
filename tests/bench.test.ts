@@ -168,26 +168,44 @@ describe('banco di prova: correzione e riprova', () => {
   const base = loadBaseline('prompt.it')
   const TECNICHE = 'app.fastchat.kb.prompt-tecniche.it'
   const ESEMPI = 'app.fastchat.kb.prompt-esempi.it'
-  const empty: Proposal = { diagnosis: 'd', changes: ['c'], instructions: '', options: [], bases: [] }
+  const empty: Proposal = { diagnosis: 'd', changes: ['c'], instructions: '', options: [], examples: [], documentNotes: [] }
+  const example = { title: 'Scrivere un prompt per una lettera', request: 'Mi serve un prompt per una lettera di reclamo al condominio.', response: '```\nSei un consulente. Scrivi una lettera di reclamo breve e cortese.\n```\n\nPerché è scritto così:\n1. Dice il ruolo.\n2. Dice il tono.\n3. Dice la lunghezza.' }
 
-  it('una proposta cambia solo i testi; ciò che altera la struttura o stravolge un documento viene scartato', () => {
-    const ok = applyProposal(base, { ...empty, instructions: 'Sei un esperto di prompt.', options: [{ parameter: 'metodo', option: 'subito', instruction: 'Rispondi subito e dichiara le ipotesi.' }], bases: [{ id: TECNICHE, text: base.bases[TECNICHE].files[0].text.replace('Un buon prompt', 'Un prompt riuscito') }] }, 'giro-1')
+  it('una proposta cambia istruzione e frasi delle opzioni e può solo aggiungere esempi; i documenti riletti non si toccano', () => {
+    const ok = applyProposal(base, { ...empty, instructions: 'Sei un esperto di prompt.', options: [{ parameter: 'metodo', option: 'subito', instruction: 'Rispondi subito e dichiara le ipotesi.' }], examples: [example] }, 'giro-1')
     expect('variant' in ok).toBe(true)
     const next = (ok as { variant: Variant }).variant
     expect(next.name).toBe('giro-1')
     expect(next.role.instructions).toBe('Sei un esperto di prompt.')
     expect(next.role.parameters!.find((p) => p.id === 'metodo')!.options.find((o) => o.id === 'subito')!.instruction).toBe('Rispondi subito e dichiara le ipotesi.')
-    expect(next.bases[TECNICHE].files[0].text).toContain('Un prompt riuscito')
+    // le tecniche restano identiche; gli esempi esistenti restano identici, il nuovo è in coda con la stessa forma
+    expect(next.bases[TECNICHE]).toEqual(base.bases[TECNICHE])
+    const before = base.bases[ESEMPI].files[0].text
+    const after = next.bases[ESEMPI].files[0].text
+    expect(after.startsWith(before.trimEnd())).toBe(true)
+    expect(after.slice(before.trimEnd().length)).toBe(`\n\n## ${example.title}\n\nRichiesta: ${example.request}\n\nRisposta:\n${example.response}\n`)
     // la struttura resta quella: stessi parametri, opzioni, predefiniti; la variante di partenza non è toccata
     expect(next.role.parameters!.map((p) => [p.id, p.default, p.options.map((o) => o.id)])).toEqual(base.role.parameters!.map((p) => [p.id, p.default, p.options.map((o) => o.id)]))
     expect(base.role.instructions).not.toBe('Sei un esperto di prompt.')
-    const rejected = (proposal: Partial<Proposal>): string => (applyProposal(base, { ...empty, ...proposal }, 'x') as { rejected: string }).rejected
+    expect(base.bases[ESEMPI].files[0].text).toBe(before)
+
+    const rejected = (proposal: Partial<Proposal>, forbidden: string[] = []): string => (applyProposal(base, { ...empty, ...proposal }, 'x', forbidden) as { rejected: string }).rejected
     expect(rejected({})).toMatch(/nessuna modifica/)
+    // le sole segnalazioni sui documenti non sono una modifica
+    expect(rejected({ documentNotes: ['«una frase» spinge a mettere esempi'] })).toMatch(/nessuna modifica/)
     expect(rejected({ options: [{ parameter: 'metodo', option: 'inventata', instruction: 'x' }] })).toMatch(/opzione sconosciuta/)
     expect(rejected({ options: [{ parameter: 'metodo', option: 'subito', instruction: ' ' }] })).toMatch(/frase vuota/)
-    expect(rejected({ bases: [{ id: 'app.fastchat.guida', text: 'x' }] })).toMatch(/non modificabile/)
-    expect(rejected({ bases: [{ id: TECNICHE, text: 'Troppo corto.' }] })).toMatch(/cambiato troppo/)
-    expect(rejected({ bases: [{ id: ESEMPI, text: 'x'.repeat(base.bases[ESEMPI].files[0].text.length) }] })).toMatch(/almeno due esempi/)
+    expect(rejected({ examples: [example, { ...example, title: 'Due' }, { ...example, title: 'Tre' }] })).toMatch(/troppi esempi/)
+    expect(rejected({ examples: [{ ...example, title: 'Aggiungere i dettagli che mancano' }] })).toMatch(/esiste già un esempio/)
+    expect(rejected({ examples: [{ ...example, response: ' ' }] })).toMatch(/incompleto/)
+    expect(rejected({ examples: [{ ...example, response: 'x'.repeat(1600) }] })).toMatch(/troppo lungo/)
+    expect(rejected({ examples: [{ ...example, response: '## Un titolo\nche spezzerebbe l\'esempio' }] })).toMatch(/titolo fuori da un blocco di codice/)
+    expect(rejected({ examples: [example] }, ['mi serve un prompt per una lettera di reclamo al condominio'])).toMatch(/ricalca la richiesta di un caso di prova/)
+    // un titolo dentro il blocco di codice (un prompt a sezioni) è ammesso
+    expect('variant' in applyProposal(base, { ...empty, examples: [{ ...example, response: '```\n# Identità\nSei un consulente.\n```' }] }, 'x')).toBe(true)
+    // in francese l'esempio nuovo usa le parole del documento francese
+    const fr = applyProposal(loadBaseline('prompt.fr'), { ...empty, examples: [example] }, 'x') as { variant: Variant }
+    expect(fr.variant.bases['app.fastchat.kb.prompt-esempi.fr'].files[0].text).toContain(`Demande : ${example.request}\n\nRéponse :\n`)
   })
 
   const result = (variant: string, testCase: BenchCase, pass: boolean): CaseResult => ({ variant, model: 'm', rep: 1, case: testCase, choices: {}, settings: { think: true, numCtx: 1, temperature: 0.6 }, turns: [turn('risposta di prova')], checks: [{ id: 'c', pass, detail: pass ? 'bene' : 'male' }], verdict: null, error: null })
@@ -202,13 +220,17 @@ describe('banco di prova: correzione e riprova', () => {
     const text = improvePrompt(base, results, ['prima modifica → scartata'])
     expect(text).toContain('<istruzione_fissa>')
     expect(text).toContain('parametro «metodo»')
-    expect(text).toContain(`<documento id="${ESEMPI}"`)
+    expect(text).toContain(`<documento id="${ESEMPI}" uso="esempi: partono i due più vicini alla richiesta; puoi solo aggiungerne">`)
+    expect(text).toContain(`<documento id="${TECNICHE}" uso="tecniche: inviato per intero; non modificabile">`)
     expect(text).toContain('<caso id="lavoro-1"')
     expect(text).not.toContain('controllo-1')
     expect(text).toContain('<giri_precedenti>\n1. prima modifica → scartata')
     expect(text).toContain('Controlli automatici falliti: c (male)')
     const proposed = await proposeVariant(async () => ({ ...empty, instructions: 'Nuova istruzione.' }) as never, base, results, 'giro-1', [])
     expect(proposed!.outcome).toMatchObject({ variant: { name: 'giro-1' } })
+    // un esempio che ricalca una richiesta di prova (anche di controllo) fa scartare la proposta
+    const copied = await proposeVariant(async () => ({ ...empty, examples: [{ ...example, request: 'r' }] }) as never, base, results, 'giro-1', [])
+    expect(copied!.outcome).toMatchObject({ rejected: expect.stringMatching(/ricalca/) })
     expect(await proposeVariant(async () => null, base, results, 'giro-1', [])).toBeNull()
   })
 
@@ -226,7 +248,7 @@ describe('banco di prova: correzione e riprova', () => {
       },
       async propose(best, _results, name) {
         proposedFrom.push(`${name}<-${best.name}`)
-        if (name === 'giro-3') return { changes: [], diagnosis: 'nulla da cambiare', outcome: { rejected: 'nessuna modifica proposta' } }
+        if (name === 'giro-3') return { changes: [], diagnosis: 'nulla da cambiare', documentNotes: ['«una frase delle tecniche» spinge a mettere esempi'], outcome: { rejected: 'nessuna modifica proposta' } }
         return { changes: [`modifica ${name}`], diagnosis: 'causa', outcome: { variant: { ...base, name } } }
       },
       onVariant: (v) => void saved.push(v.name)
@@ -241,6 +263,8 @@ describe('banco di prova: correzione e riprova', () => {
     expect(outcome.notes.join('\n')).toMatch(/«giro-1»: 0% sui casi di controllo contro 50% — scartata/)
     expect(outcome.notes.join('\n')).toMatch(/«giro-2»: 100% sui casi di controllo contro 50% — \*\*tenuta\*\*/)
     expect(outcome.notes.join('\n')).toMatch(/Giro 3: proposta scartata prima della prova/)
+    // le segnalazioni sui documenti finiscono nel rapporto, non nei testi
+    expect(outcome.notes.join('\n')).toMatch(/Giro 3, segnalazione sui documenti \(non applicata, da valutare a mano\): «una frase delle tecniche»/)
     expect(outcome.notes.at(-1)).toMatch(/la variante migliore è «giro-2»/)
 
     // senza giri: solo la misura; senza miglioramenti: resta la base

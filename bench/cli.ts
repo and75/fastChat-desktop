@@ -181,17 +181,17 @@ async function main(): Promise<void> {
       // Ripresa: una variante già proposta in un giro precedente si rilegge, non si richiede di nuovo.
       const saved = join(variantDir(name), 'proposal.json')
       if (existsSync(saved)) {
-        const { changes, diagnosis } = JSON.parse(readFileSync(saved, 'utf8')) as { changes: string[]; diagnosis: string }
-        return { changes, diagnosis, outcome: { variant: loadVariant(variantDir(name)) } }
+        const { changes, diagnosis, documentNotes } = JSON.parse(readFileSync(saved, 'utf8')) as { changes: string[]; diagnosis: string; documentNotes?: string[] }
+        return { changes, diagnosis, documentNotes, outcome: { variant: loadVariant(variantDir(name)) } }
       }
       try {
         const proposed = await proposeVariant(claude!.ask, best, results, name, history)
         if (!proposed) return null
         if ('variant' in proposed.outcome) {
           saveVariant(variantDir(name), proposed.outcome.variant)
-          writeFileSync(saved, JSON.stringify({ changes: proposed.proposal.changes, diagnosis: proposed.proposal.diagnosis }, null, 2) + '\n')
+          writeFileSync(saved, JSON.stringify({ changes: proposed.proposal.changes, diagnosis: proposed.proposal.diagnosis, documentNotes: proposed.proposal.documentNotes }, null, 2) + '\n')
         }
-        return { changes: proposed.proposal.changes, diagnosis: proposed.proposal.diagnosis, outcome: proposed.outcome }
+        return { changes: proposed.proposal.changes, diagnosis: proposed.proposal.diagnosis, documentNotes: proposed.proposal.documentNotes, outcome: proposed.outcome }
       } catch (err) {
         console.error(`Correttore non disponibile: ${describeAnthropicError(err)}`)
         return null

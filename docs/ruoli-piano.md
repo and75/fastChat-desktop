@@ -615,7 +615,9 @@ Scoperte durante il lavoro:
   Istruzioni in `bench/README.md`. Si esegue sul computer dell'utente. Fatti i tre passi: esecuzione, misure e controlli;
   giudice con Claude (`bench/judge.ts`, chiave in `ANTHROPIC_API_KEY`); ciclo «valuta, corregge e riprova»
   (`bench/improve.ts`, `bench/loop.ts`, opzione `--rounds`), che corregge leggendo i soli casi di lavoro e tiene
-  una variante solo se migliora sui casi di controllo oltre il rumore; `--apply` porta la migliore nei sorgenti.
+  una variante solo se migliora sui casi di controllo oltre il rumore. Il correttore cambia istruzione fissa e
+  frasi delle opzioni e può solo **aggiungere** esempi; tecniche ed esempi esistenti non si toccano (deciso
+  dall'utente): ciò che vi trova di dannoso lo segnala nel rapporto; `--apply` porta la migliore nei sorgenti.
   **Verificato solo con Ollama finto e Claude simulato** (`tests/bench.test.ts`): la prima esecuzione vera, con
   Ollama e con la chiave, è dell'utente. Predefinito `--rounds 0`, per non avviare ore di lavoro e spesa senza
   che sia chiesto.
