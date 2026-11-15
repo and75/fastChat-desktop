@@ -29,7 +29,35 @@ const has = (choices: RoleChoices, parameter: string, option: string): boolean =
 }
 
 const EXAMPLE = /<\/?(esempio|exemple|example)>|^\s*(esempio|exemple|example)\s*\d*\s*:|ecco un esempio|voici un exemple/im
-const HYPOTHESIS = /ipotes|ho supposto|ho assunto|presumo|do per scontato|hypoth[èe]s|je suppose|j'ai supposé/i
+const DECLARED = /ipotes|ipotizz|presum|suppo|assum|do per scontato|scelte (fatte|prese)|ho (scelto|deciso|stabilito)|hypoth[èe]s|choix|j'ai (choisi|décidé)/i
+/** Voci «Etichetta: valore» («Pubblico: bambini; Lunghezza: breve»), anche a punti elenco. */
+const LABELLED = /(^|[;\n])\s*[-*•]?\s*\**[A-ZÀ-Ù][^:;\n]{1,30}:\**\s*\S/g
+
+/**
+ * Prima del prompt il modello dichiara ciò che ha scelto al posto dell'utente? Vale qualunque formula
+ * («Ho ipotizzato…», «Scelte fatte: …», «Pubblico: …; Lunghezza: …»); non una frase di cortesia («Ecco il
+ * prompt:») né un elenco numerato che non parla di ipotesi o scelte: lì è una diagnosi fuori posto.
+ */
+export function declaresChoices(before: string): boolean {
+  if (DECLARED.test(before)) return true
+  return numberedPoints(before) < 2 && (before.match(LABELLED) ?? []).length >= 2
+}
+
+/**
+ * I punti di una spiegazione, comunque siano scritti: righe numerate, punti elenco, oppure paragrafi o frasi
+ * (tolta la riga di introduzione, «Ecco le scelte fatte:»).
+ */
+export function explanationPoints(after: string): { count: number; unit: string } {
+  const numbered = numberedPoints(after)
+  if (numbered) return { count: numbered, unit: 'punti numerati' }
+  const bullets = (after.match(/^\s*[-*•]\s+\S/gm) ?? []).length
+  if (bullets) return { count: bullets, unit: 'punti elenco' }
+  const body = after.trim().replace(/^[^\n]{0,80}:\s*(\n|$)/, '').trim()
+  if (!body) return { count: 0, unit: 'punti' }
+  const paragraphs = body.split(/\n\s*\n/).filter((p) => p.trim())
+  if (paragraphs.length > 1) return { count: paragraphs.length, unit: 'paragrafi' }
+  return { count: body.split(/(?<=[.!?])\s+(?=[A-ZÀ-Ù«"])/).filter((s) => s.trim()).length, unit: 'frasi' }
+}
 
 /**
  * I controlli che valgono per un caso, date le scelte del ruolo. `turns` sono le battute nell'ordine: la prima
@@ -79,11 +107,11 @@ export function runChecks(testCase: BenchCase, choices: RoleChoices, turns: Turn
   if (has(choices, 'tipo', 'messaggio')) add('senza-titoli-di-sezione', titles === 0, titles ? `${titles} titoli di sezione in un messaggio da incollare` : 'nessun titolo di sezione')
   if (has(choices, 'tipo', 'sistema')) add('con-sezioni', titles >= 2, `${titles} titoli di sezione`)
 
-  const points = numberedPoints(after)
+  const points = explanationPoints(after)
   if (has(choices, 'spiegazione', 'nessuna')) add('senza-spiegazione', after.length < 200, after.length < 200 ? 'nessuna spiegazione dopo il prompt' : `${after.length} caratteri dopo il prompt`)
-  else if (choices.spiegazione) add('spiegazione-in-tre-punti', points === 3, `${points} punti dopo il prompt`)
+  else if (choices.spiegazione) add('spiegazione-in-tre-punti', points.count === 3, `${points.count} ${points.unit} dopo il prompt`)
 
-  if (has(choices, 'metodo', 'subito') && testCase.expect === 'prompt') add('ipotesi-dichiarate', HYPOTHESIS.test(before), HYPOTHESIS.test(before) ? 'ipotesi dichiarate prima del prompt' : 'nessuna ipotesi dichiarata prima del prompt')
+  if (has(choices, 'metodo', 'subito') && testCase.expect === 'prompt') add('ipotesi-dichiarate', declaresChoices(before), declaresChoices(before) ? 'ipotesi dichiarate prima del prompt' : 'nessuna ipotesi dichiarata prima del prompt')
 
   if (testCase.creative) {
     const delimiter = /<[a-zà-ù_-]+>[\s\S]*<\/[a-zà-ù_-]+>|"""/i.test(prompt)

@@ -1,7 +1,7 @@
 // Il banco di prova dei ruoli (bench/): esegue i casi con il codice dell'app contro un Ollama finto, e i
 // controlli a regole fisse scattano sulle risposte costruite apposta.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { passRate, runChecks, splitAnswer } from '../bench/checks'
+import { declaresChoices, explanationPoints, passRate, runChecks, splitAnswer } from '../bench/checks'
 import type { Ask } from '../bench/claude'
 import { createJudge, CRITERIA, judgePrompt } from '../bench/judge'
 import { applyProposal, improvePrompt, proposeVariant, type Proposal } from '../bench/improve'
@@ -374,5 +374,32 @@ describe('chiave Anthropic', () => {
     expect(describeAnthropicError(error(404, 'model: claude-x'))).toMatch(/^modello non trovato.*404.*model: claude-x/)
     expect(describeAnthropicError(error(400, 'Your credit balance is too low'))).toMatch(/credito esaurito.*400.*credit balance is too low/)
     expect(describeAnthropicError(new Error('altro'))).toBe('altro')
+  })
+})
+
+describe('controlli tolleranti sulla forma (frasi vere dalle prove con Gemma 4)', () => {
+  it('ipotesi dichiarate: qualunque formula, non una frase di cortesia né una diagnosi fuori posto', () => {
+    for (const before of [
+      'Ipotesi ragionevoli: il testo è professionale.',
+      'Ho ipotizzato il pubblico come ragazzi tra gli 8 e i 12 anni, il tono come caloroso.',
+      'Scelte fatte: Pubblico: bambini tra gli 8 e i 12 anni; Tono: caloroso; Lunghezza: circa 500 parole.',
+      'Ho deciso le seguenti scelte: Tono empatico e professionale, lunghezza concisa.',
+      'Pubblico: Dirigente aziendale; Lunghezza: Breve (max 3-5 punti); Formato: Strutturato.',
+      'Scelte fatte:\n*   Formato di output: JSON\n*   Lingua: Italiano',
+      'Assumo che l\'obiettivo sia mantenere un tono professionale.',
+      'Ipotesi ragionevoli:\n1. Il tono deve essere caldo.\n2. La lunghezza deve essere molto breve.'
+    ])
+      expect(declaresChoices(before), before).toBe(true)
+    for (const before of ['', 'Ecco il prompt:', 'Certo! Ecco il prompt migliorato.', '1. Non si capisce cosa deve produrre il modello. (La frase è generica.)\n2. Manca il contesto: a cosa serve il risultato.'])
+      expect(declaresChoices(before), before).toBe(false)
+  })
+
+  it('spiegazione in tre punti: numerati, a elenco, in paragrafi o in frasi', () => {
+    expect(explanationPoints('Ecco le scelte fatte:\n\n1. Uno.\n2. Due.\n3. Tre.')).toEqual({ count: 3, unit: 'punti numerati' })
+    expect(explanationPoints('Le scelte:\n- Uno.\n- Due.\n- Tre.')).toEqual({ count: 3, unit: 'punti elenco' })
+    expect(explanationPoints('Ho scelto un ruolo chiaro.\n\nHo fissato la lunghezza.\n\nHo chiesto l\'emozione.')).toEqual({ count: 3, unit: 'paragrafi' })
+    expect(explanationPoints('Ho scelto di dare al modello un ruolo chiaro, così saprà quale linguaggio usare. Ho specificato la lunghezza e il tono per evitare una storia troppo lunga. Ho chiesto di concentrarsi sull\'emozione, invece che sulla vittoria.')).toEqual({ count: 3, unit: 'frasi' })
+    expect(explanationPoints('Ecco le scelte fatte:\nHo scelto un ruolo. Ho fissato la lunghezza.').count).toBe(2)
+    expect(explanationPoints('').count).toBe(0)
   })
 })

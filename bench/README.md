@@ -34,6 +34,8 @@ npm run bench -- --models gemma4:e4b --think off   # stessa prova con il ragiona
 npm run bench -- --models gemma4:e4b --gpu off     # stessa prova con la GPU bloccata, tutto su CPU
 npm run bench -- --models gemma4:e4b --num-ctx 8192 --cases racconto-subito,lavoro-vago
 npm run bench -- --models gemma4:e4b --rounds 2    # misura, poi due giri di «correggi e riprova»
+npm run bench -- --models gemma4:e4b --rounds 2 --reps 3   # consigliato: con una ripetizione sola il rumore (circa 4 punti) copre i guadagni
+npm run bench -- --models gemma4:e4b,qwen3:4b      # stessi casi su due modelli: una riga per modello nel rapporto
 npm run bench -- --apply bench/runs/<data>         # porta nei sorgenti la variante migliore di quel giro
 npm run bench -- --fetch-sources                   # scarica o aggiorna le fonti che il correttore consulta
 ```
