@@ -560,7 +560,7 @@ di prompt reali (provenienza e licenze in `store/sources/FONTI.md`).
 
 | Sezione | Parametro | Tipo | Opzione | Frase per il modello | Mente |
 |---|---|---|---|---|---|
-| **Identità e obiettivi** | Modello a cui è destinato il prompt | Singola | Modello locale piccolo ✓ | «Scrivi per un modello locale piccolo: istruzioni esplicite, un solo compito per prompt, il formato della risposta mostrato con un esempio.» | — |
+| **Identità e obiettivi** | Modello a cui è destinato il prompt | Singola | Modello locale piccolo ✓ | «Scrivi per un modello locale piccolo: istruzioni esplicite, un solo compito per prompt e, quando la risposta ha un formato preciso, un esempio di quel formato.» | — |
 |  |  |  | Modello grande | «Scrivi per un modello grande: dai l'obiettivo e i criteri di qualità, e lascia al modello i dettagli.» | — |
 | **Stile e formato** | Spiegazione | Singola | Nessuna | «Restituisci solo il risultato richiesto: ometti la spiegazione, anche se gli esempi la mostrano.» | lunghezza «Conciso» |
 |  |  |  | Semplice ✓ | «Dopo il risultato, spiega in tre punti le scelte fatte, con parole semplici e senza termini tecnici.» | lunghezza «Normale» |
@@ -569,15 +569,20 @@ di prompt reali (provenienza e licenze in `store/sources/FONTI.md`).
 |  |  |  | Prompt di sistema da riusare | «Scrivi il prompt come prompt di sistema da riusare, diviso in sezioni con un titolo: identità, istruzioni, formato della risposta.» | — |
 | **Regole** | Tecniche da usare | Multipla | Ruolo esplicito ✓ | «Quando scrivi o riscrivi un prompt, aprilo dichiarando chi deve essere il modello.» | — |
 |  |  |  | Formato di uscita ✓ | «Quando scrivi o riscrivi un prompt, specifica la forma esatta della risposta.» | — |
-|  |  |  | Cosa fare se manca un dato ✓ | «Quando scrivi o riscrivi un prompt, di' cosa deve fare il modello se un'informazione manca.» | — |
+|  |  |  | Cosa fare se manca un dato ✓ | «Quando il prompt lavora su un testo o su dati forniti, di' cosa deve fare il modello se un'informazione manca.» | — |
 |  |  |  | Esempi della risposta attesa | «Quando scrivi o riscrivi un prompt, inserisci due o tre esempi della risposta attesa.» | — |
 |  |  |  | Passi numerati | «Quando scrivi o riscrivi un prompt, elenca in passi numerati le fasi del compito.» | — |
-| **Metodo** | Prima di rispondere | Singola | Risponde subito ✓ | «Se manca un dettaglio, fai un'ipotesi ragionevole e dichiarala; chiedi solo quando non si capisce a cosa serve il prompt.» | — |
-|  |  |  | Fa domande di chiarimento | «Prima di scrivere, fai al massimo due domande sulle informazioni che mancano.» | — |
+| **Metodo** | Prima di rispondere | Singola | Risponde subito | «Rispondi subito: se manca un'informazione, fai un'ipotesi ragionevole ed elenca le ipotesi in una riga prima del prompt.» | — |
+|  |  |  | Fa domande di chiarimento ✓ | «Se dalla richiesta non si capisce per chi è il risultato o a cosa serve, fai due o tre domande brevi e fermati: scrivi il prompt solo dopo le risposte.» | — |
 
 Cosa è cambiato rispetto alla prima versione: tolto «Intervento» (lo dice già la richiesta dell'utente, ed è ora
 nell'istruzione fissa); «Chi userà il prompt» e «Risultato» fusi in «Spiegazione»; «Stile del prompt» sostituito
 da «Tipo di prompt»; aggiunta la tecnica «Cosa fare se manca un dato».
+
+Ritocchi dopo le prove dell'utente con Gemma 4: «Fa domande di chiarimento» è il predefinito (la regola «se non
+sai, chiedi» non veniva mai applicata); «Risponde subito» obbliga a elencare le ipotesi; le frasi sul dato
+mancante e sull'esempio del formato sono condizionali. Degli esempi partono solo i due più vicini alla domanda
+(`KNOWLEDGE.examplesMax`): la base può crescere senza allungare il prompt.
 
 Documenti spenti in partenza: l'utente li accende quando vuole lavorare sui propri prompt.
 
@@ -598,8 +603,8 @@ Tecniche: Formato di uscita + Passi numerati · Risponde subito.
   > istruzioni, formato della risposta.
   > Quando scrivi o riscrivi un prompt, specifica la forma esatta della risposta.
   > Quando scrivi o riscrivi un prompt, elenca in passi numerati le fasi del compito.
-  > Se manca un dettaglio, fai un'ipotesi ragionevole e dichiarala; chiedi solo quando non si capisce a cosa
-  > serve il prompt.
+  > Rispondi subito: se manca un'informazione, fai un'ipotesi ragionevole ed elenca le ipotesi in una riga
+  > prima del prompt.
 
 Valori della mente ancora da provare a fondo: l'utente ha verificato che con il ragionamento acceso il ruolo
 lavora meglio. I profili per modello arrivano dopo la prova con Ollama sul computer dell'utente.

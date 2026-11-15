@@ -104,7 +104,7 @@ Una base collegata a una conversazione ha un **uso** (`conversation_bases.purpos
 |---|---|---|---|
 | `documents` (predefinito) | I contenuti su cui rispondere | Solo con l'interruttore o il bottone libro accesi, come sempre | Sì |
 | `behavior` | Tecniche e regole del ruolo | Sempre | No |
-| `examples` | Risposte ben fatte da imitare, ciascuna tra `<esempio>…</esempio>` | Sempre | No |
+| `examples` | Risposte ben fatte da imitare, ciascuna tra `<esempio>…</esempio>` | Sempre: i due esempi più vicini alla domanda | No |
 
 - I documenti aggiunti alla conversazione sono sempre `documents`.
 - Le basi di un ruolo arrivano con il loro uso, dichiarato dal ruolo. Nella scheda «Conoscenza» stanno a parte,

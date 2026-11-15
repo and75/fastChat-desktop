@@ -102,7 +102,7 @@ A base linked to a conversation has a **purpose** (`conversation_bases.purpose`)
 |---|---|---|---|
 | `documents` (default) | The content to answer from | Only with the switch or the book button on, as always | Yes |
 | `behavior` | The role's techniques and rules | Always | No |
-| `examples` | Well-made answers to imitate, each between `<example>…</example>` | Always | No |
+| `examples` | Well-made answers to imitate, each between `<example>…</example>` | Always: the two examples closest to the question | No |
 
 - Documents added to the conversation are always `documents`.
 - A role's bases arrive with their purpose, declared by the role. In the “Knowledge” tab they are kept apart,

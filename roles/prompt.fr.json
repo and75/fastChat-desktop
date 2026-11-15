@@ -19,7 +19,7 @@
         {
           "id": "piccoli",
           "label": "Petit modèle local",
-          "instruction": "Écris pour un petit modèle local : des instructions explicites, une seule tâche par prompt, le format de la réponse montré par un exemple."
+          "instruction": "Écris pour un petit modèle local : des instructions explicites, une seule tâche par prompt et, quand la réponse a un format précis, un exemple de ce format."
         },
         {
           "id": "grandi",
@@ -107,7 +107,7 @@
         {
           "id": "mancante",
           "label": "Que faire s'il manque une donnée",
-          "instruction": "Quand tu écris ou réécris un prompt, dis ce que le modèle doit faire si une information manque."
+          "instruction": "Quand le prompt travaille sur un texte ou sur des données fournis, dis ce que le modèle doit faire si une information manque."
         },
         {
           "id": "esempi",
@@ -126,17 +126,17 @@
       "section": "method",
       "label": "Avant de répondre",
       "type": "single",
-      "default": "subito",
+      "default": "chiarimenti",
       "options": [
         {
           "id": "subito",
           "label": "Répond tout de suite",
-          "instruction": "S'il manque un détail, fais une hypothèse raisonnable et annonce-la ; ne pose une question que si l'on ne comprend pas à quoi sert le prompt."
+          "instruction": "Réponds tout de suite : s'il manque une information, fais une hypothèse raisonnable et énumère les hypothèses sur une ligne avant le prompt."
         },
         {
           "id": "chiarimenti",
           "label": "Pose des questions de clarification",
-          "instruction": "Avant d'écrire, pose au maximum deux questions sur les informations qui manquent."
+          "instruction": "Si la demande ne dit pas pour qui est le résultat ou à quoi il sert, pose deux ou trois questions brèves et arrête-toi : n'écris le prompt qu'après les réponses."
         }
       ]
     }

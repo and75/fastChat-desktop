@@ -520,9 +520,38 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
   }
 
   /**
+   * Gli esempi più vicini alla domanda, al massimo `KNOWLEDGE.examplesMax`, entro `maxChars`. Restituisce null
+   * quando non c'è nulla da scegliere (gli esempi sono già pochi) o quando la domanda non si può confrontare
+   * (manca il modello di embedding): in quel caso vale la regola generale, cioè tutti quelli che stanno.
+   */
+  async function nearestExamples(groups: Map<string, StoredDocumentChunk[]>, question: Question, maxChars: number): Promise<SectionItem[] | null> {
+    const chunks = [...groups.values()].flat()
+    if (chunks.length <= KNOWLEDGE.examplesMax) return null
+    const scores = new Map<string, number>()
+    const fts = ftsQuery(question.text)
+    for (const [model, group] of groups) {
+      const vector = await question.vector(model).catch(() => null)
+      if (!vector) return null
+      const bm25 = await searchKnowledgeChunks(db, [...new Set(group.map((c) => c.documentId))], model, fts).catch(() => new Map<string, number>())
+      for (const [id, score] of hybridScores(vector, group, bm25)) scores.set(id, score)
+    }
+    const ranked = [...chunks].sort((a, b) => (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0))
+    const out: SectionItem[] = []
+    let used = 0
+    for (const chunk of ranked) {
+      if (out.length >= KNOWLEDGE.examplesMax) break
+      if (used + chunk.text.length > maxChars) continue
+      out.push(chunk)
+      used += chunk.text.length
+    }
+    return out.length ? out : null
+  }
+
+  /**
    * Ciò che le basi della conversazione danno alla risposta, entro `total` token divisi in quote per tipo:
    * - `documents`: i contenuti su cui rispondere, con le fonti; solo se `documents` è vero (pill e bottone libro);
-   * - `behavior` ed `examples`: tecniche ed esempi del ruolo, sempre, senza fonti.
+   * - `behavior` ed `examples`: tecniche ed esempi del ruolo, sempre, senza fonti; degli esempi solo i più vicini
+   *   alla domanda (`nearestExamples`).
    * Lo spazio che un tipo non usa passa agli altri. `question.vector(model)` dà l'embedding della domanda con il
    * modello indicato: le basi possono avere modelli diversi e i vettori non si mescolano.
    */
@@ -544,7 +573,8 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
 
     for (const k of ['behavior', 'examples'] as const) {
       if (docs[k].length === 0 || tokens[k] <= 0) continue
-      const { whole, picked } = await choose(docs[k], groups[k], question, tokens[k] * cpt)
+      const nearest = k === 'examples' ? await nearestExamples(groups[k], question, tokens[k] * cpt) : null
+      const { whole, picked } = nearest ? { whole: nearest, picked: [] } : await choose(docs[k], groups[k], question, tokens[k] * cpt)
       const items = [...whole, ...picked]
       out[k] = { section: k === 'behavior' ? buildBehaviorSection(items) : buildExamplesSection(items), count: items.length }
     }

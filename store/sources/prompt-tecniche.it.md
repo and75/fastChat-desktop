@@ -4,7 +4,7 @@
 
 Un buon prompt si legge come la consegna che daresti a un collega capace ma appena arrivato: non conosce il progetto, il pubblico, né cosa intendi per «fatto bene». Se un collega leggendolo dovesse farti domande, anche il modello resterà nel dubbio.
 
-Scrivi in frasi complete e naturali. Un prompt non è un modulo da compilare: non usare etichette come «Ruolo:» o «Compito:» davanti a ogni riga. Usa titoli o sezioni solo quando il prompt è lungo e ha parti davvero diverse.
+Scrivi in frasi complete e naturali, in paragrafi brevi: uno per argomento. Un prompt non è un modulo da compilare: non usare etichette come «Ruolo:» o «Compito:» davanti a ogni riga. Usa titoli o sezioni solo quando il prompt è lungo e ha parti davvero diverse.
 
 ## Dire l'obiettivo e il contesto
 
@@ -30,7 +30,7 @@ Se il modello tende a risposte lunghe o corte, dillo: «rispondi in tre frasi»,
 
 ## Usare esempi
 
-Uno o più esempi della risposta attesa fissano formato e tono meglio di una descrizione. Da tre a cinque esempi bastano quasi sempre. Devono essere diversi tra loro: se si somigliano troppo, il modello copia anche i dettagli che non c'entrano. Devono anche avere tutti la stessa struttura, perché il modello imita quella.
+Uno o più esempi della risposta attesa fissano formato e tono meglio di una descrizione. Da tre a cinque esempi bastano quasi sempre. Devono essere diversi tra loro: se si somigliano troppo, il modello copia anche i dettagli che non c'entrano. Devono anche avere tutti la stessa struttura, perché il modello imita quella. Un esempio mostra una risposta riuscita: i casi limite, come un testo troppo breve o un dato assente, si trattano con una regola, non con un esempio di risposta fallita.
 
 Tieni gli esempi separati dalle istruzioni, per esempio ciascuno dentro `<esempio>` e `</esempio>`.
 

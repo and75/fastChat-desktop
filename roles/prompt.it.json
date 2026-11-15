@@ -19,7 +19,7 @@
         {
           "id": "piccoli",
           "label": "Modello locale piccolo",
-          "instruction": "Scrivi per un modello locale piccolo: istruzioni esplicite, un solo compito per prompt, il formato della risposta mostrato con un esempio."
+          "instruction": "Scrivi per un modello locale piccolo: istruzioni esplicite, un solo compito per prompt e, quando la risposta ha un formato preciso, un esempio di quel formato."
         },
         {
           "id": "grandi",
@@ -107,7 +107,7 @@
         {
           "id": "mancante",
           "label": "Cosa fare se manca un dato",
-          "instruction": "Quando scrivi o riscrivi un prompt, di' cosa deve fare il modello se un'informazione manca."
+          "instruction": "Quando il prompt lavora su un testo o su dati forniti, di' cosa deve fare il modello se un'informazione manca."
         },
         {
           "id": "esempi",
@@ -126,17 +126,17 @@
       "section": "method",
       "label": "Prima di rispondere",
       "type": "single",
-      "default": "subito",
+      "default": "chiarimenti",
       "options": [
         {
           "id": "subito",
           "label": "Risponde subito",
-          "instruction": "Se manca un dettaglio, fai un'ipotesi ragionevole e dichiarala; chiedi solo quando non si capisce a cosa serve il prompt."
+          "instruction": "Rispondi subito: se manca un'informazione, fai un'ipotesi ragionevole ed elenca le ipotesi in una riga prima del prompt."
         },
         {
           "id": "chiarimenti",
           "label": "Fa domande di chiarimento",
-          "instruction": "Prima di scrivere, fai al massimo due domande sulle informazioni che mancano."
+          "instruction": "Se dalla richiesta non si capisce per chi è il risultato o a cosa serve, fai due o tre domande brevi e fermati: scrivi il prompt solo dopo le risposte."
         }
       ]
     }

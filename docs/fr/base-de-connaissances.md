@@ -126,7 +126,7 @@ Une base liée à une conversation a un **usage** (`conversation_bases.purpose`)
 |---|---|---|---|
 | `documents` (par défaut) | Les contenus à partir desquels répondre | Seulement quand l'interrupteur ou le bouton livre est activé, comme toujours | Oui |
 | `behavior` | Techniques et règles du rôle | Toujours | Non |
-| `examples` | Réponses bien faites à imiter, chacune entre `<exemple>…</exemple>` | Toujours | Non |
+| `examples` | Réponses bien faites à imiter, chacune entre `<exemple>…</exemple>` | Toujours : les deux exemples les plus proches de la question | Non |
 
 - Les documents ajoutés à la conversation sont toujours `documents`.
 - Les bases d'un rôle arrivent avec leur usage, déclaré par le rôle. Dans l'onglet « Connaissances », elles sont à

@@ -577,20 +577,20 @@ Scoperte durante il lavoro:
   prompt» (Messaggio da incollare in chat / Prompt di sistema da riusare); in «Tecniche da usare» entra «Cosa
   fare se manca un dato»; nessun parametro tocca più la temperatura (0,6 fissa nel ruolo). Fatto in
   `roles/prompt.{it,fr}.json`, con pacchetti, end-to-end, anteprime e `ruoli.md` §7.3.
-- **Esperto di prompt engineering, ritocchi dopo le prove con Gemma 4** (da fare, in attesa di altre prove
-  dell'utente). Due prove sulla build di prova: riassunto di un testo e racconto sulla prima partita. I prompt
-  ora sono buoni; difetti osservati:
-  - **«Se non sai, chiedi» non viene mai applicata** (osservazione dell'utente): l'Esperto inventa pubblico, nome,
-    età invece di chiedere, e non dichiara le ipotesi. Da decidere con l'utente: predefinito «Fa domande di
-    chiarimento» al posto di «Risponde subito», oppure regola più forte nell'istruzione fissa.
-  - Frasi delle opzioni scritte come obblighi, applicate anche dove non c'entrano: «Cosa fare se manca un dato»
-    in un prompt che scrive da zero; «formato mostrato con un esempio» dove non serve un formato preciso. Da
-    rendere condizionali.
-  - Esempi dentro il prompt che mostrano il caso fallito invece della risposta riuscita; un primo paragrafo unico
-    troppo denso (solo nella prima prova).
-  - Tempi: da quattro a sei minuti e mezzo per risposta, quasi tutti di ragionamento.
-  - Prove ancora da fare (proposte all'utente): migliorare «Traduci in inglese»; diagnosi di un prompt; richiesta
-    vaga «per il mio lavoro»; prompt di sistema senza spiegazione; prompt con esempi.
+- **Esperto di prompt engineering, ritocchi dopo le prove con Gemma 4** (fatti, da riprovare). Prove dell'utente
+  sulla build di prova: prompt buoni, ma ragionamento da quattro a dodici minuti, ipotesi mai dichiarate, regole
+  applicate anche dove non c'entrano. Correzioni:
+  - **Solo gli esempi pertinenti** (deciso dall'utente, che non vuole ridurre la base): a ogni domanda partono i
+    due esempi più vicini (`KNOWLEDGE.examplesMax` in `src/shared/knowledge.ts`, `nearestExamples` in
+    `src/main/knowledge/index.ts`). Senza modello di embedding partono tutti, come prima. Fondamento: Liu e altri
+    2021 (esempi scelti per somiglianza), Levy e altri 2024 (il ragionamento cala con l'ingresso lungo), Liu e
+    altri 2023 («Lost in the Middle»). La stessa scelta per le tecniche è rimandata.
+  - **«Se non sai, chiedi»**: «Fa domande di chiarimento» è il predefinito; «Risponde subito» elenca le ipotesi.
+  - Frasi condizionali per il dato mancante e per l'esempio del formato; due frasi in più nelle tecniche (gli
+    esempi mostrano risposte riuscite; paragrafi brevi).
+  - **Da verificare con l'utente**: tempi di risposta; la stessa richiesta con il ragionamento spento (se regge,
+    il ruolo può partire senza); prove rimaste: migliorare «Traduci in inglese», diagnosi, richiesta vaga, prompt
+    di sistema senza spiegazione, prompt con esempi.
 - **Ragionamento dell'Esperto**: chiarito, nessun difetto. Nella conversazione di prova l'aveva spento l'utente,
   che aveva anche cambiato tre scelte. Con il ragionamento acceso il ruolo lavora meglio.
 - **Profili per modello** (`profiles` nel ruolo): i ruoli escono senza. Servono i risultati della prova con

@@ -960,6 +960,27 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
     expect(off.examples.count).toBe(1)
     // recall (solo documenti) non vede le basi del ruolo
     expect((await k.recall(conv, q, 2000, 4)).section).toBe(all.documents.section)
+
+    // con molti esempi partono solo i due più vicini alla domanda, non tutti: la base può crescere
+    writeFileSync(
+      join(dir, 'altri.md'),
+      ['## Racconto', 'Domanda: scrivi un racconto sul calcio.\nRisposta: un racconto breve sul calcio per ragazzi.', '## Fattura', 'Domanda: estrai importo e fornitore dalla fattura.\nRisposta: importo e fornitore della fattura in JSON.', '## Recensione', 'Domanda: classifica la recensione del prodotto.\nRisposta: positiva, negativa o neutra.'].join('\n\n')
+    )
+    await k.addFiles(examples, [join(dir, 'altri.md')])
+    await k.wait(examples.id)
+    const about = (text: string) => ({ text, vector: async () => fakeEmbedding(text) })
+    const story = await k.recallAll(conv, about('mi serve un racconto sul calcio'), { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false }, 4)
+    expect(story.examples.count).toBe(2)
+    expect(story.examples.section).toContain('un racconto breve sul calcio')
+    expect(story.examples.section).not.toContain('classifica la recensione')
+    const invoice = await k.recallAll(conv, about('estrai i dati della fattura del fornitore'), { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false }, 4)
+    expect(invoice.examples.count).toBe(2)
+    expect(invoice.examples.section).toContain('importo e fornitore della fattura')
+    // le tecniche non si scelgono: restano intere
+    expect(story.behavior.count).toBe(1)
+    // se la domanda non si può confrontare (manca il modello di embedding) partono tutti, come prima
+    const blind = await k.recallAll(conv, { text: 'racconto', vector: async () => { throw new Error('nessun modello') } }, { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false }, 4)
+    expect(blind.examples.count).toBe(4)
     rmSync(dir, { recursive: true, force: true })
   })
 

@@ -14,6 +14,12 @@ export const KNOWLEDGE = {
   relativeScore: 0.5,
   /** Peso delle parole esatte (BM25) rispetto alla somiglianza semantica (coseno) nel punteggio ibrido. */
   bm25Weight: 0.4,
+  /**
+   * Esempi di un ruolo inviati a ogni domanda: i più vicini alla domanda, non tutti. Pochi esempi pertinenti
+   * guidano meglio di molti (Liu e altri 2021), e un contesto più corto si segue meglio (Levy e altri 2024).
+   * La base può quindi crescere senza allungare il prompt.
+   */
+  examplesMax: 2,
   /** Quota massima predefinita della memoria (num_ctx) per i documenti (regolabile per conversazione). */
   budgetShare: 0.5,
   /** Limiti di un documento: dimensione del file e caratteri estratti. */

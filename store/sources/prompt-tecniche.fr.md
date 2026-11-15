@@ -4,7 +4,7 @@
 
 Un bon prompt se lit comme la consigne que tu donnerais à un collègue compétent mais qui vient d'arriver : il ne connaît ni le projet, ni le public, ni ce que tu entends par « bien fait ». Si un collègue devait te poser des questions en le lisant, le modèle restera lui aussi dans le doute.
 
-Écris en phrases complètes et naturelles. Un prompt n'est pas un formulaire à remplir : n'utilise pas d'étiquettes comme « Rôle : » ou « Tâche : » devant chaque ligne. N'utilise des titres ou des sections que lorsque le prompt est long et comporte des parties vraiment différentes.
+Écris en phrases complètes et naturelles, en paragraphes courts : un par sujet. Un prompt n'est pas un formulaire à remplir : n'utilise pas d'étiquettes comme « Rôle : » ou « Tâche : » devant chaque ligne. N'utilise des titres ou des sections que lorsque le prompt est long et comporte des parties vraiment différentes.
 
 ## Dire l'objectif et le contexte
 
@@ -30,7 +30,7 @@ Si le modèle a tendance à faire des réponses longues ou courtes, dis-le : « 
 
 ## Utiliser des exemples
 
-Un ou plusieurs exemples de la réponse attendue fixent le format et le ton mieux qu'une description. Trois à cinq exemples suffisent presque toujours. Ils doivent être différents les uns des autres : s'ils se ressemblent trop, le modèle copie aussi les détails sans rapport. Ils doivent aussi avoir tous la même structure, parce que c'est elle que le modèle imite.
+Un ou plusieurs exemples de la réponse attendue fixent le format et le ton mieux qu'une description. Trois à cinq exemples suffisent presque toujours. Ils doivent être différents les uns des autres : s'ils se ressemblent trop, le modèle copie aussi les détails sans rapport. Ils doivent aussi avoir tous la même structure, parce que c'est elle que le modèle imite. Un exemple montre une réponse réussie : les cas limites, comme un texte trop court ou une donnée absente, se traitent par une règle, pas par un exemple de réponse ratée.
 
 Garde les exemples séparés des instructions, par exemple chacun entre `<exemple>` et `</exemple>`.
 
