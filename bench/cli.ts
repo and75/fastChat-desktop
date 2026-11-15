@@ -4,7 +4,9 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { passRate } from './checks'
+import { createClaude, describeAnthropicError, hasAnthropicKey } from './claude'
 import { BenchError } from './harness'
+import { createJudge } from './judge'
 import { buildReport } from './report'
 import { runVariant } from './run'
 import type { BenchCase, CaseResult, RunOptions } from './types'
@@ -23,6 +25,8 @@ const HELP = `Banco di prova dei ruoli di FastChat
   --think <role|on|off> ragionamento: come lo fissa il ruolo, sempre acceso, sempre spento (predefinito: role)
   --num-ctx <n>         memoria della conversazione in token (predefinito: 16384)
   --variant <cartella>  prova una variante salvata invece dei testi del repository
+  --judge-model <id>    modello Anthropic che giudica le risposte (predefinito: claude-opus-5-5)
+  --no-judge            solo misure e controlli a regole fisse, anche se c'è una chiave Anthropic
   --url <url>           indirizzo di Ollama (predefinito: OLLAMA_URL o http://127.0.0.1:11434)
   --out <cartella>      dove scrivere i risultati (predefinito: bench/runs/<data>); se esiste, riprende
   --dry-run             elenca cosa verrebbe eseguito, senza chiamare nulla
@@ -56,6 +60,8 @@ async function main(): Promise<void> {
       think: { type: 'string', default: 'role' },
       'num-ctx': { type: 'string', default: '16384' },
       variant: { type: 'string' },
+      'judge-model': { type: 'string', default: 'claude-opus-5-5' },
+      'no-judge': { type: 'boolean', default: false },
       url: { type: 'string' },
       out: { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
@@ -79,6 +85,8 @@ async function main(): Promise<void> {
   const total = models.length * reps * cases.length
   console.log(`Ruolo ${role} · variante «${variant.name}» · ${cases.length} casi × ${models.length} modelli × ${reps} ripetizioni = ${total} esecuzioni`)
   console.log(`Ollama: ${options.ollamaUrl} · ragionamento: ${options.think} · memoria: ${numCtx}`)
+  const judging = !values['no-judge'] && hasAnthropicKey()
+  console.log(judging ? `Giudice: ${values['judge-model']} (richieste, istruzioni del ruolo e risposte dei modelli vengono inviate ad Anthropic)` : values['no-judge'] ? 'Giudice: disattivato' : 'Giudice: nessuno — manca ANTHROPIC_API_KEY; eseguo solo misure e controlli a regole fisse')
   if (values['dry-run']) {
     for (const c of cases) console.log(`  ${c.split === 'train' ? 'lavoro   ' : 'controllo'}  ${c.id.padEnd(22)} atteso: ${c.expect.padEnd(9)} ${c.request.slice(0, 70)}`)
     console.log(`\nStima: da due a tre minuti per esecuzione con un modello a circa 10 token al secondo, quindi ${Math.round((total * 2.5) / 6) / 10} ore circa.`)
@@ -93,17 +101,34 @@ async function main(): Promise<void> {
   const done = readResults(resultsPath)
   if (done.length) console.log(`Riprendo da ${out}: ${done.length} esecuzioni già fatte.`)
 
+  const claude = judging ? createClaude(values['judge-model']) : null
+  const judge = claude ? createJudge(claude.ask) : null
+  let judgeFailure: string | null = null
   const results = await runVariant(variant, cases, options, {
     done,
+    // Un errore del giudice (chiave, rete) non ferma le prove: il caso resta senza voto e lo si dice una volta.
+    judge: judge
+      ? async (result, v) => {
+          if (judgeFailure) return null
+          try {
+            return await judge(result, v)
+          } catch (err) {
+            judgeFailure = describeAnthropicError(err)
+            console.error(`Giudice non disponibile: ${judgeFailure}. Proseguo senza voti.`)
+            return null
+          }
+        }
+      : undefined,
     onResult(result, progress) {
       appendFileSync(resultsPath, JSON.stringify(result) + '\n')
       const ms = result.turns.reduce((n, t) => n + (t.measures.totalMs ?? 0), 0)
       const failed = result.checks.filter((c) => !c.pass).map((c) => c.id)
-      console.log(`[${progress.index}/${progress.total}] ${result.model} · ${result.case.id} · ${Math.round(ms / 1000)} s · controlli ${Math.round(passRate(result.checks) * 100)}%${failed.length ? ` (falliti: ${failed.join(', ')})` : ''}`)
+      console.log(`[${progress.index}/${progress.total}] ${result.model} · ${result.case.id} · ${Math.round(ms / 1000)} s · controlli ${Math.round(passRate(result.checks) * 100)}%${failed.length ? ` (falliti: ${failed.join(', ')})` : ''}${result.verdict ? ` · giudice ${result.verdict.mean}/5` : ''}`)
     }
   })
 
-  writeFileSync(join(out, 'report.md'), buildReport({ role, startedAt, options: { models, reps, think: options.think, numCtx, judge: null, rounds: 0 }, results, notes: [] }))
+  writeFileSync(join(out, 'report.md'), buildReport({ role, startedAt, options: { models, reps, think: options.think, numCtx, judge: claude && !judgeFailure ? claude.model : null, rounds: 0 }, results, notes: [] }))
+  if (claude) console.log(`Anthropic: ${claude.usage.calls} richieste, ${claude.usage.input} token in ingresso, ${claude.usage.output} in uscita`)
   console.log(`\nRapporto: ${join(out, 'report.md')}`)
 }
 

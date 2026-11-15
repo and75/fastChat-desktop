@@ -2,6 +2,8 @@
 // controlli a regole fisse scattano sulle risposte costruite apposta.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { passRate, runChecks, splitAnswer } from '../bench/checks'
+import type { Ask } from '../bench/claude'
+import { createJudge, CRITERIA, judgePrompt } from '../bench/judge'
 import { buildReport, summarize } from '../bench/report'
 import { runVariant } from '../bench/run'
 import type { BenchCase, Turn } from '../bench/types'
@@ -121,6 +123,26 @@ describe('banco di prova: esecuzione con il codice dell\'app', () => {
     const again = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['piccolo'], reps: 1, think: 'role', numCtx: 8192 }, { done: results })
     expect(again).toEqual(results)
     expect(fake.requests.filter((r) => r.path === '/api/chat')).toHaveLength(3)
+
+    // giudice: riceve atteso, istruzioni del ruolo (non le tecniche), conversazione e controlli; i voti entrano nel caso
+    const asked: string[] = []
+    const ask: Ask = async ({ user }) => {
+      asked.push(user)
+      return { scores: Object.keys(CRITERIA).map((criterion, i) => ({ criterion, score: i === 0 ? 9 : 3.4, reason: ' motivo ' })), problems: ['uno', 'due', 'tre', 'quattro'] } as never
+    }
+    const judged = await runVariant(variant, cases.slice(1), { ollamaUrl: fake.url, models: ['piccolo'], reps: 1, think: 'role', numCtx: 8192 }, { judge: createJudge(ask) })
+    expect(judged[0].verdict).toEqual({ scores: Object.keys(CRITERIA).map((criterion, i) => ({ criterion, score: i === 0 ? 5 : 3, reason: 'motivo' })), mean: 3.4, problems: ['uno', 'due', 'tre'] })
+    expect(asked[0]).toContain('<atteso>\nScrivere subito il prompt')
+    expect(asked[0]).toContain('elenca le ipotesi in una riga prima del prompt')
+    expect(asked[0]).not.toContain('# Come lavorare')
+    expect(asked[0]).toContain('<esperto battuta="1">\nIpotesi: il racconto è per bambini.')
+    expect(asked[0]).toContain('- superato · blocco-di-codice')
+    expect(judgePrompt(vague)).toContain('<utente battuta="2">')
+    // un verdetto incompleto, o un rifiuto, lascia il caso senza voto
+    expect(await createJudge(async () => ({ scores: [{ criterion: 'qualita', score: 4, reason: 'x' }], problems: [] }) as never)(direct, variant)).toBeNull()
+    expect(await createJudge(async () => null)(direct, variant)).toBeNull()
+    expect(summarize(judged, 'base', 'piccolo', 'test').score).toBe(3.4)
+    expect(buildReport({ role: 'prompt.it', startedAt: 'x', options: { models: ['piccolo'], reps: 1, think: 'role', numCtx: 8192, judge: 'claude-opus-5-5', rounds: 0 }, results: judged, notes: [] })).toContain('Giudice: **3,4 / 5**')
 
     // riepilogo e rapporto
     expect(summarize(results, 'base', 'piccolo', 'test')).toMatchObject({ cases: 1, checks: 1, score: null, errors: 0 })
