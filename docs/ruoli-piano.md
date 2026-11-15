@@ -608,6 +608,13 @@ Scoperte durante il lavoro:
   (colonna `request`, migrazione 0018; `CONTEXT_REQUESTS_KEPT`): «Vedi il prompt inviato» li mostra e li copia.
 - **Frasi delle opzioni più sintetiche** (proposto, non fatto): l'utente trova verbose le frasi generate dalle
   scelte. Da decidere sui dati, ora che il prompt inviato si può leggere.
+- **Banco di prova dei ruoli** (deciso dall'utente, per uscire dal giro build → installazione → prova a mano):
+  comando `npm run bench` nel repository, cartella `bench/`. Usa il codice dell'app senza Electron
+  (`bench/harness.ts`), legge i testi dai sorgenti, esegue i casi di `bench/cases/<ruolo>.json` su uno o più
+  modelli, misura, applica controlli a regole fisse (`bench/checks.ts`) e scrive `bench/runs/<data>/report.md`.
+  Istruzioni in `bench/README.md`. Si esegue sul computer dell'utente. **Passo 1 fatto** (esecuzione, misure,
+  controlli, rapporto). **Da fare**: giudice con Claude e chiave Anthropic dell'utente; ciclo «valuta, corregge
+  e riprova» con casi di lavoro e di controllo separati.
 - **Ragionamento dell'Esperto**: chiarito, nessun difetto. Nella conversazione di prova l'aveva spento l'utente,
   che aveva anche cambiato tre scelte. Con il ragionamento acceso il ruolo lavora meglio.
 - **Profili per modello** (`profiles` nel ruolo): i ruoli escono senza. Servono i risultati della prova con
