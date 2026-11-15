@@ -564,6 +564,11 @@ Scoperte durante il lavoro:
 
 ## Cosa resta aperto dopo la seconda consegna
 
+- **Banco di prova, chiave Anthropic rifiutata** (segnalato dall'utente, due volte): il banco ora legge solo
+  `ANTHROPIC_API_KEY` (ripulita da virgolette e spazi, ignorando `ANTHROPIC_AUTH_TOKEN` e
+  `ANTHROPIC_BASE_URL`), mostra un'impronta della chiave e la risposta esatta di Anthropic, e prova la chiave
+  prima di far lavorare Ollama. `npm run bench -- --check-key` fa solo questa prova. Causa reale ancora da
+  accertare sull'output dell'utente.
 - **Test sul modello, seconda fase: la memoria** (dopo la 0.2.0, non rilasciato). Scelta CPU/GPU a 2.048 token
   come prima; poi la configurazione scelta si riprova con memorie crescenti (4.096, 8.192… fino a quella che
   l'app consiglierebbe dalla RAM) e ci si ferma alla prima che rallenta la scrittura di oltre il 15% o toglie

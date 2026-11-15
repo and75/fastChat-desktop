@@ -5,7 +5,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { passRate } from './checks'
-import { createClaude, describeAnthropicError, hasAnthropicKey } from './claude'
+import { checkAnthropicKey, createClaude, describeAnthropicError, hasAnthropicKey, readAnthropicKey } from './claude'
 import { BenchError } from './harness'
 import { proposeVariant } from './improve'
 import { createJudge } from './judge'
@@ -30,6 +30,7 @@ const HELP = `Banco di prova dei ruoli di FastChat
   --num-ctx <n>         memoria della conversazione in token (predefinito: 16384)
   --gpu <auto|off>      auto: decide Ollama; off: GPU bloccata, tutto su CPU (predefinito: auto)
   --variant <cartella>  prova una variante salvata invece dei testi del repository
+  --check-key           prova solo la chiave Anthropic sul modello giudice ed esce (non serve Ollama)
   --judge-model <id>    modello Anthropic che giudica le risposte (predefinito: claude-opus-5-5)
   --no-judge            solo misure e controlli a regole fisse, anche se c'è una chiave Anthropic
   --rounds <n>          giri di «correggi e riprova» dopo la prima misura (predefinito: 0, cioè solo misura)
@@ -106,11 +107,21 @@ async function main(): Promise<void> {
       url: { type: 'string' },
       out: { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
+      'check-key': { type: 'boolean', default: false },
       help: { type: 'boolean', default: false }
     }
   })
   if (values.help) return void console.log(HELP)
   if (values.apply) return applyBest(resolve(values.apply))
+  if (values['check-key']) {
+    const { key, fingerprint, warnings } = readAnthropicKey()
+    console.log(`ANTHROPIC_API_KEY: ${fingerprint}`)
+    for (const w of warnings) console.log(`Attenzione: ${w}`)
+    if (!key) fail('Manca ANTHROPIC_API_KEY in questa finestra del terminale (vedi bench/README.md).')
+    const problem = await checkAnthropicKey(values['judge-model'])
+    if (problem) fail(`La chiave non funziona con ${values['judge-model']}: ${problem}`)
+    return void console.log(`La chiave funziona con ${values['judge-model']}.`)
+  }
   if (values['fetch-sources']) {
     console.log('Scarico le fonti del correttore in bench/sources-cache/ (cartella ignorata da git):')
     const fetched = await fetchSources((line) => console.log(line))
@@ -140,6 +151,16 @@ async function main(): Promise<void> {
   console.log(`Ollama: ${options.ollamaUrl} · ragionamento: ${options.think} · memoria: ${numCtx} · GPU: ${options.gpu === 'off' ? 'bloccata, solo CPU' : 'decide Ollama'}`)
   const judging = !values['no-judge'] && hasAnthropicKey()
   console.log(judging ? `Giudice: ${values['judge-model']} (richieste, istruzioni del ruolo e risposte dei modelli vengono inviate ad Anthropic)` : values['no-judge'] ? 'Giudice: disattivato' : 'Giudice: nessuno — manca ANTHROPIC_API_KEY; eseguo solo misure e controlli a regole fisse')
+  if (judging) {
+    const { fingerprint, warnings } = readAnthropicKey()
+    console.log(`Chiave Anthropic: ${fingerprint}`)
+    for (const w of warnings) console.log(`Attenzione: ${w}`)
+    // Subito, prima di far lavorare i modelli locali: una chiave rifiutata si scopre ora, non dopo minuti.
+    if (!values['dry-run']) {
+      const problem = await checkAnthropicKey(values['judge-model'])
+      if (problem) fail(`La chiave non funziona con ${values['judge-model']}: ${problem}\nPer provare solo la chiave: npm run bench -- --check-key · per fare a meno del giudice: --no-judge`)
+    }
+  }
   if (rounds > 0 && !judging) fail('Il ciclo di correzione (--rounds) ha bisogno di Claude: imposta ANTHROPIC_API_KEY e non usare --no-judge.')
   if (rounds > 0) console.log(`Correzione: fino a ${rounds} giri; in tutto al massimo ${total} esecuzioni.`)
   // Le fonti del correttore: quelle già scaricate; se mancano, si scaricano ora (un errore non ferma il ciclo).

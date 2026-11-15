@@ -339,3 +339,38 @@ describe('banco di prova: fonti del correttore', () => {
     expect(lines.some((l) => l.includes('NON scaricata'))).toBe(true)
   })
 })
+
+describe('chiave Anthropic', () => {
+  it('si legge ripulita, con avvisi e un\'impronta che non la mostra', async () => {
+    const { readAnthropicKey, hasAnthropicKey } = await import('../bench/claude')
+    const key = 'sk-ant-api03-' + 'x'.repeat(91) + 'AbCd'
+    expect(readAnthropicKey({ ANTHROPIC_API_KEY: key })).toEqual({ key, fingerprint: 'sk-ant-api…AbCd, 108 caratteri', warnings: [] })
+    // virgolette (cmd di Windows) e a capo del copia-incolla: tolti, e lo si dice
+    const quoted = readAnthropicKey({ ANTHROPIC_API_KEY: ` "${key}"\r\n` })
+    expect(quoted.key).toBe(key)
+    expect(quoted.warnings).toHaveLength(2)
+    expect(quoted.warnings.join(' ')).toMatch(/virgolette/)
+    // altre variabili Anthropic nell'ambiente: ignorate, ma segnalate
+    const extra = readAnthropicKey({ ANTHROPIC_API_KEY: key, ANTHROPIC_AUTH_TOKEN: 'altro', ANTHROPIC_BASE_URL: 'http://proxy.locale' })
+    expect(extra.key).toBe(key)
+    expect(extra.warnings.join(' ')).toMatch(/ANTHROPIC_AUTH_TOKEN.*ANTHROPIC_BASE_URL \(http:\/\/proxy\.locale\)/)
+    expect(readAnthropicKey({ ANTHROPIC_API_KEY: 'chiave-di-altro-tipo-1234567890' }).warnings.join(' ')).toMatch(/non inizia con «sk-ant-»/)
+    expect(readAnthropicKey({}).key).toBeNull()
+    expect(readAnthropicKey({ ANTHROPIC_API_KEY: '""' }).key).toBeNull()
+    // né l'impronta né gli avvisi contengono la chiave
+    expect(JSON.stringify([quoted.fingerprint, quoted.warnings, extra.warnings])).not.toContain(key)
+    expect(hasAnthropicKey({ ANTHROPIC_API_KEY: key })).toBe(true)
+    // un token di altro tipo da solo non basta: il banco usa solo ANTHROPIC_API_KEY
+    expect(hasAnthropicKey({ ANTHROPIC_AUTH_TOKEN: 'altro' })).toBe(false)
+  })
+
+  it('un errore di Anthropic si riporta con codice e messaggio veri', async () => {
+    const { describeAnthropicError } = await import('../bench/claude')
+    const { default: Anthropic } = await import('@anthropic-ai/sdk')
+    const error = (status: number, message: string) => Anthropic.APIError.generate(status, { type: 'error', error: { type: 'x', message } }, undefined, new Headers({ 'request-id': 'req_123' }))
+    expect(describeAnthropicError(error(401, 'invalid x-api-key'))).toMatch(/^Anthropic non riconosce la chiave — Anthropic risponde 401: .*invalid x-api-key.*richiesta req_123$/)
+    expect(describeAnthropicError(error(404, 'model: claude-x'))).toMatch(/^modello non trovato.*404.*model: claude-x/)
+    expect(describeAnthropicError(error(400, 'Your credit balance is too low'))).toMatch(/credito esaurito.*400.*credit balance is too low/)
+    expect(describeAnthropicError(new Error('altro'))).toBe('altro')
+  })
+})

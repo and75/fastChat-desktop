@@ -12,7 +12,16 @@ testi dai sorgenti del repository (`roles/`, `store/sources/`): non servono buil
 - Node 22 e `npm install` in questa cartella.
 - Ollama avviato, con il modello da provare e il modello di embedding (`ollama pull embeddinggemma`).
 - Per il giudizio e la correzione: una chiave Anthropic nella variabile d'ambiente `ANTHROPIC_API_KEY`.
-  Su Windows (PowerShell): `$env:ANTHROPIC_API_KEY = "…"` nella stessa finestra in cui si lancia il comando.
+  Va impostata nella stessa finestra in cui si lancia il comando:
+  - PowerShell: `$env:ANTHROPIC_API_KEY = "sk-ant-api…"`
+  - Prompt dei comandi (cmd): `set ANTHROPIC_API_KEY=sk-ant-api…` — **senza virgolette**
+  - macOS/Linux: `export ANTHROPIC_API_KEY="sk-ant-api…"`
+
+  Per provarla da sola, senza Ollama: `npm run bench -- --check-key`. Il comando mostra un'impronta della
+  chiave (inizio, ultimi 4 caratteri, lunghezza), gli avvisi (virgolette, spazi, altre variabili Anthropic
+  nell'ambiente, che il banco ignora) e, se Anthropic la rifiuta, la sua risposta esatta. La stessa prova
+  parte da sola all'inizio di ogni esecuzione con il giudice.
+  La chiave deve essere della Console di Anthropic (console.anthropic.com), con credito sull'organizzazione.
   La chiave non va scritta in nessun file del repository; il banco non la salva né la stampa.
 
 ## Uso
