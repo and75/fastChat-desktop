@@ -195,8 +195,8 @@ budget = min( share × num_ctx ,
 ## 6. In the prompt
 
 - `# Knowledge base` section, in the system prompt after role instructions, situation, style, summary and
-  conversation memory. Before it come, if present, the role's techniques (`# How to work`) and examples
-  (`# Examples`).
+  conversation memory. Before it come, if present, the role's techniques (`# How to work`, each section with
+  its `## …` title) and examples (`# Examples`).
 - Introduction for “complete documents” or for “excerpts” (and a linking sentence when both are present);
   then each entry as `[Title, p. N]` followed by the text.
 - Instructions to the model: answer from the documents when they concern the question, cite the source in

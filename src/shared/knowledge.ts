@@ -273,7 +273,16 @@ const ordered = (items: ReadonlyArray<SectionItem>): SectionItem[] =>
  */
 export function buildBehaviorSection(picked: ReadonlyArray<SectionItem>): string {
   if (picked.length === 0) return ''
-  return [t('knowledge.behavior.heading'), t('knowledge.behavior.intro'), ...ordered(picked).map((p) => p.text)].join('\n\n')
+  // Ogni sezione arriva con il suo titolo (l'ultimo della catena dei titoli): senza, un elenco come «dal più
+  // grave al meno grave» non direbbe di cosa parla. Il titolo si scrive una volta, anche se la sezione ha più pezzi.
+  let last: string | null = null
+  const items = ordered(picked).map((p) => {
+    const title = p.locator?.split(' › ').at(-1)?.trim() || null
+    const text = title && title !== last ? `## ${title}\n\n${p.text}` : p.text
+    last = title
+    return text
+  })
+  return [t('knowledge.behavior.heading'), t('knowledge.behavior.intro'), ...items].join('\n\n')
 }
 
 /**

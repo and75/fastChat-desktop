@@ -1308,6 +1308,23 @@ try {
     assert.ok(sent.messages[0].content.startsWith(preview), sent.messages[0].content.slice(0, 400))
     assert.equal(sent.options.temperature, 0.6)
 
+    // registro: dal monitor si rilegge il prompt esatto partito verso il modello, con i titoli delle tecniche
+    await openTab('Modello')
+    const monitor = page.locator('#panel-model').getByTestId('context-monitor')
+    if (!(await monitor.getByTestId('context-calls').evaluate((d) => d.open))) await monitor.getByTestId('context-calls').locator('summary').click()
+    await monitor.getByTestId('context-call-select').selectOption({ index: await monitor.getByTestId('context-call-select').locator('option').evaluateAll((os) => os.findIndex((o) => /chat|Risposta/i.test(o.textContent ?? ''))) })
+    await monitor.getByTestId('context-request-open').click()
+    const sentDialog = page.getByTestId('context-request-dialog')
+    const systemText = await sentDialog.locator('[data-testid="context-request-message"][data-role="system"] pre').first().textContent()
+    assert.equal(systemText, sent.messages[0].content)
+    assert.match(systemText, /\n\n# Come lavorare\n\n[\s\S]*\n\n## Dare un ruolo\n\n/)
+    assert.equal(await sentDialog.locator('[data-testid="context-request-message"][data-role="user"] pre').last().textContent(), 'Guarda questo prompt')
+    await sentDialog.getByTestId('context-request-copy').click()
+    await sentDialog.getByTestId('context-request-copy').filter({ hasText: 'Copiato' }).waitFor()
+    assert.ok((await app.evaluate(({ clipboard }) => clipboard.readText())).startsWith('### Sistema\n\nSei un esperto di prompt engineering'))
+    await sentDialog.getByTestId('dialog-close').click()
+    await sentDialog.waitFor({ state: 'detached' })
+
     // scheda Conoscenza: le basi del ruolo (tecniche ed esempi) stanno a parte, in sola lettura
     await openTab('Conoscenza')
     const roleBases = panel.getByTestId('role-bases')

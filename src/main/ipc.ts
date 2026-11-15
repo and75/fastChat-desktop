@@ -37,6 +37,7 @@ import {
   getSettings,
   listConversations,
   listContextCalls,
+  getContextRequest,
   listModelSettings,
   removeModelSetting,
   saveModelSetting,
@@ -386,6 +387,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     e.returnValue = systemLocale()
   })
   handle(IPC.contextCalls, (_e, id: string) => listContextCalls(db, requireId(id)))
+  handle(IPC.contextRequest, (_e, id: string) => getContextRequest(db, requireId(id)))
   /** Le chiamate della conversazione come CSV, per confrontare ordini del contesto e modelli. */
   handle(IPC.contextExport, async (e, id: string) => {
     const calls = await listContextCalls(db, requireId(id))

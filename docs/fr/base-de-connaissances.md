@@ -221,7 +221,7 @@ budget = min( part × num_ctx ,
 
 - Section `# Base de connaissances`, dans le prompt système après les instructions du rôle, la situation, le
   style, le résumé et la mémoire de la conversation. Avant elle viennent, s'il y en a, les techniques
-  (`# Comment travailler`) et les exemples (`# Exemples`) du rôle.
+  (`# Comment travailler`, chaque section avec son titre `## …`) et les exemples (`# Exemples`) du rôle.
 - Introduction pour « documents complets » ou pour « extraits » (et une phrase de liaison quand il y a les deux) ;
   puis chaque entrée sous la forme `[Titre, p. N]` suivie du texte.
 - Instructions au modèle : répondre à partir des documents quand ils concernent la question, citer la source

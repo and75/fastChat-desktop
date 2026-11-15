@@ -383,6 +383,13 @@ export interface ContextPart {
   count?: number
 }
 
+/** Ciò che è partito davvero verso il modello in una chiamata di chat: i messaggi, così come sono stati inviati. */
+export interface ContextRequest {
+  messages: Array<{ role: string; content: string }>
+  options?: Record<string, unknown>
+  think?: boolean | null
+}
+
 /** Una chiamata a Ollama: cosa è partito (stima per voce) e cosa ha contato Ollama. */
 export interface ContextCall {
   id: string
@@ -414,10 +421,12 @@ export interface ContextCall {
   thinkingTokens: number | null
   /** Come il modello tratta il messaggio di sistema. */
   systemSlot: SystemSlot | null
+  /** Il testo inviato è conservato (solo chiamate di chat recenti): si legge con `context.request`. */
+  hasRequest: boolean
   createdAt: number
 }
 
-export type ContextCallInput = Omit<ContextCall, 'id' | 'createdAt'>
+export type ContextCallInput = Omit<ContextCall, 'id' | 'createdAt' | 'hasRequest'> & { request?: ContextRequest | null }
 
 export interface MemoryStatus {
   /** Pezzi indicizzati con il modello di embedding attuale. */
@@ -740,6 +749,7 @@ export const IPC = {
   knowledgeProgress: 'knowledge:progress',
   contextCalls: 'context:calls',
   contextExport: 'context:export',
+  contextRequest: 'context:request',
   /** Evento main → renderer: nuova chiamata registrata. */
   contextCallAdded: 'context:call-added',
   modelSettingsList: 'model-settings:list',

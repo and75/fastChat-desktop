@@ -428,7 +428,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
       contextOrder: context.order,
       reminder: context.reminder,
       systemSlot: caps?.systemSlot ?? null,
-      cpt: charsPerToken(history)
+      cpt: charsPerToken(history),
+      request: { messages: request.messages.map((m) => ({ role: m.role, content: m.content })), options: request.options as Record<string, unknown> | undefined, think: request.think ?? null }
     }
     return { request, start }
   }

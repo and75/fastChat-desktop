@@ -591,6 +591,12 @@ Scoperte durante il lavoro:
   - **Da verificare con l'utente**: tempi di risposta; la stessa richiesta con il ragionamento spento (se regge,
     il ruolo può partire senza); prove rimaste: migliorare «Traduci in inglese», diagnosi, richiesta vaga, prompt
     di sistema senza spiegazione, prompt con esempi.
+- **Titoli delle tecniche e registro del prompt inviato** (fatti, chiesti dall'utente): le tecniche di un ruolo
+  arrivano al modello con il titolo di ogni sezione (`buildBehaviorSection`; prima partivano solo i paragrafi).
+  Il monitor del contesto conserva i messaggi esatti delle ultime 20 chiamate di chat per conversazione
+  (colonna `request`, migrazione 0018; `CONTEXT_REQUESTS_KEPT`): «Vedi il prompt inviato» li mostra e li copia.
+- **Frasi delle opzioni più sintetiche** (proposto, non fatto): l'utente trova verbose le frasi generate dalle
+  scelte. Da decidere sui dati, ora che il prompt inviato si può leggere.
 - **Ragionamento dell'Esperto**: chiarito, nessun difetto. Nella conversazione di prova l'aveva spento l'utente,
   che aveva anche cambiato tre scelte. Con il ragionamento acceso il ruolo lavora meglio.
 - **Profili per modello** (`profiles` nel ruolo): i ruoli escono senza. Servono i risultati della prova con

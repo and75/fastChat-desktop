@@ -197,7 +197,8 @@ budget = min( quota × num_ctx ,
 ## 6. Nel prompt
 
 - Sezione `# Base di conoscenza`, nel system prompt dopo istruzioni del ruolo, situazione, stile, riassunto e memoria
-  della conversazione. Prima vengono, se ci sono, le tecniche (`# Come lavorare`) e gli esempi (`# Esempi`) del ruolo.
+  della conversazione. Prima vengono, se ci sono, le tecniche (`# Come lavorare`, ogni sezione con il suo
+  titolo `## …`) e gli esempi (`# Esempi`) del ruolo.
 - Introduzione per «documenti completi» o per «estratti» (e una frase di raccordo quando ci sono entrambi);
   poi ogni voce come `[Titolo, p. N]` seguita dal testo.
 - Istruzioni al modello: rispondere dai documenti quando riguardano la domanda, citare la fonte tra

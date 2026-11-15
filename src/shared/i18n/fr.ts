@@ -921,5 +921,15 @@ export const fr: Record<Key, string> = {
   'store.foundIn': 'Trouvé en {language} : « {name} ». Choisissez la langue pour voir et installer cette variante.',
   'store.role.hint': 'Vous le trouverez dans « Parler avec un… », à côté de « Nouvelle conversation ».',
   'store.role.remove.hint': 'Les conversations qui l\'utilisent continuent en Généraliste, avec leur situation. Ses bases restent si un autre rôle les utilise.',
-  'store.builtin.role': 'Inclus dans l’application'
+  'store.builtin.role': 'Inclus dans l’application',
+  'ctx.request.show': 'Voir le prompt envoyé',
+  'ctx.request.title': 'Prompt envoyé au modèle',
+  'ctx.request.hint': 'Les messages exacts envoyés au modèle lors de cet appel. Ils restent sur cet ordinateur ; les 20 derniers appels de chaque conversation sont conservés.',
+  'ctx.request.copy': 'Tout copier',
+  'ctx.request.copied': 'Copié',
+  'ctx.request.gone': 'Le texte de cet appel n\'est plus conservé.',
+  'ctx.request.role.system': 'Système',
+  'ctx.request.role.user': 'Utilisateur',
+  'ctx.request.role.assistant': 'Assistant',
+  'ctx.request.chars': '{n} caractères'
 }

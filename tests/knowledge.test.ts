@@ -14,7 +14,7 @@ import { SourceError, type KnowledgeSource } from '../src/main/knowledge/source'
 import { BUILTIN_SOURCES } from '../src/main/knowledge/sources'
 import { textSource } from '../src/main/knowledge/sources/text'
 import { createOllamaClient } from '../src/main/ollama'
-import { buildDocumentChunks, buildKnowledgeSection, splitKnowledgeBudget, ftsQuery, hybridScores, knowledgeBudget, normalizeText, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs, wholeDocuments } from '../src/shared/knowledge'
+import { buildBehaviorSection, buildDocumentChunks, buildKnowledgeSection, splitKnowledgeBudget, ftsQuery, hybridScores, knowledgeBudget, normalizeText, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs, wholeDocuments } from '../src/shared/knowledge'
 import { fromBuffer } from '../src/shared/memory'
 import type { Conversation, KnowledgeProgress, StreamEvent } from '../src/shared/types'
 import { fakeEmbedding, startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
@@ -123,6 +123,19 @@ describe('base di conoscenza: funzioni pure', () => {
     expect(s.indexOf('[Manuale, Uso]')).toBeLessThan(s.indexOf('[Manuale]\nPrimo.'))
     expect(s.indexOf('[Manuale]\nPrimo.')).toBeLessThan(s.indexOf('[Rapporto, p. 3]'))
     expect(buildKnowledgeSection([])).toBe('')
+    // tecniche del ruolo: ogni sezione con il suo titolo (l'ultimo della catena), scritto una volta sola
+    const technique = (part: number, locator: string | null, text: string) => ({ title: 'Tecniche', locator, text, documentId: 'd', part })
+    expect(
+      buildBehaviorSection([
+        technique(0, 'Tecniche di prompt › Dare un ruolo', 'Una frase che dice chi è il modello.'),
+        technique(1, 'Tecniche di prompt › Prompt deboli', 'Dal più grave al meno grave:'),
+        technique(2, 'Tecniche di prompt › Prompt deboli', '1. Manca il compito.'),
+        technique(3, null, 'Testo senza titolo.')
+      ])
+    ).toBe(
+      '# Come lavorare\n\nTecniche e regole del tuo ruolo. Applicale nella risposta; non citarle e non presentarle come fonti.\n\n' +
+        '## Dare un ruolo\n\nUna frase che dice chi è il modello.\n\n## Prompt deboli\n\nDal più grave al meno grave:\n\n1. Manca il compito.\n\nTesto senza titolo.'
+    )
     expect(toKnowledgeRefs([], picked).map((r) => [r.documentId, r.score, r.locator])).toEqual([
       ['d2', 0.9, 'p. 3'],
       ['d1', 0.7, 'Uso'],

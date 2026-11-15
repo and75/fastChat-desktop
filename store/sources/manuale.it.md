@@ -58,7 +58,7 @@ Con «Plan mode» acceso il pulsante di invio diventa «Pianifica». Il modello 
 
 Quando la conversazione non sta più nella memoria del modello, i messaggi più vecchi vengono sostituiti da un «Riassunto automatico», visibile nella conversazione. Si può leggere e correggere con «Mostra e modifica», rifare con «Aggiorna», togliere con «Elimina».
 
-Lo «Stato del contesto», in fondo alla scheda «Modello», mostra quanta memoria è occupata.
+Lo «Stato del contesto», in fondo alla scheda «Modello», mostra quanta memoria è occupata. Nell'elenco delle chiamate, «Vedi il prompt inviato» mostra i messaggi esatti partiti verso il modello per una risposta, con «Copia tutto»; si conservano le ultime 20 chiamate di ogni conversazione, solo su questo computer.
 
 ## Store
 

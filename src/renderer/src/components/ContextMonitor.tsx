@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { analyzeCall, callKindLabel, partLabel, reconcile, type ReconcileRow } from '@shared/context'
 import { fmtInt, fmtNum, fmtTime, localeTag, t, tn } from '@shared/i18n'
 import { formatElapsed } from '@shared/format'
@@ -6,7 +6,9 @@ import { DEFAULT_CHARS_PER_TOKEN, SUMMARY, type ContextUsage } from '@shared/pro
 import { MEMORY } from '@shared/memory'
 import { RESERVE_SHARE } from '@shared/settings'
 import { useContextUsage } from './ContextMeter'
-import type { ContextCall, ContextPart, Conversation } from '@shared/types'
+import type { ContextCall, ContextPart, ContextRequest, Conversation } from '@shared/types'
+import { useCopy } from './CopyButton'
+import { DialogClose } from './IconButton'
 
 /** Colore di ogni voce (barra e tabella). */
 const COLORS: Record<ContextPart['key'], string> = {
@@ -81,6 +83,66 @@ export function ContextMonitor({ conversation }: { conversation: Conversation })
   )
 }
 
+const roleLabel = (role: string): string => (role === 'system' || role === 'user' || role === 'assistant' ? t(`ctx.request.role.${role}`) : role)
+
+/** Il prompt come testo unico, da copiare: un titolo per messaggio, poi il contenuto così com'è. */
+const requestText = (request: ContextRequest): string => request.messages.map((m) => `### ${roleLabel(m.role)}\n\n${m.content}`).join('\n\n')
+
+/** I messaggi esatti partiti verso il modello in una chiamata: da leggere e da copiare. */
+function RequestDialog({ callId, onClose }: { callId: string; onClose(): void }): React.JSX.Element {
+  const dialog = useRef<HTMLDialogElement>(null)
+  /** undefined = in lettura; null = non più conservato. */
+  const [request, setRequest] = useState<ContextRequest | null | undefined>(undefined)
+  const [copied, copy] = useCopy()
+  useEffect(() => {
+    if (!dialog.current?.open) dialog.current?.showModal()
+    let alive = true
+    void window.api.context.request(callId).then((r) => alive && setRequest(r.ok ? r.data : null))
+    return () => {
+      alive = false
+    }
+  }, [callId])
+  return (
+    <dialog
+      ref={dialog}
+      aria-label={t('ctx.request.title')}
+      data-testid="context-request-dialog"
+      onClose={onClose}
+      className="m-auto flex max-h-[86vh] w-[52rem] max-w-[92vw] flex-col rounded-xl border border-zinc-200 bg-white p-0 text-sm text-zinc-900 shadow-xl backdrop:bg-black/40 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 [&:not([open])]:hidden"
+    >
+      <div className="flex shrink-0 items-start gap-3 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h2 className="text-base font-semibold">{t('ctx.request.title')}</h2>
+          <p className="text-xs leading-snug text-zinc-500">{t('ctx.request.hint')}</p>
+        </div>
+        {request && (
+          <button
+            type="button"
+            onClick={() => void copy(requestText(request))}
+            className="ml-auto shrink-0 rounded-lg border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            data-testid="context-request-copy"
+          >
+            {copied ? t('ctx.request.copied') : t('ctx.request.copy')}
+          </button>
+        )}
+        <DialogClose onClose={() => dialog.current?.close()} />
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+        {request === null && <p className="text-zinc-500">{t('ctx.request.gone')}</p>}
+        {request?.messages.map((m, i) => (
+          <section key={i} className="flex flex-col gap-1" data-testid="context-request-message" data-role={m.role}>
+            <h3 className="flex items-baseline gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              {roleLabel(m.role)}
+              <span className="font-normal normal-case tracking-normal">{t('ctx.request.chars', { n: fmtInt(m.content.length) })}</span>
+            </h3>
+            <pre className="whitespace-pre-wrap break-words rounded-lg bg-zinc-100 p-3 font-mono text-xs leading-relaxed dark:bg-zinc-900">{m.content}</pre>
+          </section>
+        ))}
+      </div>
+    </dialog>
+  )
+}
+
 /** Dettaglio di una chiamata: inviato per voce, consumato secondo Ollama, tempi. */
 function CallDetail({
   calls,
@@ -92,6 +154,7 @@ function CallDetail({
   setSelected: (id: string | null) => void
 }): React.JSX.Element {
   const [exported, setExported] = useState<string | null>(null)
+  const [showRequest, setShowRequest] = useState(false)
 
   const index = Math.max(0, selected ? calls.findIndex((c) => c.id === selected) : 0)
   const call = calls[index]
@@ -104,6 +167,7 @@ function CallDetail({
 
   return (
     <div className="flex flex-col gap-3 text-xs" data-testid="context-call">
+      {showRequest && <RequestDialog callId={call.id} onClose={() => setShowRequest(false)} />}
       <p className="text-zinc-500">{t('ctx.intro')}</p>
       <div className="-mt-1 flex items-center gap-2">
         <button
@@ -114,6 +178,16 @@ function CallDetail({
         >
           {t('ctx.export')}
         </button>
+        {call.hasRequest && (
+          <button
+            type="button"
+            onClick={() => setShowRequest(true)}
+            className="rounded border border-zinc-300 px-1.5 py-0.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            data-testid="context-request-open"
+          >
+            {t('ctx.request.show')}
+          </button>
+        )}
         {exported && (
           <span className="min-w-0 truncate text-zinc-500" title={exported} data-testid="context-exported">
             {t('ctx.export.done', { path: exported })}

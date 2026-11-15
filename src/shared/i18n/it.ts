@@ -921,7 +921,17 @@ export const it = {
   'store.foundIn': 'Trovato in {language}: «{name}». Scegli la lingua per vedere e installare quella variante.',
   'store.role.hint': 'Lo trovi in «Parla con un…», accanto a «Nuova conversazione».',
   'store.role.remove.hint': 'Le conversazioni che lo usano continuano come Generalista, con la loro situazione. Le sue basi restano se un altro ruolo le usa.',
-  'store.builtin.role': 'Incluso nell’app'
+  'store.builtin.role': 'Incluso nell’app',
+  'ctx.request.show': 'Vedi il prompt inviato',
+  'ctx.request.title': 'Prompt inviato al modello',
+  'ctx.request.hint': 'I messaggi esatti partiti verso il modello in questa chiamata. Restano su questo computer; di ogni conversazione si conservano le ultime 20 chiamate.',
+  'ctx.request.copy': 'Copia tutto',
+  'ctx.request.copied': 'Copiato',
+  'ctx.request.gone': 'Il testo di questa chiamata non è più conservato.',
+  'ctx.request.role.system': 'Sistema',
+  'ctx.request.role.user': 'Utente',
+  'ctx.request.role.assistant': 'Assistente',
+  'ctx.request.chars': '{n} caratteri'
 } as const satisfies Record<string, string>
 
 export type Key = keyof typeof it

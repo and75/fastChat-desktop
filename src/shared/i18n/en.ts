@@ -922,5 +922,15 @@ export const en: Record<Key, string> = {
   'store.foundIn': 'Found in {language}: “{name}”. Choose the language to see and install that variant.',
   'store.role.hint': 'You will find it under “Talk to a…”, next to “New conversation”.',
   'store.role.remove.hint': 'Conversations using it continue as Generalist, with their situation. Its bases stay if another role uses them.',
-  'store.builtin.role': 'Bundled with the app'
+  'store.builtin.role': 'Bundled with the app',
+  'ctx.request.show': 'View the prompt sent',
+  'ctx.request.title': 'Prompt sent to the model',
+  'ctx.request.hint': 'The exact messages sent to the model in this call. They stay on this computer; the last 20 calls of each conversation are kept.',
+  'ctx.request.copy': 'Copy all',
+  'ctx.request.copied': 'Copied',
+  'ctx.request.gone': 'The text of this call is no longer kept.',
+  'ctx.request.role.system': 'System',
+  'ctx.request.role.user': 'User',
+  'ctx.request.role.assistant': 'Assistant',
+  'ctx.request.chars': '{n} characters'
 }
