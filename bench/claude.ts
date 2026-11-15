@@ -21,7 +21,8 @@ export function createClaude(model = 'claude-opus-5-5'): Claude {
   const client = new Anthropic()
   const usage = { input: 0, output: 0, calls: 0 }
   const ask: Ask = async ({ system, user, schema, maxTokens = 16000 }) => {
-    const message = await client.beta.messages.parse({
+    // In streaming: una risposta lunga (un documento riscritto) non incontra i limiti di tempo di una richiesta sola.
+    const stream = client.beta.messages.stream({
       model,
       max_tokens: maxTokens,
       // Se il modello declina la richiesta, il servizio la ripete sul modello di ripiego predefinito.
@@ -31,6 +32,7 @@ export function createClaude(model = 'claude-opus-5-5'): Claude {
       messages: [{ role: 'user', content: user }],
       output_config: { effort: 'medium', format: betaZodOutputFormat(schema) }
     })
+    const message = await stream.finalMessage()
     usage.calls++
     usage.input += message.usage.input_tokens
     usage.output += message.usage.output_tokens

@@ -612,9 +612,13 @@ Scoperte durante il lavoro:
   comando `npm run bench` nel repository, cartella `bench/`. Usa il codice dell'app senza Electron
   (`bench/harness.ts`), legge i testi dai sorgenti, esegue i casi di `bench/cases/<ruolo>.json` su uno o più
   modelli, misura, applica controlli a regole fisse (`bench/checks.ts`) e scrive `bench/runs/<data>/report.md`.
-  Istruzioni in `bench/README.md`. Si esegue sul computer dell'utente. **Passo 1 fatto** (esecuzione, misure,
-  controlli, rapporto). **Da fare**: giudice con Claude e chiave Anthropic dell'utente; ciclo «valuta, corregge
-  e riprova» con casi di lavoro e di controllo separati.
+  Istruzioni in `bench/README.md`. Si esegue sul computer dell'utente. Fatti i tre passi: esecuzione, misure e controlli;
+  giudice con Claude (`bench/judge.ts`, chiave in `ANTHROPIC_API_KEY`); ciclo «valuta, corregge e riprova»
+  (`bench/improve.ts`, `bench/loop.ts`, opzione `--rounds`), che corregge leggendo i soli casi di lavoro e tiene
+  una variante solo se migliora sui casi di controllo oltre il rumore; `--apply` porta la migliore nei sorgenti.
+  **Verificato solo con Ollama finto e Claude simulato** (`tests/bench.test.ts`): la prima esecuzione vera, con
+  Ollama e con la chiave, è dell'utente. Predefinito `--rounds 0`, per non avviare ore di lavoro e spesa senza
+  che sia chiesto.
 - **Ragionamento dell'Esperto**: chiarito, nessun difetto. Nella conversazione di prova l'aveva spento l'utente,
   che aveva anche cambiato tre scelte. Con il ragionamento acceso il ruolo lavora meglio.
 - **Profili per modello** (`profiles` nel ruolo): i ruoli escono senza. Servono i risultati della prova con

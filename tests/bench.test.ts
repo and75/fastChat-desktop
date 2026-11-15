@@ -4,9 +4,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { passRate, runChecks, splitAnswer } from '../bench/checks'
 import type { Ask } from '../bench/claude'
 import { createJudge, CRITERIA, judgePrompt } from '../bench/judge'
+import { applyProposal, improvePrompt, proposeVariant, type Proposal } from '../bench/improve'
+import { runLoop, scoreOf } from '../bench/loop'
 import { buildReport, summarize } from '../bench/report'
 import { runVariant } from '../bench/run'
-import type { BenchCase, Turn } from '../bench/types'
+import type { BenchCase, CaseResult, Turn, Variant } from '../bench/types'
 import { loadBaseline } from '../bench/variant'
 import { startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
 
@@ -160,4 +162,93 @@ describe('banco di prova: esecuzione con il codice dell\'app', () => {
     const missing = await runVariant(variant, cases, { ollamaUrl: fake.url, models: ['assente'], reps: 1, think: 'role', numCtx: 4096 })
     expect(missing[0].checks.some((c) => !c.pass)).toBe(true)
   }, 60_000)
+})
+
+describe('banco di prova: correzione e riprova', () => {
+  const base = loadBaseline('prompt.it')
+  const TECNICHE = 'app.fastchat.kb.prompt-tecniche.it'
+  const ESEMPI = 'app.fastchat.kb.prompt-esempi.it'
+  const empty: Proposal = { diagnosis: 'd', changes: ['c'], instructions: '', options: [], bases: [] }
+
+  it('una proposta cambia solo i testi; ciò che altera la struttura o stravolge un documento viene scartato', () => {
+    const ok = applyProposal(base, { ...empty, instructions: 'Sei un esperto di prompt.', options: [{ parameter: 'metodo', option: 'subito', instruction: 'Rispondi subito e dichiara le ipotesi.' }], bases: [{ id: TECNICHE, text: base.bases[TECNICHE].files[0].text.replace('Un buon prompt', 'Un prompt riuscito') }] }, 'giro-1')
+    expect('variant' in ok).toBe(true)
+    const next = (ok as { variant: Variant }).variant
+    expect(next.name).toBe('giro-1')
+    expect(next.role.instructions).toBe('Sei un esperto di prompt.')
+    expect(next.role.parameters!.find((p) => p.id === 'metodo')!.options.find((o) => o.id === 'subito')!.instruction).toBe('Rispondi subito e dichiara le ipotesi.')
+    expect(next.bases[TECNICHE].files[0].text).toContain('Un prompt riuscito')
+    // la struttura resta quella: stessi parametri, opzioni, predefiniti; la variante di partenza non è toccata
+    expect(next.role.parameters!.map((p) => [p.id, p.default, p.options.map((o) => o.id)])).toEqual(base.role.parameters!.map((p) => [p.id, p.default, p.options.map((o) => o.id)]))
+    expect(base.role.instructions).not.toBe('Sei un esperto di prompt.')
+    const rejected = (proposal: Partial<Proposal>): string => (applyProposal(base, { ...empty, ...proposal }, 'x') as { rejected: string }).rejected
+    expect(rejected({})).toMatch(/nessuna modifica/)
+    expect(rejected({ options: [{ parameter: 'metodo', option: 'inventata', instruction: 'x' }] })).toMatch(/opzione sconosciuta/)
+    expect(rejected({ options: [{ parameter: 'metodo', option: 'subito', instruction: ' ' }] })).toMatch(/frase vuota/)
+    expect(rejected({ bases: [{ id: 'app.fastchat.guida', text: 'x' }] })).toMatch(/non modificabile/)
+    expect(rejected({ bases: [{ id: TECNICHE, text: 'Troppo corto.' }] })).toMatch(/cambiato troppo/)
+    expect(rejected({ bases: [{ id: ESEMPI, text: 'x'.repeat(base.bases[ESEMPI].files[0].text.length) }] })).toMatch(/almeno due esempi/)
+  })
+
+  const result = (variant: string, testCase: BenchCase, pass: boolean): CaseResult => ({ variant, model: 'm', rep: 1, case: testCase, choices: {}, settings: { think: true, numCtx: 1, temperature: 0.6 }, turns: [turn('risposta di prova')], checks: [{ id: 'c', pass, detail: pass ? 'bene' : 'male' }], verdict: null, error: null })
+  const cases: BenchCase[] = [
+    { id: 'lavoro-1', split: 'train', request: 'r', expect: 'prompt' },
+    { id: 'controllo-1', split: 'test', request: 'r', expect: 'prompt' },
+    { id: 'controllo-2', split: 'test', request: 'r', expect: 'prompt' }
+  ]
+
+  it('il correttore vede i testi e i soli casi di lavoro, mai quelli di controllo', async () => {
+    const results = cases.map((c) => result('base', c, false))
+    const text = improvePrompt(base, results, ['prima modifica → scartata'])
+    expect(text).toContain('<istruzione_fissa>')
+    expect(text).toContain('parametro «metodo»')
+    expect(text).toContain(`<documento id="${ESEMPI}"`)
+    expect(text).toContain('<caso id="lavoro-1"')
+    expect(text).not.toContain('controllo-1')
+    expect(text).toContain('<giri_precedenti>\n1. prima modifica → scartata')
+    expect(text).toContain('Controlli automatici falliti: c (male)')
+    const proposed = await proposeVariant(async () => ({ ...empty, instructions: 'Nuova istruzione.' }) as never, base, results, 'giro-1', [])
+    expect(proposed!.outcome).toMatchObject({ variant: { name: 'giro-1' } })
+    expect(await proposeVariant(async () => null, base, results, 'giro-1', [])).toBeNull()
+  })
+
+  it('ciclo: una variante si tiene solo se migliora sui casi di controllo oltre il rumore', async () => {
+    // quanto «passa» ogni variante sui casi di controllo: la base 1 su 2, il giro 1 peggio, il giro 2 tutto
+    const quality: Record<string, boolean[]> = { base: [true, false], 'base-bis': [true, false], 'giro-1': [false, false], 'giro-2': [true, true] }
+    const ran: string[] = []
+    const saved: string[] = []
+    const proposedFrom: string[] = []
+    const outcome = await runLoop(base, cases, { models: ['m'] }, 3, {
+      async run(variant, subset) {
+        ran.push(`${variant.name}:${subset.length}`)
+        const tests = subset.filter((c) => c.split === 'test')
+        return subset.map((c) => result(variant.name, c, c.split === 'train' ? true : quality[variant.name][tests.indexOf(c)]))
+      },
+      async propose(best, _results, name) {
+        proposedFrom.push(`${name}<-${best.name}`)
+        if (name === 'giro-3') return { changes: [], diagnosis: 'nulla da cambiare', outcome: { rejected: 'nessuna modifica proposta' } }
+        return { changes: [`modifica ${name}`], diagnosis: 'causa', outcome: { variant: { ...base, name } } }
+      },
+      onVariant: (v) => void saved.push(v.name)
+    })
+    // base su tutti i casi, poi di nuovo sui soli casi di controllo per il rumore, poi le due varianti provate
+    expect(ran).toEqual(['base:3', 'base-bis:2', 'giro-1:3', 'giro-2:3'])
+    expect(saved).toEqual(['giro-1', 'giro-2'])
+    // il giro 2 parte ancora dalla base (il giro 1 è stato scartato); il giro 3 dal giro 2, tenuto
+    expect(proposedFrom).toEqual(['giro-1<-base', 'giro-2<-base', 'giro-3<-giro-2'])
+    expect(outcome.best.name).toBe('giro-2')
+    expect(scoreOf(outcome.results, 'giro-2', ['m'], 'test')).toBe(1)
+    expect(outcome.notes.join('\n')).toMatch(/«giro-1»: 0% sui casi di controllo contro 50% — scartata/)
+    expect(outcome.notes.join('\n')).toMatch(/«giro-2»: 100% sui casi di controllo contro 50% — \*\*tenuta\*\*/)
+    expect(outcome.notes.join('\n')).toMatch(/Giro 3: proposta scartata prima della prova/)
+    expect(outcome.notes.at(-1)).toMatch(/la variante migliore è «giro-2»/)
+
+    // senza giri: solo la misura; senza miglioramenti: resta la base
+    const measure = await runLoop(base, cases, { models: ['m'] }, 0, { run: async (v, subset) => subset.map((c) => result(v.name, c, true)), propose: async () => null })
+    expect(measure.best).toBe(base)
+    expect(measure.notes).toHaveLength(1)
+    const flat = await runLoop(base, cases, { models: ['m'] }, 1, { run: async (v, subset) => subset.map((c) => result(v.name, c, true)), propose: async (_b, _r, name) => ({ changes: ['x'], diagnosis: 'd', outcome: { variant: { ...base, name } } }) })
+    expect(flat.best).toBe(base)
+    expect(flat.notes.at(-1)).toMatch(/nessuna variante ha fatto meglio/)
+  })
 })
