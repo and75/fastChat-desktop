@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fmtInt, t } from '@shared/i18n'
 import { buildStyleSection, charsPerToken, situationSection } from '@shared/prompt'
-import { roleInstructions, situationLimit } from '@shared/roles'
+import { roleIdentity, roleRules, situationLimit } from '@shared/roles'
 import { resolveSettings } from '@shared/settings'
 import { DEFAULT_CONTEXT_SETTINGS, DEFAULT_TITLE, type Conversation } from '@shared/types'
 import { useChat } from '../store/useChat'
@@ -113,7 +113,10 @@ function SituationTab({ conversation, draft, saved, onChange, onFlush }: { conve
   const limit = situationLimit(resolveSettings(conversation, caps).numCtx, share, charsPerToken(messages))
   const over = draft.length > limit
 
-  const instructions = roleInstructions(definitionOf(roles, conversation), conversation.roleParams)
+  // Il ruolo scrive due blocchi: il testo fisso, che apre il prompt, e le regole scelte, che lo chiudono.
+  const role = definitionOf(roles, conversation)
+  const instructions = roleIdentity(role)
+  const rules = roleRules(role, conversation.roleParams)
   const situation = situationSection(draft, !!instructions)
   // Ciò che segue le istruzioni del ruolo nel prompt: la situazione, poi lo stile della risposta.
   const rest = [situation, buildStyleSection(conversation.style)].filter(Boolean).join('\n\n')
@@ -165,9 +168,11 @@ function SituationTab({ conversation, draft, saved, onChange, onFlush }: { conve
           {instructions && <span className="text-brand-700 dark:text-brand-300">{instructions}</span>}
           {instructions && rest ? '\n\n' : ''}
           {rest}
-          {!instructions && !rest && t('brief.preview.empty')}
+          {rules && (instructions || rest) ? '\n\n' : ''}
+          {rules && <span className="text-brand-700 dark:text-brand-300">{rules}</span>}
+          {!instructions && !rest && !rules && t('brief.preview.empty')}
         </pre>
-        {instructions && <p className="mt-1 text-xs leading-snug text-zinc-500">{t('situation.preview.hint')}</p>}
+        {(instructions || rules) && <p className="mt-1 text-xs leading-snug text-zinc-500">{t('situation.preview.hint')}</p>}
       </details>
     </>
   )

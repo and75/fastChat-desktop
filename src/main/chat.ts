@@ -51,7 +51,7 @@ import type { ChatMessage, ChatOptions, ChatRequest, OllamaClient } from './olla
 import { memoryBudget, type Memory, type Recall } from './memory'
 import type { Summarizer } from './summary'
 import { knowledgeBudget } from '@shared/knowledge'
-import { GENERALIST_ROLE, rolePrompt, roleReminderText, type Role } from '@shared/roles'
+import { GENERALIST_ROLE, rolePrompt, roleReminderText, roleSectionRules, type Role } from '@shared/roles'
 import { withPromptLanguage } from './promptLocale'
 import type { Knowledge, RoleRecall } from './knowledge'
 import type { Embedder } from './embedder'
@@ -147,6 +147,8 @@ export interface ComposeConfig {
   situationPart?: string
   /** L'essenziale del ruolo per il promemoria. Se manca si usa il campo Ruolo del Brief (conversazioni non convertite). */
   reminderText?: string
+  /** Le regole scelte dall'utente tra le opzioni del ruolo, già pronte: ultimo blocco prima della domanda. */
+  rules?: string
 }
 
 /** Come buildChatMessages, più le voci per il monitor del contesto e i messaggi rimasti fuori. */
@@ -164,6 +166,7 @@ export function composeChat(
   const knowledge = extras.knowledge ?? ''
   const behavior = extras.behavior ?? ''
   const examples = extras.examples ?? ''
+  const rules = config.rules ?? ''
   const reminder = config.reminder ? roleReminder(config.reminderText ?? conv.role) : ''
   // Ordine di lettura: riassunto, memoria della conversazione, tecniche ed esempi del ruolo, documenti (i più
   // vicini alla domanda per ultimi).
@@ -177,7 +180,8 @@ export function composeChat(
       { key: 'memory', text: memory },
       { key: 'behavior', text: behavior },
       { key: 'examples', text: examples },
-      { key: 'knowledge', text: knowledge }
+      { key: 'knowledge', text: knowledge },
+      { key: 'rules', text: rules }
     ],
     reminder,
     history: recent,
@@ -193,7 +197,8 @@ export function composeChat(
   const withoutStyle = hasStyle ? base.replace(style, '') : base
   const parts = chatParts({
     system: composed.flat,
-    instructions: situation ? withoutStyle.replace(situation, '') : withoutStyle,
+    // Le regole scelte fanno parte delle istruzioni del ruolo, anche se viaggiano in fondo.
+    instructions: [situation ? withoutStyle.replace(situation, '') : withoutStyle, rules].filter((x) => x.trim()).join('\n\n'),
     situation,
     style: hasStyle ? style : '',
     summary,
@@ -407,10 +412,10 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     const history = await listMessages(db, conv.id)
     const context = resolveContext(await getContext?.().catch(() => null))
     const role = (await roleOf(db, conv)).definition
-    const situationPart = rolePrompt(role, conv).situation
+    const { situation: situationPart, rules } = rolePrompt(role, conv)
     // Ordine C: la situazione resta nel sistema; istruzioni del ruolo, stile e piano vanno con la domanda.
     const split = context.order === 'C' ? { instructions: systemFor({ ...conv, situation: '' }, mode, role), situation: situationPart } : {}
-    const composed = composeChat(conv, history, systemFor(conv, mode, role), caps, extras, { ...context, ...split, situationPart, reminderText: roleReminderText(role) })
+    const composed = composeChat(conv, history, systemFor(conv, mode, role), caps, extras, { ...context, ...split, situationPart, rules, reminderText: roleReminderText(role) })
     const request: ChatRequest = {
       model: conv.model,
       messages: composed.messages,
@@ -489,7 +494,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
           if (useKnowledge || useRole) {
             const { shares } = resolveContext(await getContext?.().catch(() => null))
             found = await knowledge!
-              .recallAll(conv, { text: question?.content ?? '', vector }, { total: knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), shares, documents: useKnowledge }, cpt)
+              .recallAll(conv, { text: question?.content ?? '', vector }, { total: knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), shares, documents: useKnowledge, sections: roleSectionRules((await roleOf(db, conv)).definition, conv.roleParams) }, cpt)
               .catch(() => found)
             for (const section of [found.documents.section, found.behavior.section, found.examples.section]) if (section) used += estimateTokens(section, cpt)
           }

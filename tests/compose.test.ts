@@ -220,9 +220,9 @@ import { orderLayout, reminderApplies } from '../src/shared/compose'
 
 describe('disegno dell\'ordine e promemoria', () => {
   it('lo schema corrisponde a ciò che il compositore produce', () => {
-    expect(orderLayout('A', false)).toEqual({ system: ['instructions', 'summary', 'memory', 'behavior', 'examples', 'knowledge'], conversation: ['history'], user: ['question'], reuse: 'none' })
-    expect(orderLayout('B', true)).toEqual({ system: ['instructions', 'summary'], conversation: ['history'], user: ['memory', 'behavior', 'examples', 'knowledge', 'reminder', 'question'], reuse: 'previous' })
-    expect(orderLayout('C', true)).toEqual({ system: ['situation', 'summary'], conversation: ['history'], user: ['instructions', 'memory', 'behavior', 'examples', 'knowledge', 'question'], reuse: 'previous' })
+    expect(orderLayout('A', false)).toEqual({ system: ['instructions', 'summary', 'memory', 'behavior', 'examples', 'knowledge', 'rules'], conversation: ['history'], user: ['question'], reuse: 'none' })
+    expect(orderLayout('B', true)).toEqual({ system: ['instructions', 'summary'], conversation: ['history'], user: ['memory', 'behavior', 'examples', 'knowledge', 'rules', 'reminder', 'question'], reuse: 'previous' })
+    expect(orderLayout('C', true)).toEqual({ system: ['situation', 'summary'], conversation: ['history'], user: ['instructions', 'memory', 'behavior', 'examples', 'knowledge', 'rules', 'question'], reuse: 'previous' })
   })
 
   it('con l\'ordine C il promemoria non si applica: le istruzioni sono già accanto alla domanda', () => {

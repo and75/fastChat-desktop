@@ -198,7 +198,11 @@ budget = min( quota × num_ctx ,
 
 - Sezione `# Base di conoscenza`, nel system prompt dopo istruzioni del ruolo, situazione, stile, riassunto e memoria
   della conversazione. Prima vengono, se ci sono, le tecniche (`# Come lavorare`, ogni sezione con il suo
-  titolo `## …`) e gli esempi (`# Esempi`) del ruolo.
+  titolo `## …`) e gli esempi (`# Esempi`) del ruolo. Dopo la base, ultimo blocco prima della domanda, le
+  regole scelte dall'utente tra le opzioni del ruolo (`# Regole di questa conversazione`).
+- Il ruolo può dichiarare, per ogni base, quali sezioni dipendono dalle scelte (`sections` in `role.json`,
+  vedi `docs/ruoli.md` §3.3): una tecnica o un esempio che contraddice le scelte non entra nel prompt, e un
+  esempio «fissato» entra sempre tra i due inviati.
 - Introduzione per «documenti completi» o per «estratti» (e una frase di raccordo quando ci sono entrambi);
   poi ogni voce come `[Titolo, p. N]` seguita dal testo.
 - Istruzioni al modello: rispondere dai documenti quando riguardano la domanda, citare la fonte tra

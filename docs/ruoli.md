@@ -176,6 +176,21 @@ tendina (scelta singola), caselle (scelta multipla), interruttore (sì/no).
 - Conviene che le basi di comportamento siano **corte**, così entrano intere: non dipendono dalla ricerca e non
   richiedono il modello di embedding a ogni domanda.
 - Le basi del ruolo sono normali pacchetti di conoscenza: si installano con il ruolo e sono in sola lettura.
+- **Sezioni condizionate dalle scelte.** Una tecnica o un esempio che contraddice le scelte dell'utente non deve
+  arrivare al modello (es. la sezione «Usare esempi» con la tecnica spenta, un esempio in prosa con «prompt di
+  sistema» scelto). Il ruolo lo dichiara su ogni base, in `role.json`:
+
+  ```json
+  { "id": "…kb.prompt-tecniche.it", "purpose": "behavior", "sections": [
+      { "title": "Usare esempi", "when": { "tecniche": "esempi" } },
+      { "title": "Dividere i compiti complessi", "unless": { "tecniche": "passi" } },
+      { "title": "Fonti", "skip": true } ] }
+  ```
+
+  `title` è il titolo `##` della sezione nel documento; `when` la invia solo se le scelte corrispondono (tutte le
+  condizioni insieme; un elenco vale «una di queste»); `unless` la esclude; `skip` non la invia mai; `pin`
+  (esempi) la mette sempre tra gli esempi inviati quando vale. Le sezioni non elencate si inviano sempre.
+  Codice: `roleSectionRules` in `src/shared/roles.ts`, filtro in `recallAll` (`src/main/knowledge/index.ts`).
 
 ### 3.4 Formato del pacchetto
 
@@ -315,7 +330,8 @@ i ruoli.
 
 | Blocco | Contenuto | Cambia a ogni domanda? |
 |---|---|---|
-| **Istruzioni del ruolo** | Testo fisso del ruolo + frasi delle opzioni scelte + stile della risposta | No |
+| **Istruzioni del ruolo** | `# Ruolo`: il testo fisso del ruolo, poi lo stile della risposta. Apre il prompt | No |
+| **Regole scelte** | `# Regole di questa conversazione`: una voce per ogni opzione scelta, con la frase «valgono più di tecniche ed esempi». È l'ultimo blocco prima della domanda (in coda al sistema con l'ordine A, accanto alla domanda con B e C) | No |
 | **Situazione** | Il campo libero dell'utente | No |
 | **Riassunto** | Riassunto automatico dei messaggi vecchi | Raramente |
 | **Conversazione** | Messaggi recenti | Si allunga |
@@ -571,7 +587,7 @@ di prompt reali (provenienza e licenze in `store/sources/FONTI.md`).
 |  |  |  | Formato di uscita ✓ | «Quando scrivi o riscrivi un prompt, specifica la forma esatta della risposta.» | — |
 |  |  |  | Cosa fare se manca un dato ✓ | «Quando il prompt lavora su un testo o su dati forniti, di' cosa deve fare il modello se un'informazione manca.» | — |
 |  |  |  | Esempi della risposta attesa | «Quando scrivi o riscrivi un prompt, inserisci due o tre esempi della risposta attesa.» | — |
-|  |  |  | Passi numerati | «Quando scrivi o riscrivi un prompt, elenca in passi numerati le fasi del compito.» | — |
+|  |  |  | Passi numerati | «Quando scrivi o riscrivi un prompt, se il compito ha più fasi elencale in passi numerati.» | — |
 | **Metodo** | Prima di rispondere | Singola | Risponde subito | «Rispondi subito: se manca un'informazione, fai un'ipotesi ragionevole ed elenca le ipotesi in una riga prima del prompt.» | — |
 |  |  |  | Fa domande di chiarimento ✓ | «Se dalla richiesta non si capisce per chi è il risultato o a cosa serve, fai due o tre domande brevi e fermati: scrivi il prompt solo dopo le risposte.» | — |
 
@@ -604,9 +620,15 @@ Tecniche: Formato di uscita + Passi numerati · Risponde subito.
   > Scrivi il prompt come prompt di sistema da riusare, diviso in sezioni con un titolo: identità,
   > istruzioni, formato della risposta.
   > Quando scrivi o riscrivi un prompt, specifica la forma esatta della risposta.
-  > Quando scrivi o riscrivi un prompt, elenca in passi numerati le fasi del compito.
+  > Quando scrivi o riscrivi un prompt, se il compito ha più fasi elencale in passi numerati.
   > Rispondi subito: se manca un'informazione, fai un'ipotesi ragionevole ed elenca le ipotesi in una riga
   > prima del prompt.
+
+Nel prompt il testo fisso sta sotto `# Ruolo`, in apertura; le frasi delle opzioni stanno in fondo, sotto
+`# Regole di questa conversazione`, una per voce. Tecniche ed esempi seguono le scelte (§3.3): con i
+predefiniti non partono «Usare esempi», «Scrivere per un modello grande» e «Fonti»; con «prompt di sistema»
+l'esempio a sezioni è sempre presente e quelli in prosa no; con «fa domande» è sempre presente l'esempio
+«Quando l'obiettivo non è chiaro».
 
 Valori della mente ancora da provare a fondo: l'utente ha verificato che con il ragionamento acceso il ruolo
 lavora meglio. I profili per modello arrivano dopo la prova con Ollama sul computer dell'utente.

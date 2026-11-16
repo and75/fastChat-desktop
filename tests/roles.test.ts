@@ -13,7 +13,10 @@ import {
   releaseOverrides,
   resolveChoices,
   roleContext,
+  roleIdentity,
   roleInstructions,
+  roleRules,
+  roleSectionRules,
   roleMind,
   rolePrompt,
   roleReminderText,
@@ -182,9 +185,14 @@ describe('scelte', () => {
       ]
     }
     expect(orderedParameters(role).map((p) => p.id)).toEqual(['i', 'm'])
-    expect(roleInstructions(role)).toBe('Identità.\nMetodo.')
+    // senza testo fisso non c'è il blocco «Ruolo»: restano le regole scelte, sotto il loro titolo
+    expect(roleInstructions(role)).toBe(`${RULES}\n- Identità.\n- Metodo.`)
+    expect(roleIdentity(role)).toBe('')
+    expect(roleRules(role)).toBe(roleInstructions(role))
   })
 })
+
+const RULES = '# Regole di questa conversazione\nLe ha scelte l\'utente. Se una tecnica o un esempio qui sopra dice altro, valgono queste regole.'
 
 describe('istruzioni (docs/ruoli.md §7)', () => {
   it('Generalista: nessuna istruzione', () => {
@@ -196,13 +204,16 @@ describe('istruzioni (docs/ruoli.md §7)', () => {
     const choices = { scopo: 'fare', livello: 'esperto', formato: 'breve', percorso: 'on', argomenti: ['modelli'], lacuna: 'dichiara' }
     expect(roleInstructions(assistente, choices)).toBe(
       [
+        '# Ruolo',
         "Sei l'assistente di FastChat. Rispondi solo a domande sull'uso dell'app, usando la documentazione fornita. Usa i nomi esatti di schede e pulsanti. Se una funzione non esiste, dillo.",
-        "Guida l'utente a compiere l'azione.",
-        'Vai dritto al punto, senza concetti di base.',
-        'Rispondi in una o due frasi.',
-        'Indica sempre il percorso: finestra → scheda → pulsante.',
-        "Quando è pertinente, indica l'effetto su memoria e velocità.",
-        'Se la documentazione non copre la domanda, dillo e non inventare.'
+        '',
+        RULES,
+        "- Guida l'utente a compiere l'azione.",
+        '- Vai dritto al punto, senza concetti di base.',
+        '- Rispondi in una o due frasi.',
+        '- Indica sempre il percorso: finestra → scheda → pulsante.',
+        "- Quando è pertinente, indica l'effetto su memoria e velocità.",
+        '- Se la documentazione non copre la domanda, dillo e non inventare.'
       ].join('\n')
     )
     expect(roleMind(assistente, { choices })).toEqual({ model: 'gemma4:e4b', temperature: 0.2, think: false, style: 'essential', knowledge: true })
@@ -211,7 +222,7 @@ describe('istruzioni (docs/ruoli.md §7)', () => {
   it('Assistente di FastChat: un sì/no spento non aggiunge frasi', () => {
     const text = roleInstructions(assistente, { percorso: 'off' })
     expect(text).not.toContain('percorso')
-    expect(text.split('\n')).toHaveLength(6)
+    expect(text.split('\n').filter((l) => l.startsWith('- '))).toHaveLength(5)
   })
 
   it('Esperto di prompt engineering: esempio di calibrazione', () => {
@@ -226,15 +237,18 @@ describe('istruzioni (docs/ruoli.md §7)', () => {
     }
     expect(roleInstructions(prompt, choices)).toBe(
       [
+        '# Ruolo',
         "Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive.",
-        'Scrivi per modelli piccoli: una istruzione per riga, niente premesse.',
-        'Non riscrivere: elenca i problemi in ordine di gravità.',
-        'Usa pure i termini tecnici del prompt engineering.',
-        'Restituisci solo il risultato richiesto, senza commenti.',
-        'Usa frasi brevi e imperative.',
-        'Quando scrivi o riscrivi un prompt, specifica il formato esatto della risposta.',
-        'Quando scrivi o riscrivi un prompt, chiedi al modello di procedere per passi numerati.',
-        'Rispondi direttamente.'
+        '',
+        RULES,
+        '- Scrivi per modelli piccoli: una istruzione per riga, niente premesse.',
+        '- Non riscrivere: elenca i problemi in ordine di gravità.',
+        '- Usa pure i termini tecnici del prompt engineering.',
+        '- Restituisci solo il risultato richiesto, senza commenti.',
+        '- Usa frasi brevi e imperative.',
+        '- Quando scrivi o riscrivi un prompt, specifica il formato esatto della risposta.',
+        '- Quando scrivi o riscrivi un prompt, chiedi al modello di procedere per passi numerati.',
+        '- Rispondi direttamente.'
       ].join('\n')
     )
     expect(roleMind(prompt, { choices })).toEqual({ model: 'gemma4:12b', temperature: 0.3, think: true, style: 'concise', knowledge: false })
@@ -322,13 +336,17 @@ describe('il ruolo nel prompt (passo 2.3)', () => {
     const p = rolePrompt(assistente, { roleParams: { formato: 'breve' }, situation: '  Uso la versione 0.1.22  ', style: 'essential' })
     expect(p.instructions).toBe(roleInstructions(assistente, { formato: 'breve' }))
     expect(p.situation).toBe('# Situazione\nUso la versione 0.1.22')
-    expect(p.system).toMatch(new RegExp(`^${p.instructions.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\n\n# Situazione\nUso la versione 0\\.1\\.22\n\n# Stile della risposta\nRispondi nel modo più breve possibile`))
+    // il prompt si apre con il ruolo (testo fisso), poi situazione e stile; le regole scelte viaggiano a parte, in fondo
+    expect(p.system.startsWith(`${roleIdentity(assistente)}\n\n# Situazione\nUso la versione 0.1.22\n\n# Stile della risposta\nRispondi nel modo più breve possibile`)).toBe(true)
+    expect(p.system).not.toContain('Regole di questa conversazione')
+    expect(p.rules).toBe(roleRules(assistente, { formato: 'breve' }))
+    expect(p.rules).toContain('- Rispondi in una o due frasi.')
     // Senza situazione non resta un titolo vuoto.
-    expect(rolePrompt(assistente, { roleParams: null, situation: ' ' })).toMatchObject({ situation: '', system: roleInstructions(assistente) })
+    expect(rolePrompt(assistente, { roleParams: null, situation: ' ' })).toMatchObject({ situation: '', system: roleIdentity(assistente) })
   })
 
   it('Generalista: la situazione senza titolo; una riga non convertita vale il suo Brief', () => {
-    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: 'Contesto mio' })).toEqual({ instructions: '', situation: 'Contesto mio', system: 'Contesto mio' })
+    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: 'Contesto mio' })).toEqual({ instructions: '', rules: '', situation: 'Contesto mio', system: 'Contesto mio' })
     expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: '' }).system).toBe('')
     const brief = { role: 'Sei un tutor', context: '', goals: 'Spiegare', constraints: '' }
     expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: null, ...brief, style: 'concise' }).system).toBe(buildSystemPrompt(brief, 'concise'))
@@ -357,5 +375,67 @@ describe('il ruolo nel prompt (passo 2.3)', () => {
     expect(computeContextUsage({ ...base, situation: 'Lezione' }).parts.map((p) => p.key)).toEqual(['situation'])
     // Senza situazione (riga non convertita) si stima dal Brief, come prima.
     expect(computeContextUsage(base).parts.map((p) => p.key)).toEqual(['instructions'])
+  })
+})
+
+describe('sezioni delle basi condizionate dalle scelte', () => {
+  const role: Role = {
+    instructions: 'Sei un esperto.',
+    parameters: [
+      { id: 'tipo', section: 'style', label: 'Tipo', type: 'single', default: 'messaggio', options: [{ id: 'messaggio', label: 'M' }, { id: 'sistema', label: 'S' }] },
+      { id: 'tecniche', section: 'rules', label: 'Tecniche', type: 'multi', default: ['ruolo'], options: [{ id: 'ruolo', label: 'R' }, { id: 'esempi', label: 'E' }, { id: 'passi', label: 'P' }] }
+    ],
+    bases: [
+      {
+        id: 'kb.tecniche',
+        purpose: 'behavior',
+        sections: [
+          { title: 'Usare esempi', when: { tecniche: 'esempi' } },
+          { title: 'Dividere i compiti', unless: { tecniche: 'passi' } },
+          { title: 'Fonti', skip: true }
+        ]
+      },
+      {
+        id: 'kb.esempi',
+        purpose: 'examples',
+        sections: [
+          { title: 'Prompt di sistema', when: { tipo: 'sistema' }, pin: true },
+          { title: 'In prosa', when: { tipo: ['messaggio'] } },
+          { title: 'Con esempi in prosa', when: { tipo: 'messaggio', tecniche: 'esempi' } }
+        ]
+      },
+      { id: 'kb.libera', purpose: 'documents' }
+    ]
+  }
+
+  it('una sezione che contraddice le scelte non si invia; un esempio fissato si invia sempre', () => {
+    expect(validateRole(role)).toEqual([])
+    // predefiniti: messaggio, tecnica «ruolo»
+    expect(roleSectionRules(role)).toEqual({
+      'kb.tecniche': { skip: ['usare esempi', 'fonti'], pin: [] },
+      'kb.esempi': { skip: ['prompt di sistema', 'con esempi in prosa'], pin: [] }
+    })
+    expect(roleSectionRules(role, { tipo: 'sistema', tecniche: ['esempi', 'passi'] })).toEqual({
+      'kb.tecniche': { skip: ['dividere i compiti', 'fonti'], pin: [] },
+      'kb.esempi': { skip: ['in prosa', 'con esempi in prosa'], pin: ['prompt di sistema'] }
+    })
+    // tutte le condizioni di «when» devono valere insieme
+    expect(roleSectionRules(role, { tecniche: ['esempi'] })['kb.esempi'].skip).toEqual(['prompt di sistema'])
+    // un ruolo senza sezioni dichiarate non filtra nulla
+    expect(roleSectionRules({ bases: [{ id: 'x', purpose: 'behavior' }] })).toEqual({})
+    expect(roleSectionRules(GENERALIST_ROLE)).toEqual({})
+  })
+
+  it('validazione: titoli unici, condizioni su parametri e opzioni che esistono', () => {
+    const withSections = (sections: unknown): unknown => ({ ...role, bases: [{ id: 'kb', purpose: 'behavior', sections }] })
+    const codes = (sections: unknown): string[] => validateRole(withSections(sections)).map((i) => i.code)
+    expect(codes([{ title: 'A' }, { title: ' a ' }])).toEqual(['base.section.title'])
+    expect(codes([{ title: '' }])).toEqual(['base.section.title'])
+    expect(codes('tutte')).toEqual(['base.sections'])
+    expect(codes([{ title: 'A', pin: 'sì' }])).toEqual(['base.sections'])
+    expect(codes([{ title: 'A', when: { inesistente: 'x' } }])).toEqual(['base.section.condition'])
+    expect(codes([{ title: 'A', when: { tipo: 'altro' } }])).toEqual(['base.section.condition'])
+    expect(codes([{ title: 'A', unless: {} }])).toEqual(['base.section.condition'])
+    expect(codes([{ title: 'A', when: { tipo: ['messaggio', 'sistema'] }, unless: { tecniche: 'passi' }, pin: true }])).toEqual([])
   })
 })

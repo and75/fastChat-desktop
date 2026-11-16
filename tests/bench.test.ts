@@ -111,8 +111,14 @@ describe('banco di prova: esecuzione con il codice dell\'app', () => {
     // il prompt di sistema è quello dell'app
     const system = vague.turns[0].sent[0]
     expect(system.role).toBe('system')
-    expect(system.content.startsWith(variant.role.instructions!.split('\n')[0])).toBe(true)
-    expect(system.content).toContain('fai due o tre domande brevi e fermati')
+    expect(system.content.startsWith(`# Ruolo\n${variant.role.instructions!.split('\n')[0]}`)).toBe(true)
+    // le regole scelte chiudono il prompt, dopo tecniche ed esempi
+    expect(system.content).toMatch(/<\/esempio>\n\n# Regole di questa conversazione\n[^\n]+\n(- [^\n]+\n)*- [^\n]*fai due o tre domande brevi e fermati[^\n]*$/)
+    // le sezioni che contraddicono le scelte predefinite (o che servono solo a chi legge) non partono
+    expect(system.content).not.toMatch(/\n## (Usare esempi|Scrivere per un modello grande|Fonti)\n/)
+    expect(system.content).toMatch(/\n## Scrivere per un modello piccolo\n/)
+    // metodo «chiarimenti»: l'esempio che mostra come chiedere è sempre tra i due
+    expect(system.content).toContain('Scrivimi un prompt per il servizio clienti.')
     expect(system.content).toMatch(/\n\n# Come lavorare\n\n[\s\S]*\n\n## Dare un ruolo\n\n/)
     expect(system.content.match(/\n<esempio>\n/g)).toHaveLength(2)
     expect(vague.turns[0].sent.at(-1)).toEqual({ role: 'user', content: cases[0].request })
@@ -145,6 +151,13 @@ describe('banco di prova: esecuzione con il codice dell\'app', () => {
     expect(asked[0]).toContain('<esperto battuta="1">\nIpotesi: il racconto è per bambini.')
     expect(asked[0]).toContain('- superato · blocco-di-codice')
     expect(judgePrompt(vague)).toContain('<utente battuta="2">')
+    // il giudice vede il ruolo e le regole scelte, non le tecniche né gli esempi che stanno in mezzo
+    const received = /<istruzioni_ricevute_dal_modello>\n([\s\S]*?)\n<\/istruzioni_ricevute_dal_modello>/.exec(judgePrompt(vague))![1]
+    expect(received.startsWith('# Ruolo\n')).toBe(true)
+    expect(received).toContain('# Regole di questa conversazione\n')
+    expect(received).toContain('fai due o tre domande brevi e fermati')
+    expect(received).not.toContain('# Come lavorare')
+    expect(received).not.toContain('<esempio>')
     // un verdetto incompleto, o un rifiuto, lascia il caso senza voto
     expect(await createJudge(async () => ({ scores: [{ criterion: 'qualita', score: 4, reason: 'x' }], problems: [] }) as never)(direct, variant)).toBeNull()
     expect(await createJudge(async () => null)(direct, variant)).toBeNull()

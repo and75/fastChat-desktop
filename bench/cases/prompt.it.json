@@ -12,7 +12,9 @@
     "id": "racconto-subito",
     "split": "train",
     "request": "Scrivi un prompt per un racconto su un ragazzo che gioca la sua prima partita di calcio",
-    "choices": { "metodo": "subito" },
+    "choices": {
+      "metodo": "subito"
+    },
     "expect": "prompt",
     "creative": true,
     "note": "Con «Risponde subito» scrive il prompt e dichiara le ipotesi."
@@ -21,7 +23,9 @@
     "id": "migliora-traduci",
     "split": "train",
     "request": "Migliora questo prompt: «Traduci in inglese»",
-    "choices": { "metodo": "subito" },
+    "choices": {
+      "metodo": "subito"
+    },
     "expect": "prompt",
     "note": "Migliora un prompt dato senza stravolgerlo."
   },
@@ -36,7 +40,11 @@
     "id": "fattura-sistema",
     "split": "train",
     "request": "Mi serve un prompt per estrarre data, importo e fornitore da una fattura. Il risultato va letto da un programma.",
-    "choices": { "tipo": "sistema", "spiegazione": "nessuna", "metodo": "subito" },
+    "choices": {
+      "tipo": "sistema",
+      "spiegazione": "nessuna",
+      "metodo": "subito"
+    },
     "expect": "prompt",
     "note": "Prompt di sistema a sezioni, senza spiegazione."
   },
@@ -51,7 +59,15 @@
     "id": "rimborso-esempi",
     "split": "test",
     "request": "Scrivi un prompt per rispondere alle email dei clienti che chiedono un rimborso. Le risposte le legge un operatore prima di inviarle.",
-    "choices": { "tecniche": ["ruolo", "formato", "mancante", "esempi"], "metodo": "subito" },
+    "choices": {
+      "tecniche": [
+        "ruolo",
+        "formato",
+        "mancante",
+        "esempi"
+      ],
+      "metodo": "subito"
+    },
     "expect": "prompt",
     "note": "Con la tecnica «Esempi» accesa gli esempi nel prompt sono attesi."
   },
@@ -59,7 +75,9 @@
     "id": "poesia-subito",
     "split": "test",
     "request": "Scrivi un prompt per una poesia breve sull'autunno, da stampare su un biglietto d'auguri per una collega che va in pensione",
-    "choices": { "metodo": "subito" },
+    "choices": {
+      "metodo": "subito"
+    },
     "expect": "prompt",
     "creative": true,
     "note": "Compito creativo con pubblico e scopo già detti."
@@ -68,7 +86,10 @@
     "id": "migliora-riassunto",
     "split": "test",
     "request": "Migliora questo prompt: «Fammi un riassunto del documento allegato, che sia chiaro»",
-    "choices": { "metodo": "subito", "spiegazione": "tecnica" },
+    "choices": {
+      "metodo": "subito",
+      "spiegazione": "tecnica"
+    },
     "expect": "prompt",
     "note": "C'è un testo da elaborare: il delimitatore qui è corretto."
   },
@@ -78,5 +99,35 @@
     "request": "Cosa non va in questo prompt? «Scrivi una email professionale ma simpatica al cliente, né lunga né corta, e spiegagli tutto bene.»",
     "expect": "diagnosis",
     "note": "Diagnosi su un prompt diverso da quello dei casi di lavoro."
+  },
+  {
+    "id": "sistema-vago",
+    "split": "train",
+    "request": "Mi serve un prompt da riusare per rispondere ai messaggi dei clienti",
+    "reply": "Sono un idraulico: i clienti scrivono su WhatsApp per chiedere un preventivo o un appuntamento. Le risposte le mando io dopo averle lette.",
+    "choices": {
+      "tipo": "sistema",
+      "metodo": "chiarimenti"
+    },
+    "expect": "ask",
+    "note": "Prompt di sistema con domande di chiarimento: prima chiede, poi scrive un prompt a sezioni."
+  },
+  {
+    "id": "grande-passi",
+    "split": "test",
+    "request": "Scrivi un prompt per analizzare il verbale di una riunione di condominio e preparare la lettera da mandare ai condomini con le decisioni prese",
+    "choices": {
+      "specializzazione": "grandi",
+      "spiegazione": "tecnica",
+      "tecniche": [
+        "ruolo",
+        "formato",
+        "mancante",
+        "passi"
+      ],
+      "metodo": "subito"
+    },
+    "expect": "prompt",
+    "note": "Modello grande con passi numerati e spiegazione tecnica: una combinazione non predefinita, con due fasi vere nel compito."
   }
 ]

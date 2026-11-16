@@ -50,9 +50,11 @@ Sans indication, le modèle a tendance à inventer. Écris ce qu'il doit faire s
 
 Un prompt qui demande beaucoup de choses à la fois donne de moins bons résultats que plusieurs prompts simples. Si le travail comporte plusieurs phases (par exemple extraire les données puis écrire un résumé), mieux vaut un prompt par phase, en utilisant la réponse du premier comme entrée du second.
 
-## Petits modèles locaux et grands modèles
+## Écrire pour un petit modèle
 
 Un petit modèle, ou un modèle utilisé sans raisonnement, travaille comme un collaborateur débutant : il a besoin d'instructions explicites et d'une seule tâche par prompt. Les règles les plus importantes (rôle, contraintes, format) vont au début.
+
+## Écrire pour un grand modèle
 
 Un grand modèle, ou un modèle avec le raisonnement activé, travaille comme un collègue expérimenté : on peut lui donner l'objectif et les critères de qualité, en lui laissant les détails. Inutile de lui demander de « raisonner étape par étape » dans la réponse : il le fait déjà de lui-même.
 

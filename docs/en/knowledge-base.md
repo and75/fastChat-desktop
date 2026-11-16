@@ -196,7 +196,10 @@ budget = min( share × num_ctx ,
 
 - `# Knowledge base` section, in the system prompt after role instructions, situation, style, summary and
   conversation memory. Before it come, if present, the role's techniques (`# How to work`, each section with
-  its `## …` title) and examples (`# Examples`).
+  its `## …` title) and examples (`# Examples`). After the knowledge base, as the last block before the
+  question, come the rules the user chose among the role's options (`# Rules for this conversation`). A role
+  can declare, per base, which sections depend on the choices (`sections` in `role.json`): a technique or
+  example that contradicts the choices is left out of the prompt.
 - Introduction for “complete documents” or for “excerpts” (and a linking sentence when both are present);
   then each entry as `[Title, p. N]` followed by the text.
 - Instructions to the model: answer from the documents when they concern the question, cite the source in

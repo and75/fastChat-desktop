@@ -564,6 +564,14 @@ Scoperte durante il lavoro:
 
 ## Cosa resta aperto dopo la seconda consegna
 
+- **Struttura del prompt** (dopo la 0.2.0, non rilasciato; chiesta dall'utente leggendo un prompt inviato): il
+  primo blocco non aveva titoli e tecniche ed esempi contraddicevano le scelte. Ora: `# Ruolo` in apertura,
+  `# Regole di questa conversazione` (le opzioni scelte, con la frase di precedenza) come ultimo blocco prima
+  della domanda, sezioni delle basi condizionate dalle scelte (`sections` in `role.json`: `when`, `unless`,
+  `skip`, `pin`), «Fonti» mai inviata. Testi cambiati: «regola di questa conversazione» al posto di «qui
+  sotto», sezione piccoli/grandi divisa in due, opzione «passi» resa condizionale. Limiti noti: gli esempi
+  spiegano sempre «in tre punti con parole semplici» anche con spiegazione «nessuna» o «tecnica»; due opzioni
+  incompatibili restano selezionabili. Non ancora misurato sul banco.
 - **Prime prove vere del banco** (gemma4:e4b, giudice Opus): voto 3,9–4,3 su 5, circa 100 s per caso a 11
   token/s con il modello tutto in GPU (la memoria grande non è la causa della lentezza; il ragionamento è il
   60–70% dei token). Ciclo di correzione, 2 giri: nessuna variante tenuta, guadagni (+2, +4 punti) dentro il

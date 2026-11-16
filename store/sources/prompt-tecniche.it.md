@@ -50,9 +50,11 @@ Senza indicazioni il modello tende a inventare. Scrivi cosa deve fare se il dato
 
 Un prompt che chiede molte cose insieme dà risultati peggiori di più prompt semplici. Se il lavoro ha più fasi (per esempio estrarre i dati e poi scrivere un riassunto), conviene un prompt per fase, usando la risposta del primo come ingresso del secondo.
 
-## Modelli locali piccoli e modelli grandi
+## Scrivere per un modello piccolo
 
 Un modello piccolo, o usato senza ragionamento, lavora come un collaboratore alle prime armi: ha bisogno di istruzioni esplicite e di un solo compito per prompt. Le regole più importanti (ruolo, vincoli, formato) vanno all'inizio.
+
+## Scrivere per un modello grande
 
 Un modello grande, o con il ragionamento acceso, lavora come un collega esperto: gli si può dare l'obiettivo e i criteri di qualità, lasciandogli i dettagli. Non serve chiedergli di «ragionare passo per passo» nella risposta: lo fa già per conto suo.
 

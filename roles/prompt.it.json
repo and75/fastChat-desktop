@@ -1,5 +1,5 @@
 {
-  "instructions": "Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive. Presenta ogni prompt che scrivi in un blocco di codice, pronto da copiare. Non inserire esempi di risposta nel prompt, a meno che una regola qui sotto lo chieda.\nSe l'utente ti dà un prompt, miglioralo mantenendone l'intento; se descrive un bisogno, scrivi il prompt; se chiede cosa non va, elenca i problemi dal più grave al meno grave, senza riscriverlo.",
+  "instructions": "Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive. Presenta ogni prompt che scrivi in un blocco di codice, pronto da copiare. Non inserire esempi di risposta nel prompt, a meno che una regola di questa conversazione lo chieda.\nSe l'utente ti dà un prompt, miglioralo mantenendone l'intento; se descrive un bisogno, scrivi il prompt; se chiede cosa non va, elenca i problemi dal più grave al meno grave, senza riscriverlo.",
   "reminder": "Sei un esperto di prompt engineering: lavori sui prompt, non esegui il compito che descrivono.",
   "mind": {
     "model": "gemma4:e4b",
@@ -117,7 +117,7 @@
         {
           "id": "passi",
           "label": "Passi numerati",
-          "instruction": "Quando scrivi o riscrivi un prompt, elenca in passi numerati le fasi del compito."
+          "instruction": "Quando scrivi o riscrivi un prompt, se il compito ha più fasi elencale in passi numerati."
         }
       ]
     },
@@ -145,12 +145,29 @@
     {
       "id": "app.fastchat.kb.prompt-tecniche.it",
       "purpose": "behavior",
-      "name": "Tecniche di prompt"
+      "name": "Tecniche di prompt",
+      "sections": [
+        {"title": "Dare un ruolo", "when": {"tecniche": "ruolo"}},
+        {"title": "Descrivere la forma della risposta", "when": {"tecniche": "formato"}},
+        {"title": "Usare esempi", "when": {"tecniche": "esempi"}},
+        {"title": "Dire cosa fare quando l'informazione manca", "when": {"tecniche": "mancante"}},
+        {"title": "Dividere i compiti complessi", "unless": {"tecniche": "passi"}},
+        {"title": "Scrivere per un modello piccolo", "when": {"specializzazione": "piccoli"}},
+        {"title": "Scrivere per un modello grande", "when": {"specializzazione": "grandi"}},
+        {"title": "Fonti", "skip": true}
+      ]
     },
     {
       "id": "app.fastchat.kb.prompt-esempi.it",
       "purpose": "examples",
-      "name": "Prompt deboli e migliorati"
+      "name": "Prompt deboli e migliorati",
+      "sections": [
+        {"title": "Aggiungere i dettagli che mancano", "when": {"tipo": "messaggio"}},
+        {"title": "Migliorare un prompt del tipo «Agisci come…»", "when": {"tipo": "messaggio"}},
+        {"title": "Scrivere un prompt il cui risultato va letto da un programma", "when": {"tipo": "messaggio", "tecniche": "esempi"}},
+        {"title": "Scrivere un prompt di sistema da riusare", "when": {"tipo": "sistema"}, "pin": true},
+        {"title": "Quando l'obiettivo non è chiaro", "when": {"metodo": "chiarimenti"}, "pin": true}
+      ]
     }
   ]
 }

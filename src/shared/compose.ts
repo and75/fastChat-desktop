@@ -16,7 +16,7 @@ export const CONTEXT_ORDERS: ContextOrder[] = ['A', 'B', 'C']
 
 /** Un blocco che cambia a ogni domanda: sezione già pronta, con il suo titolo. */
 export interface ComposeBlock {
-  key: 'memory' | 'behavior' | 'examples' | 'knowledge'
+  key: 'memory' | 'behavior' | 'examples' | 'knowledge' | 'rules'
   text: string
 }
 
@@ -162,7 +162,7 @@ export function detectSystemSlot(template: unknown, modelfile?: unknown): System
 // ---------------------------------------------------------------- disegno dell'ordine
 
 /** Un blocco del contesto, per i disegni dell'interfaccia. */
-export type ContextBlock = 'instructions' | 'situation' | 'summary' | 'memory' | 'behavior' | 'examples' | 'knowledge' | 'reminder' | 'history' | 'question'
+export type ContextBlock = 'instructions' | 'situation' | 'summary' | 'memory' | 'behavior' | 'examples' | 'knowledge' | 'rules' | 'reminder' | 'history' | 'question'
 
 /** Con l'ordine C le istruzioni complete sono già accanto alla domanda: il promemoria non aggiunge nulla. */
 export const reminderApplies = (order: ContextOrder): boolean => order !== 'C'
@@ -172,7 +172,8 @@ export const reminderApplies = (order: ContextOrder): boolean => order !== 'C'
  * dell'utente con la domanda. È la stessa disposizione che produce composeMessages, in forma di schema.
  */
 export function orderLayout(order: ContextOrder, reminder: boolean): { system: ContextBlock[]; conversation: ContextBlock[]; user: ContextBlock[]; reuse: 'none' | 'previous' } {
-  const dynamic: ContextBlock[] = ['memory', 'behavior', 'examples', 'knowledge']
+  // Le regole scelte dall'utente chiudono il materiale: sono l'ultima cosa che il modello legge prima della domanda.
+  const dynamic: ContextBlock[] = ['memory', 'behavior', 'examples', 'knowledge', 'rules']
   const rem: ContextBlock[] = reminder && reminderApplies(order) ? ['reminder'] : []
   if (order === 'A') return { system: ['instructions', 'summary', ...dynamic], conversation: ['history'], user: [...rem, 'question'], reuse: 'none' }
   if (order === 'B') return { system: ['instructions', 'summary'], conversation: ['history'], user: [...dynamic, ...rem, 'question'], reuse: 'previous' }

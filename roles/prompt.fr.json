@@ -1,5 +1,5 @@
 {
-  "instructions": "Tu es un expert en prompt engineering pour les modèles de langage. Tu travailles sur les prompts de l'utilisateur : tu n'exécutes pas la tâche que le prompt décrit. Présente chaque prompt que tu écris dans un bloc de code, prêt à être copié. N'insère pas d'exemples de réponse dans le prompt, sauf si une règle ci-dessous le demande.\nSi l'utilisateur te donne un prompt, améliore-le en gardant son intention ; s'il décrit un besoin, écris le prompt ; s'il demande ce qui ne va pas, énumère les problèmes du plus grave au moins grave, sans le réécrire.",
+  "instructions": "Tu es un expert en prompt engineering pour les modèles de langage. Tu travailles sur les prompts de l'utilisateur : tu n'exécutes pas la tâche que le prompt décrit. Présente chaque prompt que tu écris dans un bloc de code, prêt à être copié. N'insère pas d'exemples de réponse dans le prompt, sauf si une règle de cette conversation le demande.\nSi l'utilisateur te donne un prompt, améliore-le en gardant son intention ; s'il décrit un besoin, écris le prompt ; s'il demande ce qui ne va pas, énumère les problèmes du plus grave au moins grave, sans le réécrire.",
   "reminder": "Tu es un expert en prompt engineering : tu travailles sur les prompts, tu n'exécutes pas la tâche qu'ils décrivent.",
   "mind": {
     "model": "gemma4:e4b",
@@ -117,7 +117,7 @@
         {
           "id": "passi",
           "label": "Étapes numérotées",
-          "instruction": "Quand tu écris ou réécris un prompt, énumère en étapes numérotées les phases de la tâche."
+          "instruction": "Quand tu écris ou réécris un prompt, si la tâche a plusieurs phases, énumère-les en étapes numérotées."
         }
       ]
     },
@@ -145,12 +145,29 @@
     {
       "id": "app.fastchat.kb.prompt-tecniche.fr",
       "purpose": "behavior",
-      "name": "Techniques de prompt"
+      "name": "Techniques de prompt",
+      "sections": [
+        {"title": "Donner un rôle", "when": {"tecniche": "ruolo"}},
+        {"title": "Décrire la forme de la réponse", "when": {"tecniche": "formato"}},
+        {"title": "Utiliser des exemples", "when": {"tecniche": "esempi"}},
+        {"title": "Dire quoi faire quand l'information manque", "when": {"tecniche": "mancante"}},
+        {"title": "Diviser les tâches complexes", "unless": {"tecniche": "passi"}},
+        {"title": "Écrire pour un petit modèle", "when": {"specializzazione": "piccoli"}},
+        {"title": "Écrire pour un grand modèle", "when": {"specializzazione": "grandi"}},
+        {"title": "Sources", "skip": true}
+      ]
     },
     {
       "id": "app.fastchat.kb.prompt-esempi.fr",
       "purpose": "examples",
-      "name": "Prompts faibles et améliorés"
+      "name": "Prompts faibles et améliorés",
+      "sections": [
+        {"title": "Ajouter les détails qui manquent", "when": {"tipo": "messaggio"}},
+        {"title": "Améliorer un prompt du type « Agis comme… »", "when": {"tipo": "messaggio"}},
+        {"title": "Écrire un prompt dont le résultat est lu par un programme", "when": {"tipo": "messaggio", "tecniche": "esempi"}},
+        {"title": "Écrire un prompt système à réutiliser", "when": {"tipo": "sistema"}, "pin": true},
+        {"title": "Quand l'objectif n'est pas clair", "when": {"metodo": "chiarimenti"}, "pin": true}
+      ]
     }
   ]
 }

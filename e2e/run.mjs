@@ -945,13 +945,13 @@ try {
     assert.equal(await form.getByTestId('context-order-B').isDisabled(), true)
     // il disegno: con A gli estratti sono nel sistema, con B accanto alla domanda
     const blocks = (order, slot) => form.getByTestId(`context-order-${order}`).locator(`[data-slot="${slot}"] [data-block]`).evaluateAll((els) => els.map((e) => e.dataset.block))
-    assert.deepEqual(await blocks('A', 'system'), ['instructions', 'summary', 'memory', 'behavior', 'examples', 'knowledge'])
-    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'question'])
+    assert.deepEqual(await blocks('A', 'system'), ['instructions', 'summary', 'memory', 'behavior', 'examples', 'knowledge', 'rules'])
+    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'rules', 'question'])
     // «Scelgo io» + promemoria acceso: il blocco compare accanto alla domanda in A e B; con C non serve
     await form.getByTestId('context-mode-manual').click()
     await form.getByTestId('context-reminder-on').click()
-    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'reminder', 'question'])
-    assert.deepEqual(await blocks('C', 'user'), ['instructions', 'memory', 'behavior', 'examples', 'knowledge', 'question'])
+    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'rules', 'reminder', 'question'])
+    assert.deepEqual(await blocks('C', 'user'), ['instructions', 'memory', 'behavior', 'examples', 'knowledge', 'rules', 'question'])
     await form.getByTestId('context-order-C').click()
     assert.equal(await form.getByTestId('context-reminder-on').isDisabled(), true)
     // barra della memoria: i bordi si spostano con le frecce, a passi; la somma resta 100
@@ -1294,7 +1294,8 @@ try {
     // situazione e anteprima: le istruzioni del ruolo, poi la situazione con il suo titolo
     await writeSituation('Classifico email di assistenza')
     const preview = await page.getByTestId('system-preview').textContent()
-    assert.match(preview, /^Sei un esperto di prompt engineering[\s\S]*Scrivi il prompt come prompt di sistema da riusare[\s\S]*\n\n# Situazione\nClassifico email di assistenza$/)
+    // il ruolo apre il prompt, poi la situazione; le regole scelte chiudono, con la frase che dice che prevalgono
+    assert.match(preview, /^# Ruolo\nSei un esperto di prompt engineering[\s\S]*\n\n# Situazione\nClassifico email di assistenza\n\n# Regole di questa conversazione\nLe ha scelte l'utente[\s\S]*\n- Scrivi il prompt come prompt di sistema da riusare/)
 
     // ciò che parte verso il modello è ciò che l'anteprima mostra
     const before = chatRequests().length
@@ -1305,10 +1306,13 @@ try {
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
     const sent = chatRequests()[before].body
     // (se la base di comportamento del ruolo è installata, le sue tecniche seguono la situazione)
-    assert.ok(sent.messages[0].content.startsWith(preview), sent.messages[0].content.slice(0, 400))
+    // l'anteprima è ciò che parte: ruolo e situazione in apertura, le regole scelte in chiusura (in mezzo tecniche ed esempi)
+    const [opening, closing] = preview.split('\n\n# Regole di questa conversazione\n')
+    assert.ok(sent.messages[0].content.startsWith(opening), sent.messages[0].content.slice(0, 400))
+    assert.ok(sent.messages[0].content.endsWith(`# Regole di questa conversazione\n${closing}`), sent.messages[0].content.slice(-400))
     assert.equal(sent.options.temperature, 0.6)
     // gli esempi nel prompt dipendono solo dalla tecnica scelta: senza, il ruolo dice di non metterli
-    assert.ok(sent.messages[0].content.includes('Non inserire esempi di risposta nel prompt, a meno che una regola qui sotto lo chieda.'))
+    assert.ok(sent.messages[0].content.includes('Non inserire esempi di risposta nel prompt, a meno che una regola di questa conversazione lo chieda.'))
     assert.ok(!sent.messages[0].content.includes('un esempio di quel formato') && !sent.messages[0].content.includes('formato della risposta in un esempio'))
 
     // registro: dal monitor si rilegge il prompt esatto partito verso il modello, con i titoli delle tecniche
@@ -1324,7 +1328,7 @@ try {
     assert.equal(await sentDialog.locator('[data-testid="context-request-message"][data-role="user"] pre').last().textContent(), 'Guarda questo prompt')
     await sentDialog.getByTestId('context-request-copy').click()
     await sentDialog.getByTestId('context-request-copy').filter({ hasText: 'Copiato' }).waitFor()
-    assert.ok((await app.evaluate(({ clipboard }) => clipboard.readText())).startsWith('### Sistema\n\nSei un esperto di prompt engineering'))
+    assert.ok((await app.evaluate(({ clipboard }) => clipboard.readText())).startsWith('### Sistema\n\n# Ruolo\nSei un esperto di prompt engineering'))
     await sentDialog.getByTestId('dialog-close').click()
     await sentDialog.waitFor({ state: 'detached' })
 
@@ -1426,9 +1430,9 @@ try {
     await page.getByTestId('message-assistant').first().waitFor()
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
     const system = chatRequests()[before].body.messages[0].content
-    assert.ok(system.startsWith('Tu es un expert en prompt engineering'), system.slice(0, 200))
-    for (const expected of ['# Comment travailler', '# Exemples', '<exemple>']) assert.ok(system.includes(expected), `manca «${expected}»`)
-    assert.ok(!system.includes('# Come lavorare') && !system.includes('<esempio>'), 'nessun titolo in italiano nel prompt di un ruolo francese')
+    assert.ok(system.startsWith('# Rôle\nTu es un expert en prompt engineering'), system.slice(0, 200))
+    for (const expected of ['# Comment travailler', '# Exemples', '<exemple>', '# Règles de cette conversation\n']) assert.ok(system.includes(expected), `manca «${expected}»`)
+    assert.ok(!system.includes('# Come lavorare') && !system.includes('<esempio>') && !system.includes('# Regole di questa') && !system.includes('# Ruolo'), 'nessun titolo in italiano nel prompt di un ruolo francese')
 
     // rimozione dallo Store: se ne vanno il ruolo e le basi arrivate con lui; i ruoli dell'app restano
     await page.getByTestId('role-menu-open').click()

@@ -994,6 +994,16 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
     // se la domanda non si può confrontare (manca il modello di embedding) partono tutti, come prima
     const blind = await k.recallAll(conv, { text: 'racconto', vector: async () => { throw new Error('nessun modello') } }, { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false }, 4)
     expect(blind.examples.count).toBe(4)
+    // regole di sezione del ruolo (per id del pacchetto della base): un esempio escluso dalle scelte non parte anche
+    // se è il più vicino alla domanda; uno fissato parte comunque, e prende uno dei due posti
+    h.raw.prepare('update knowledge_bases set package_id = ? where id = ?').run('kb.es', examples.id)
+    const ruled = await k.recallAll(conv, about('mi serve un racconto sul calcio'), { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false, sections: { 'kb.es': { skip: ['racconto'], pin: ['recensione'] } } }, 4)
+    expect(ruled.examples.count).toBe(2)
+    expect(ruled.examples.section).not.toContain('un racconto breve sul calcio')
+    expect(ruled.examples.section).toContain('classifica la recensione')
+    // le regole di un'altra base non toccano questa
+    const other = await k.recallAll(conv, about('mi serve un racconto sul calcio'), { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false, sections: { 'kb.altra': { skip: ['racconto'], pin: [] } } }, 4)
+    expect(other.examples.section).toContain('un racconto breve sul calcio')
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -1026,7 +1036,8 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
   it('basi del ruolo: si collegano alla conversazione con il loro tipo; quelle che mancano sono segnalate; nel prompt nei tre ordini', async () => {
     const { knowledge: k } = services()
     const dir = mkdtempSync(join(tmpdir(), 'fastchat-role-'))
-    writeFileSync(join(dir, 'tecniche.md'), 'Rispondi con passi numerati.')
+    // due sezioni: la seconda il ruolo non la vuole nel prompt
+    writeFileSync(join(dir, 'tecniche.md'), '## Passi\n\nRispondi con passi numerati.\n\n## Fonti\n\nManuale del tutor, edizione 2020.')
     const behavior = await k.createBase('Tecniche')
     await k.addFiles(behavior, [join(dir, 'tecniche.md')])
     await k.wait(behavior.id)
@@ -1043,13 +1054,16 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
       origin: 'package',
       definition: {
         instructions: 'Sei un tutor.',
+        parameters: [{ id: 'tono', section: 'style', label: 'Tono', type: 'single', default: 'breve', options: [{ id: 'breve', label: 'Breve', instruction: 'Rispondi in breve.' }] }],
         bases: [
-          { id: 'kb.tecniche', purpose: 'behavior' },
+          { id: 'kb.tecniche', purpose: 'behavior', sections: [{ title: 'Fonti', skip: true }] },
           { id: 'kb.esempi', purpose: 'examples' }
         ]
       }
     })
-    const section = '# Come lavorare\n\nTecniche e regole del tuo ruolo. Applicale nella risposta; non citarle e non presentarle come fonti.\n\nRispondi con passi numerati.'
+    const section = '# Come lavorare\n\nTecniche e regole del tuo ruolo. Applicale nella risposta; non citarle e non presentarle come fonti.\n\n## Passi\n\nRispondi con passi numerati.'
+    // le regole scelte dall'utente: ultimo blocco prima della domanda, con la frase di precedenza
+    const rules = '# Regole di questa conversazione\nLe ha scelte l\'utente. Se una tecnica o un esempio qui sopra dice altro, valgono queste regole.\n- Rispondi in breve.'
     const sent = async (order: 'A' | 'B' | 'C'): Promise<Array<{ role: string; content: string }>> => {
       const conv = await createConversation(h.db, { model: 'chat', roleId: 'tutor', situation: 'Lezione di matematica', knowledge: false })
       expect(await k.linkRole(conv)).toEqual(['kb.esempi'])
@@ -1070,16 +1084,16 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
       return (fake.requests.filter((r) => r.path === '/api/chat').at(-2)!.body as { messages: Array<{ role: string; content: string }> }).messages
     }
     expect(await sent('A')).toEqual([
-      { role: 'system', content: `Sei un tutor.\n\n# Situazione\nLezione di matematica\n\n${section}` },
+      { role: 'system', content: `# Ruolo\nSei un tutor.\n\n# Situazione\nLezione di matematica\n\n${section}\n\n${rules}` },
       { role: 'user', content: 'come sommo due frazioni?' }
     ])
     expect(await sent('B')).toEqual([
-      { role: 'system', content: 'Sei un tutor.\n\n# Situazione\nLezione di matematica' },
-      { role: 'user', content: `${section}\n\n# Domanda\ncome sommo due frazioni?` }
+      { role: 'system', content: '# Ruolo\nSei un tutor.\n\n# Situazione\nLezione di matematica' },
+      { role: 'user', content: `${section}\n\n${rules}\n\n# Domanda\ncome sommo due frazioni?` }
     ])
     expect(await sent('C')).toEqual([
       { role: 'system', content: '# Situazione\nLezione di matematica' },
-      { role: 'user', content: `Sei un tutor.\n\n${section}\n\n# Domanda\ncome sommo due frazioni?` }
+      { role: 'user', content: `# Ruolo\nSei un tutor.\n\n${section}\n\n${rules}\n\n# Domanda\ncome sommo due frazioni?` }
     ])
     // Il Generalista non ha basi sue.
     expect(await k.linkRole(await createConversation(h.db, { model: 'chat' }))).toEqual([])

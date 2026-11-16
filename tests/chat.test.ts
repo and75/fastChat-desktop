@@ -471,7 +471,7 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     const conv = await createConversation(h.db, { model: 'llama3.2', roleId: 'tutor', situation: 'Lezione di matematica' })
     await ask(withOrder('B', 'on'), conv.id, 'ciao')
     expect(lastChatBody().messages).toEqual([
-      { role: 'system', content: 'Sei un tutor. Spiega con esempi.\n\n# Situazione\nLezione di matematica' },
+      { role: 'system', content: '# Ruolo\nSei un tutor. Spiega con esempi.\n\n# Situazione\nLezione di matematica' },
       // Senza un campo `reminder`, il promemoria è la prima frase delle istruzioni.
       { role: 'user', content: '[Promemoria del ruolo: Sei un tutor.]\n\n# Domanda\nciao' }
     ])
@@ -488,7 +488,7 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     await ask(svc, conv.id, 'ciao')
     expect(lastChatBody().messages).toEqual([
       { role: 'system', content: '# Situazione\nLezione di matematica' },
-      { role: 'user', content: 'Sei un tutor. Spiega con esempi.\n\n# Domanda\nciao' }
+      { role: 'user', content: '# Ruolo\nSei un tutor. Spiega con esempi.\n\n# Domanda\nciao' }
     ])
     await updateConversation(h.db, conv.id, { planMode: true })
     const { streamId } = await svc.proposePlan(target, conv.id, 'spiegami le frazioni')
@@ -496,7 +496,7 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     const plan = lastChatBody()
     expect(plan.format).toBeDefined()
     expect(plan.messages[0]).toEqual({ role: 'system', content: '# Situazione\nLezione di matematica' })
-    expect(plan.messages.at(-1)!.content).toMatch(/^Sei un tutor\. Spiega con esempi\.\n\n# Modalità piano[\s\S]*\n\n# Domanda\nspiegami le frazioni$/)
+    expect(plan.messages.at(-1)!.content).toMatch(/^# Ruolo\nSei un tutor\. Spiega con esempi\.\n\n# Modalità piano[\s\S]*\n\n# Domanda\nspiegami le frazioni$/)
   })
 
   it('Generalista con un Brief convertito: la situazione senza titolo, nessun promemoria, tutto nel sistema anche con l\'ordine C', async () => {
@@ -516,15 +516,18 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
   it('ruolo con parametri: le frasi delle scelte nel prompt, nei tre ordini; stile e piano dopo la situazione', async () => {
     await install('prompt.it', 'prompt.it.json')
     const roleParams = { intervento: 'spiega', destinatario: 'esperto', risultato: 'solo', tecniche: ['formato'] }
-    const instructions = [
-      "Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive.",
-      'Scrivi per modelli piccoli: una istruzione per riga, niente premesse.',
-      'Non riscrivere: elenca i problemi in ordine di gravità.',
-      'Usa pure i termini tecnici del prompt engineering.',
-      'Restituisci solo il risultato richiesto, senza commenti.',
-      'Usa frasi brevi e imperative.',
-      'Quando scrivi o riscrivi un prompt, specifica il formato esatto della risposta.',
-      'Rispondi direttamente.'
+    // il ruolo apre il prompt con il suo testo fisso; le regole scelte lo chiudono, accanto alla domanda
+    const instructions = "# Ruolo\nSei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive."
+    const rules = [
+      '# Regole di questa conversazione',
+      "Le ha scelte l'utente. Se una tecnica o un esempio qui sopra dice altro, valgono queste regole.",
+      '- Scrivi per modelli piccoli: una istruzione per riga, niente premesse.',
+      '- Non riscrivere: elenca i problemi in ordine di gravità.',
+      '- Usa pure i termini tecnici del prompt engineering.',
+      '- Restituisci solo il risultato richiesto, senza commenti.',
+      '- Usa frasi brevi e imperative.',
+      '- Quando scrivi o riscrivi un prompt, specifica il formato esatto della risposta.',
+      '- Rispondi direttamente.'
     ].join('\n')
     const situation = '# Situazione\nClassifico email di assistenza'
     const style = '# Stile della risposta\nRispondi in modo completo: contesto, alternative, esempi, avvertenze e casi limite. Struttura il testo con titoli ed elenchi quando aiuta.'
@@ -533,20 +536,20 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     const a = await make()
     await ask(withOrder('A'), a.id, 'guarda questo prompt')
     expect(lastChatBody().messages).toEqual([
-      { role: 'system', content: [instructions, situation, style].join('\n\n') },
+      { role: 'system', content: [instructions, situation, style, rules].join('\n\n') },
       { role: 'user', content: 'guarda questo prompt' }
     ])
     const b = await make()
     await ask(withOrder('B', 'on'), b.id, 'guarda questo prompt')
     expect(lastChatBody().messages).toEqual([
       { role: 'system', content: [instructions, situation, style].join('\n\n') },
-      { role: 'user', content: '[Promemoria del ruolo: Sei un esperto di prompt engineering per modelli linguistici.]\n\n# Domanda\nguarda questo prompt' }
+      { role: 'user', content: `${rules}\n\n[Promemoria del ruolo: Sei un esperto di prompt engineering per modelli linguistici.]\n\n# Domanda\nguarda questo prompt` }
     ])
     const c = await make()
     await ask(withOrder('C', 'on'), c.id, 'guarda questo prompt')
     expect(lastChatBody().messages).toEqual([
       { role: 'system', content: situation },
-      { role: 'user', content: [instructions, style, '# Domanda\nguarda questo prompt'].join('\n\n') }
+      { role: 'user', content: [instructions, style, rules, '# Domanda\nguarda questo prompt'].join('\n\n') }
     ])
     // Scelte salvate che il ruolo non conosce più: valgono i predefiniti, senza errori.
     await updateConversation(h.db, a.id, { roleParams: { intervento: 'sparita' } })
@@ -569,7 +572,7 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     const svc = withOrder('B', 'on')
     await ask(svc, conv.id, 'bonjour')
     const body = lastChatBody()
-    expect(body.messages[0].content).toMatch(/^Tu es un tuteur\.\n\n# Situation\nCours de maths\n\n# Style de la réponse\n/)
+    expect(body.messages[0].content).toMatch(/^# Rôle\nTu es un tuteur\.\n\n# Situation\nCours de maths\n\n# Style de la réponse\n/)
     expect(body.messages[0].content).not.toMatch(/Stile della risposta|Situazione/)
     expect(body.messages.at(-1)!.content).toBe('[Rappel du rôle: Tu es un tuteur.]\n\n# Question\nbonjour')
     const { streamId } = await svc.proposePlan(target, conv.id, 'explique les fractions')
@@ -583,7 +586,7 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     await saveRole(h.db, { id: 'tutor.de', packageId: null, group: null, language: 'de', name: 'Tutor', description: '', version: null, definition: { instructions: 'Du bist ein Tutor.' }, origin: 'package' })
     const de = await createConversation(h.db, { model: 'llama3.2', roleId: 'tutor.de', situation: 'Mathe' })
     await ask(svc, de.id, 'hallo')
-    expect(lastChatBody().messages[0].content).toBe('Du bist ein Tutor.\n\n# Situazione\nMathe')
+    expect(lastChatBody().messages[0].content).toBe('# Ruolo\nDu bist ein Tutor.\n\n# Situazione\nMathe')
   })
 
   it('due conversazioni insieme, in lingue diverse: ciascuna con i suoi testi', async () => {
@@ -594,7 +597,7 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     const [x, y] = await Promise.all([svc.send(target, fr.id, 'bonjour'), svc.send(target, it.id, 'ciao')])
     await Promise.all([svc.wait(x.streamId), svc.wait(y.streamId)])
     const systems = fake.requests.filter((r) => r.path === '/api/chat' && !isTitleRequest(r.body)).slice(-2).map((r) => (r.body as { messages: Array<{ content: string }> }).messages[0].content)
-    expect(systems.find((s) => s.startsWith('Tu es'))).toMatch(/# Situation\nCours\n\n# Style de la réponse/)
+    expect(systems.find((s) => s.startsWith('# Rôle\nTu es'))).toMatch(/# Situation\nCours\n\n# Style de la réponse/)
     expect(systems.find((s) => s.startsWith('Lezione'))).toMatch(/^Lezione\n\n# Stile della risposta/)
   })
 

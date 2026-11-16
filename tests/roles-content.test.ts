@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { roleInstructions, validateRole, type Role } from '../src/shared/roles'
+import { roleInstructions, sectionKey, validateRole, type Role } from '../src/shared/roles'
 
 const dir = resolve(__dirname, '../roles')
 const load = (file: string): Role => JSON.parse(readFileSync(resolve(dir, file), 'utf8')) as Role
@@ -12,7 +12,8 @@ const files = readdirSync(dir).filter((f) => f.endsWith('.json')).sort()
 const shape = (role: Role): unknown => ({
   mind: role.mind,
   parameters: (role.parameters ?? []).map((p) => ({ id: p.id, section: p.section, kind: p.kind, type: p.type, default: p.default, options: p.options.map((o) => ({ id: o.id, mind: o.mind, hasInstruction: !!o.instruction })) })),
-  bases: (role.bases ?? []).map((b) => b.purpose)
+  // le regole di sezione coincidono tra le lingue, a parte il titolo (che è quello del documento tradotto)
+  bases: (role.bases ?? []).map((b) => ({ purpose: b.purpose, sections: (b.sections ?? []).map(({ title: _title, ...rule }) => rule) }))
 })
 
 describe('testi dei ruoli inclusi nell\'app', () => {
@@ -29,11 +30,24 @@ describe('testi dei ruoli inclusi nell\'app', () => {
     }
   })
 
+  it('ogni sezione condizionata esiste nel documento della sua base', () => {
+    for (const file of files) {
+      for (const base of load(file).bases ?? []) {
+        if (!base.sections?.length) continue
+        const source = readFileSync(resolve(__dirname, '../store/sources', `${base.id.replace('app.fastchat.kb.', '')}.md`), 'utf8')
+        const titles = new Set([...source.matchAll(/^## (.+)$/gm)].map((m) => sectionKey(m[1])))
+        for (const section of base.sections) expect(titles.has(sectionKey(section.title)), `${file}: «${section.title}» non è un titolo di ${base.id}`).toBe(true)
+      }
+    }
+  })
+
   it('le varianti di lingua hanno la stessa struttura', () => {
     for (const name of ['assistente', 'prompt']) expect(shape(load(`${name}.fr.json`)), name).toEqual(shape(load(`${name}.it.json`)))
   })
 
   it('con le scelte predefinite le istruzioni restano poche righe (un modello piccolo le regge)', () => {
-    for (const file of files) expect(roleInstructions(load(file)).split('\n').length, file).toBeLessThanOrEqual(9)
+    // contano le righe scritte dal ruolo: il testo fisso e una voce per regola scelta (non i titoli né la frase di precedenza)
+    const own = (text: string): number => text.split('\n').filter((l) => l.trim() && !l.startsWith('# ')).length - (text.includes('\n- ') ? 1 : 0)
+    for (const file of files) expect(own(roleInstructions(load(file))), file).toBeLessThanOrEqual(9)
   })
 })

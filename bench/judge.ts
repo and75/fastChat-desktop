@@ -1,6 +1,7 @@
 // Il giudice: Claude legge la richiesta, le istruzioni che il modello locale ha ricevuto e la sua risposta, e dà
 // un voto da 1 a 5 per criterio, con la motivazione. La griglia è fissa: gli stessi criteri per ogni caso.
 import { z } from 'zod'
+import { t } from '../src/shared/i18n'
 import type { Ask } from './claude'
 import type { CaseResult, Variant, Verdict } from './types'
 
@@ -38,12 +39,20 @@ const EXPECTED = {
   diagnosis: 'Elencare i problemi del prompt, dal più grave al meno grave, senza riscriverlo. L\'elenco è già la risposta completa: la spiegazione in tre punti vale solo dopo un prompt scritto, quindi la sua assenza qui non è un difetto.'
 } as const
 
-/** Le istruzioni del ruolo come il modello le ha ricevute: il messaggio di sistema fino alle tecniche. */
-const roleInstructionsOf = (system: string): string => system.split(/\n\n# /)[0]
+/**
+ * Le istruzioni del ruolo come il modello le ha ricevute: il blocco del ruolo, che apre il prompt, e le regole
+ * scelte dall'utente, che lo chiudono (senza le tecniche e gli esempi che stanno in mezzo).
+ */
+export function roleInstructionsOf(sent: string): string {
+  const block = (heading: string): string => new RegExp(`(^|\\n)# ${heading}\\n[\\s\\S]*?(?=\\n\\n# |$)`).exec(sent)?.[0].trim() ?? ''
+  const found = [block(t('prompt.roleHeading')), block(t('prompt.rulesHeading'))].filter(Boolean)
+  return found.length ? found.join('\n\n') : sent.split(/\n\n# /)[0]
+}
 
 /** Il testo che il giudice riceve per un caso. */
 export function judgePrompt(result: CaseResult): string {
-  const system = result.turns[0]?.sent.find((m) => m.role === 'system')?.content ?? ''
+  // Tutto ciò che è partito con la prima battuta: secondo l'ordine del contesto le regole stanno nel sistema o con la domanda.
+  const system = (result.turns[0]?.sent ?? []).map((m) => m.content).join('\n\n')
   const conversation = result.turns.map((t, i) => `<utente battuta="${i + 1}">\n${t.user}\n</utente>\n<esperto battuta="${i + 1}">\n${t.answer.trim() || '(risposta vuota)'}\n</esperto>`).join('\n')
   const checks = result.checks.map((c) => `- ${c.pass ? 'superato' : 'FALLITO'} · ${c.id}: ${c.detail}`).join('\n') || '- nessuno'
   return `<atteso>\n${EXPECTED[result.case.expect]}${result.case.note ? `\nNota sul caso: ${result.case.note}` : ''}\n</atteso>
