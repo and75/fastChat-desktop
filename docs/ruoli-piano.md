@@ -564,6 +564,15 @@ Scoperte durante il lavoro:
 
 ## Cosa resta aperto dopo la seconda consegna
 
+- **Contratto del prompt** (dopo la 0.2.0, non rilasciato; regola chiesta dall'utente, valida per ogni ruolo):
+  ordine fisso dei blocchi, un titolo per blocco, una competenza per blocco (`docs/ruoli.md` §5.1,
+  `BLOCK_SEQUENCE` in `src/shared/compose.ts`). Stile e piano ora seguono le regole scelte; la situazione ha
+  sempre il titolo e i titoli dell'utente scendono di un livello; promemoria con titolo; ogni regola porta il
+  nome del parametro; ogni esempio il suo titolo. Gli ordini A/B/C hanno la stessa sequenza (C: tutto con la
+  domanda, nessun messaggio di sistema). Testi fissi dell'app riscritti perché ciascuno resti nella sua
+  competenza. **La validazione dei ruoli prima dello Store non si fa qui: sarà un'altra app** (decisione
+  dell'utente); restano quindi possibili opzioni incompatibili scelte insieme (es. nell'Assistente «Primo
+  utilizzo» con «Risposta breve»).
 - **Struttura del prompt** (dopo la 0.2.0, non rilasciato; chiesta dall'utente leggendo un prompt inviato): il
   primo blocco non aveva titoli e tecniche ed esempi contraddicevano le scelte. Ora: `# Ruolo` in apertura,
   `# Regole di questa conversazione` (le opzioni scelte, con la frase di precedenza) come ultimo blocco prima

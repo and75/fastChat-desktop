@@ -85,13 +85,14 @@ describe('buildOptions / buildChatMessages', () => {
     expect(buildOptions({ ...conv, seed: null, numCtx: 65536 }, caps)).toEqual({ temperature: 0.3, top_p: 0.95, num_ctx: 8192 })
   })
 
-  it('brief come primo messaggio system, poi lo storico', () => {
+  it('brief (la situazione, sotto il suo titolo) come primo messaggio system, poi lo storico', () => {
     const msgs = buildChatMessages(conv, [
       { role: 'user', content: 'ciao' } as never,
       { role: 'assistant', content: 'salve' } as never
     ])
     expect(msgs).toEqual([
-      { role: 'system', content: '# Ruolo\nSei un tutor\n\n# Vincoli\nSolo italiano' },
+      // i campi del Brief sono la situazione: i loro titoli stanno un livello sotto quello del blocco
+      { role: 'system', content: '# Situazione\n## Ruolo\nSei un tutor\n\n## Vincoli\nSolo italiano' },
       { role: 'user', content: 'ciao' },
       { role: 'assistant', content: 'salve' }
     ])
@@ -106,12 +107,21 @@ describe('buildOptions / buildChatMessages', () => {
     expect(buildChatMessages({ ...conv, role: '', constraints: '', numCtx: 2048 }, history)).toHaveLength(1)
   })
 
-  it('lo stile della risposta è una sezione del system prompt, dopo il brief', () => {
+  it('lo stile della risposta è un blocco del system prompt, dopo la situazione', () => {
     const msgs = buildChatMessages({ ...conv, style: 'concise' }, [{ role: 'user', content: 'ciao' } as never])
     expect(msgs[0].role).toBe('system')
-    expect(msgs[0].content).toMatch(/^# Ruolo\nSei un tutor\n\n# Vincoli\nSolo italiano\n\n# Stile della risposta\nVai dritto al punto/)
-    // normale: nessuna sezione
-    expect(buildChatMessages({ ...conv, style: 'normal' }, [{ role: 'user', content: 'ciao' } as never])[0].content).toBe('# Ruolo\nSei un tutor\n\n# Vincoli\nSolo italiano')
+    expect(msgs[0].content).toBe(
+      '# Situazione\n## Ruolo\nSei un tutor\n\n## Vincoli\nSolo italiano\n\n# Stile della risposta\n' +
+        'Vai dritto al punto: niente introduzioni né conclusioni. Spiega solo i passaggi non ovvi. ' +
+        'La brevità non deve costare precisione: non omettere nulla di necessario alla correttezza o alla sicurezza della risposta. Ragiona quanto serve, ma scrivi solo ciò che è utile a chi legge.'
+    )
+    // lo stile parla solo di lunghezza: niente su elenchi, codice o esempi
+    for (const style of ['essential', 'concise', 'extended'] as const) {
+      const text = buildChatMessages({ ...conv, style }, [{ role: 'user', content: 'ciao' } as never])[0].content.split('# Stile della risposta\n')[1]
+      expect(text, style).not.toMatch(/elenc|codice|esemp|titol/i)
+    }
+    // normale: nessun blocco
+    expect(buildChatMessages({ ...conv, style: 'normal' }, [{ role: 'user', content: 'ciao' } as never])[0].content).toBe('# Situazione\n## Ruolo\nSei un tutor\n\n## Vincoli\nSolo italiano')
   })
 
   it('senza brief non c\'è messaggio system', () => {
@@ -130,7 +140,7 @@ describe('chat service', () => {
 
     const body = lastChatBody()
     expect(body.messages).toEqual([
-      { role: 'system', content: '# Vincoli\nRispondi in rima' },
+      { role: 'system', content: '# Situazione\n## Vincoli\nRispondi in rima' },
       { role: 'user', content: 'ciao' }
     ])
     // nessuna scelta esplicita: predefiniti di Ollama, ma sempre inviati (= ciò che l'interfaccia mostra)
@@ -233,7 +243,7 @@ describe('chat service', () => {
 })
 
 describe('plan mode', () => {
-  it('propose → piano salvato come proposed, con format=schema e brief nel system prompt', async () => {
+  it('propose → piano salvato come proposed, con format=schema; il blocco del piano chiude il system prompt', async () => {
     const conv = await createConversation(h.db, { model: 'qwen3', think: true, constraints: 'Solo italiano', planMode: true })
     const chat = service()
     const { streamId, userMessage } = await chat.proposePlan(target, conv.id, 'Spiegami le frazioni')
@@ -241,7 +251,9 @@ describe('plan mode', () => {
 
     const body = lastChatBody()
     expect(body.format).toMatchObject({ required: ['steps'] })
-    expect(body.messages[0].content).toMatch(/^# Vincoli\nSolo italiano\n\n# Modalità piano/)
+    expect(body.messages[0].content).toMatch(/^# Situazione\n## Vincoli\nSolo italiano\n\n# Modalità piano\n/)
+    expect(body.messages[0].content).toContain('- Il piano deve rispettare tutto ciò che precede.')
+    expect(body.messages[0].content).toMatch(/Rispondi solo con un oggetto JSON nella forma \{"steps":\[\{"title":"…","detail":"…"\}\]\}\.$/)
     expect(body.messages.at(-1)).toEqual({ role: 'user', content: 'Spiegami le frazioni' })
 
     expect(events.every((e) => e.kind === 'plan')).toBe(true)
@@ -274,7 +286,7 @@ describe('plan mode', () => {
     const body = lastChatBody()
     expect(body.format).toBeUndefined()
     expect(body.messages[0].content).toBe(
-      '# Ruolo\nSei un tutor\n\n# Piano approvato\n' +
+      '# Situazione\n## Ruolo\nSei un tutor\n\n# Piano approvato\n' +
         "L'utente ha approvato questo piano per rispondere alla sua ultima richiesta. Seguilo passo per passo, nell'ordine indicato, senza aggiungere né saltare passi. Non ripetere il piano: esegui.\n\n" +
         '1. Solo questo passo — Breve.'
     )
@@ -466,42 +478,42 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
   }
   const tutor = { instructions: 'Sei un tutor. Spiega con esempi.' }
 
-  it('B con promemoria: istruzioni del ruolo e situazione nel sistema, il promemoria con la domanda; in database resta il testo dell\'utente', async () => {
+  it('B con promemoria: ruolo e situazione nel sistema, il promemoria (sotto il suo titolo) con la domanda; in database resta il testo dell\'utente', async () => {
     await saveRole(h.db, { id: 'tutor', packageId: null, group: null, language: 'it', name: 'Tutor', description: '', version: null, definition: tutor, origin: 'package' })
     const conv = await createConversation(h.db, { model: 'llama3.2', roleId: 'tutor', situation: 'Lezione di matematica' })
     await ask(withOrder('B', 'on'), conv.id, 'ciao')
     expect(lastChatBody().messages).toEqual([
       { role: 'system', content: '# Ruolo\nSei un tutor. Spiega con esempi.\n\n# Situazione\nLezione di matematica' },
       // Senza un campo `reminder`, il promemoria è la prima frase delle istruzioni.
-      { role: 'user', content: '[Promemoria del ruolo: Sei un tutor.]\n\n# Domanda\nciao' }
+      { role: 'user', content: '# Promemoria\nSei un tutor.\n\n# Domanda\nciao' }
     ])
     expect((await listMessages(h.db, conv.id))[0].content).toBe('ciao')
     await saveRole(h.db, { id: 'tutor', packageId: null, group: null, language: 'it', name: 'Tutor', description: '', version: null, definition: { ...tutor, reminder: 'Resta un tutor paziente' }, origin: 'package' })
     await ask(withOrder('B', 'on'), conv.id, 'e poi?')
-    expect(lastChatBody().messages.at(-1)!.content).toBe('[Promemoria del ruolo: Resta un tutor paziente]\n\n# Domanda\ne poi?')
+    expect(lastChatBody().messages.at(-1)!.content).toBe('# Promemoria\nResta un tutor paziente\n\n# Domanda\ne poi?')
   })
 
-  it('C: nel system prompt solo la situazione, le istruzioni del ruolo con la domanda; anche in plan mode', async () => {
+  it('C: nessun messaggio di sistema, tutti i blocchi con la domanda nella stessa sequenza; anche in plan mode', async () => {
     await saveRole(h.db, { id: 'tutor', packageId: null, group: null, language: 'it', name: 'Tutor', description: '', version: null, definition: tutor, origin: 'package' })
     const conv = await createConversation(h.db, { model: 'llama3.2', roleId: 'tutor', situation: 'Lezione di matematica' })
     const svc = withOrder('C')
     await ask(svc, conv.id, 'ciao')
-    expect(lastChatBody().messages).toEqual([
-      { role: 'system', content: '# Situazione\nLezione di matematica' },
-      { role: 'user', content: '# Ruolo\nSei un tutor. Spiega con esempi.\n\n# Domanda\nciao' }
-    ])
+    expect(lastChatBody().messages).toEqual([{ role: 'user', content: '# Ruolo\nSei un tutor. Spiega con esempi.\n\n# Situazione\nLezione di matematica\n\n# Domanda\nciao' }])
     await updateConversation(h.db, conv.id, { planMode: true })
     const { streamId } = await svc.proposePlan(target, conv.id, 'spiegami le frazioni')
     await svc.wait(streamId)
     const plan = lastChatBody()
     expect(plan.format).toBeDefined()
-    expect(plan.messages[0]).toEqual({ role: 'system', content: '# Situazione\nLezione di matematica' })
-    expect(plan.messages.at(-1)!.content).toMatch(/^# Ruolo\nSei un tutor\. Spiega con esempi\.\n\n# Modalità piano[\s\S]*\n\n# Domanda\nspiegami le frazioni$/)
+    expect(plan.messages.some((m) => m.role === 'system')).toBe(false)
+    // lo scambio precedente torna al suo testo originale: i blocchi viaggiano solo con la domanda corrente
+    expect(plan.messages[0]).toEqual({ role: 'user', content: 'ciao' })
+    expect(plan.messages.at(-1)!.content).toMatch(/^# Ruolo\nSei un tutor\. Spiega con esempi\.\n\n# Situazione\nLezione di matematica\n\n# Modalità piano\n[\s\S]*\n\n# Domanda\nspiegami le frazioni$/)
   })
 
-  it('Generalista con un Brief convertito: la situazione senza titolo, nessun promemoria, tutto nel sistema anche con l\'ordine C', async () => {
+  it('Generalista con un Brief convertito: la situazione sotto il suo titolo, nessun promemoria; con l\'ordine C viaggia con la domanda', async () => {
     const conv = await createConversation(h.db, { model: 'llama3.2', role: 'Sei un tutor', context: 'Lezione di matematica' })
-    const system = { role: 'system', content: '# Ruolo\nSei un tutor\n\n# Contesto\nLezione di matematica' }
+    // i titoli del Brief stanno un livello sotto quello del blocco: «# Ruolo» resta il titolo del ruolo scelto
+    const system = { role: 'system', content: '# Situazione\n## Ruolo\nSei un tutor\n\n## Contesto\nLezione di matematica' }
     await ask(withOrder('A'), conv.id, 'ciao')
     expect(lastChatBody().messages).toEqual([system, { role: 'user', content: 'ciao' }])
     await removeMessage(h.db, (await listMessages(h.db, conv.id)).at(-1)!.id)
@@ -510,47 +522,45 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     expect(lastChatBody().messages[0]).toEqual(system)
     const other = await createConversation(h.db, { model: 'llama3.2', role: 'Sei un tutor', context: 'Lezione di matematica' })
     await ask(withOrder('C'), other.id, 'ciao')
-    expect(lastChatBody().messages).toEqual([system, { role: 'user', content: 'ciao' }])
+    expect(lastChatBody().messages).toEqual([{ role: 'user', content: `${system.content}\n\n# Domanda\nciao` }])
   })
 
-  it('ruolo con parametri: le frasi delle scelte nel prompt, nei tre ordini; stile e piano dopo la situazione', async () => {
+  it('ruolo con parametri: le regole scelte (ciascuna con il nome del suo parametro) dopo la situazione, poi lo stile; nei tre ordini', async () => {
     await install('prompt.it', 'prompt.it.json')
     const roleParams = { intervento: 'spiega', destinatario: 'esperto', risultato: 'solo', tecniche: ['formato'] }
-    // il ruolo apre il prompt con il suo testo fisso; le regole scelte lo chiudono, accanto alla domanda
+    // il ruolo apre il prompt con il suo testo fisso; le regole scelte vengono dopo il materiale, prima dello stile
     const instructions = "# Ruolo\nSei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive."
     const rules = [
       '# Regole di questa conversazione',
-      "Le ha scelte l'utente. Se una tecnica o un esempio qui sopra dice altro, valgono queste regole.",
-      '- Scrivi per modelli piccoli: una istruzione per riga, niente premesse.',
-      '- Non riscrivere: elenca i problemi in ordine di gravità.',
-      '- Usa pure i termini tecnici del prompt engineering.',
-      '- Restituisci solo il risultato richiesto, senza commenti.',
-      '- Usa frasi brevi e imperative.',
-      '- Quando scrivi o riscrivi un prompt, specifica il formato esatto della risposta.',
-      '- Rispondi direttamente.'
+      "Le ha scelte l'utente per questa conversazione: applicale sempre.",
+      '- Specializzazione: Scrivi per modelli piccoli: una istruzione per riga, niente premesse.',
+      '- Intervento: Non riscrivere: elenca i problemi in ordine di gravità.',
+      '- Chi userà il prompt: Usa pure i termini tecnici del prompt engineering.',
+      '- Risultato: Restituisci solo il risultato richiesto, senza commenti.',
+      '- Stile del prompt: Usa frasi brevi e imperative.',
+      '- Tecniche da usare: Quando scrivi o riscrivi un prompt, specifica il formato esatto della risposta.',
+      '- Prima di rispondere: Rispondi direttamente.'
     ].join('\n')
     const situation = '# Situazione\nClassifico email di assistenza'
-    const style = '# Stile della risposta\nRispondi in modo completo: contesto, alternative, esempi, avvertenze e casi limite. Struttura il testo con titoli ed elenchi quando aiuta.'
+    const style = '# Stile della risposta\nRispondi in modo completo: contesto, alternative, avvertenze e casi limite.'
     const make = () => createConversation(h.db, { model: 'llama3.2', roleId: 'prompt.it', roleParams, situation: 'Classifico email di assistenza', style: 'extended' })
 
     const a = await make()
     await ask(withOrder('A'), a.id, 'guarda questo prompt')
     expect(lastChatBody().messages).toEqual([
-      { role: 'system', content: [instructions, situation, style, rules].join('\n\n') },
+      { role: 'system', content: [instructions, situation, rules, style].join('\n\n') },
       { role: 'user', content: 'guarda questo prompt' }
     ])
     const b = await make()
     await ask(withOrder('B', 'on'), b.id, 'guarda questo prompt')
     expect(lastChatBody().messages).toEqual([
-      { role: 'system', content: [instructions, situation, style].join('\n\n') },
-      { role: 'user', content: `${rules}\n\n[Promemoria del ruolo: Sei un esperto di prompt engineering per modelli linguistici.]\n\n# Domanda\nguarda questo prompt` }
+      { role: 'system', content: [instructions, situation].join('\n\n') },
+      { role: 'user', content: [rules, style, '# Promemoria\nSei un esperto di prompt engineering per modelli linguistici.', '# Domanda\nguarda questo prompt'].join('\n\n') }
     ])
     const c = await make()
     await ask(withOrder('C', 'on'), c.id, 'guarda questo prompt')
-    expect(lastChatBody().messages).toEqual([
-      { role: 'system', content: situation },
-      { role: 'user', content: [instructions, style, rules, '# Domanda\nguarda questo prompt'].join('\n\n') }
-    ])
+    // C: niente nel sistema, e il promemoria non si applica anche se acceso
+    expect(lastChatBody().messages).toEqual([{ role: 'user', content: [instructions, situation, rules, style, '# Domanda\nguarda questo prompt'].join('\n\n') }])
     // Scelte salvate che il ruolo non conosce più: valgono i predefiniti, senza errori.
     await updateConversation(h.db, a.id, { roleParams: { intervento: 'sparita' } })
     await ask(withOrder('A'), a.id, 'ancora')
@@ -561,7 +571,7 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     const conv = await createConversation(h.db, { model: 'llama3.2', roleId: 'rimosso', situation: 'Contesto mio' })
     await ask(service(), conv.id, 'ciao')
     expect(lastChatBody().messages).toEqual([
-      { role: 'system', content: 'Contesto mio' },
+      { role: 'system', content: '# Situazione\nContesto mio' },
       { role: 'user', content: 'ciao' }
     ])
   })
@@ -572,16 +582,20 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     const svc = withOrder('B', 'on')
     await ask(svc, conv.id, 'bonjour')
     const body = lastChatBody()
-    expect(body.messages[0].content).toMatch(/^# Rôle\nTu es un tuteur\.\n\n# Situation\nCours de maths\n\n# Style de la réponse\n/)
-    expect(body.messages[0].content).not.toMatch(/Stile della risposta|Situazione/)
-    expect(body.messages.at(-1)!.content).toBe('[Rappel du rôle: Tu es un tuteur.]\n\n# Question\nbonjour')
+    expect(body.messages).toEqual([
+      { role: 'system', content: '# Rôle\nTu es un tuteur.\n\n# Situation\nCours de maths' },
+      { role: 'user', content: '# Style de la réponse\nRéponds de façon complète : contexte, alternatives, mises en garde et cas limites.\n\n# Rappel\nTu es un tuteur.\n\n# Question\nbonjour' }
+    ])
+    expect(body.messages.map((m) => m.content).join('\n')).not.toMatch(/Stile della risposta|Situazione|Ruolo|Promemoria|Domanda/)
     const { streamId } = await svc.proposePlan(target, conv.id, 'explique les fractions')
     await svc.wait(streamId)
-    expect(lastChatBody().messages[0].content).toContain('# Mode plan\n')
+    // con B il blocco del piano viaggia con la domanda, dopo lo stile
+    expect(lastChatBody().messages[0].content).not.toContain('# Mode plan')
+    expect(lastChatBody().messages.at(-1)!.content).toMatch(/^# Style de la réponse\n[^\n]+\n\n# Mode plan\n[\s\S]*\n\n# Rappel\nTu es un tuteur\.\n\n# Question\nexplique les fractions$/)
     // Gli errori per l'utente restano nella lingua dell'interfaccia, e il Generalista non cambia lingua.
     const plain = await createConversation(h.db, { model: 'llama3.2', style: 'extended' })
     await ask(svc, plain.id, 'ciao')
-    expect(lastChatBody().messages[0].content).toMatch(/^# Stile della risposta\n/)
+    expect(lastChatBody().messages).toEqual([{ role: 'user', content: '# Stile della risposta\nRispondi in modo completo: contesto, alternative, avvertenze e casi limite.\n\n# Domanda\nciao' }])
     // Una lingua in cui l'app non sa scrivere: valgono i testi dell'interfaccia.
     await saveRole(h.db, { id: 'tutor.de', packageId: null, group: null, language: 'de', name: 'Tutor', description: '', version: null, definition: { instructions: 'Du bist ein Tutor.' }, origin: 'package' })
     const de = await createConversation(h.db, { model: 'llama3.2', roleId: 'tutor.de', situation: 'Mathe' })
@@ -598,7 +612,7 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     await Promise.all([svc.wait(x.streamId), svc.wait(y.streamId)])
     const systems = fake.requests.filter((r) => r.path === '/api/chat' && !isTitleRequest(r.body)).slice(-2).map((r) => (r.body as { messages: Array<{ content: string }> }).messages[0].content)
     expect(systems.find((s) => s.startsWith('# Rôle\nTu es'))).toMatch(/# Situation\nCours\n\n# Style de la réponse/)
-    expect(systems.find((s) => s.startsWith('Lezione'))).toMatch(/^Lezione\n\n# Stile della risposta/)
+    expect(systems.find((s) => s.startsWith('# Situazione\nLezione'))).toMatch(/^# Situazione\nLezione\n\n# Stile della risposta/)
   })
 
   it('monitor: istruzioni e situazione sono due voci', async () => {

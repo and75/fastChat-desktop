@@ -113,13 +113,12 @@ function SituationTab({ conversation, draft, saved, onChange, onFlush }: { conve
   const limit = situationLimit(resolveSettings(conversation, caps).numCtx, share, charsPerToken(messages))
   const over = draft.length > limit
 
-  // Il ruolo scrive due blocchi: il testo fisso, che apre il prompt, e le regole scelte, che lo chiudono.
+  // Nell'ordine fisso del prompt: ruolo, situazione, (materiale), regole scelte, stile della risposta.
   const role = definitionOf(roles, conversation)
   const instructions = roleIdentity(role)
   const rules = roleRules(role, conversation.roleParams)
-  const situation = situationSection(draft, !!instructions)
-  // Ciò che segue le istruzioni del ruolo nel prompt: la situazione, poi lo stile della risposta.
-  const rest = [situation, buildStyleSection(conversation.style)].filter(Boolean).join('\n\n')
+  const rest = situationSection(draft)
+  const style = buildStyleSection(conversation.style)
 
   return (
     <>
@@ -170,7 +169,9 @@ function SituationTab({ conversation, draft, saved, onChange, onFlush }: { conve
           {rest}
           {rules && (instructions || rest) ? '\n\n' : ''}
           {rules && <span className="text-brand-700 dark:text-brand-300">{rules}</span>}
-          {!instructions && !rest && !rules && t('brief.preview.empty')}
+          {style && (instructions || rest || rules) ? '\n\n' : ''}
+          {style}
+          {!instructions && !rest && !rules && !style && t('brief.preview.empty')}
         </pre>
         {(instructions || rules) && <p className="mt-1 text-xs leading-snug text-zinc-500">{t('situation.preview.hint')}</p>}
       </details>

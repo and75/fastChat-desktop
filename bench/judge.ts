@@ -40,12 +40,12 @@ const EXPECTED = {
 } as const
 
 /**
- * Le istruzioni del ruolo come il modello le ha ricevute: il blocco del ruolo, che apre il prompt, e le regole
- * scelte dall'utente, che lo chiudono (senza le tecniche e gli esempi che stanno in mezzo).
+ * Le istruzioni come il modello le ha ricevute: il blocco del ruolo, le regole scelte dall'utente e lo stile
+ * della risposta (senza le tecniche e gli esempi che stanno in mezzo).
  */
 export function roleInstructionsOf(sent: string): string {
   const block = (heading: string): string => new RegExp(`(^|\\n)# ${heading}\\n[\\s\\S]*?(?=\\n\\n# |$)`).exec(sent)?.[0].trim() ?? ''
-  const found = [block(t('prompt.roleHeading')), block(t('prompt.rulesHeading'))].filter(Boolean)
+  const found = [block(t('prompt.roleHeading')), block(t('prompt.rulesHeading')), block(t('prompt.styleHeading'))].filter(Boolean)
   return found.length ? found.join('\n\n') : sent.split(/\n\n# /)[0]
 }
 

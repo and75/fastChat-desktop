@@ -16,20 +16,17 @@ export const CONTEXT_ORDERS: ContextOrder[] = ['A', 'B', 'C']
 
 /** Un blocco che cambia a ogni domanda: sezione già pronta, con il suo titolo. */
 export interface ComposeBlock {
-  key: 'memory' | 'behavior' | 'examples' | 'knowledge' | 'rules'
+  key: 'memory' | 'behavior' | 'examples' | 'knowledge' | 'rules' | 'style' | 'plan'
   text: string
 }
 
 export interface ComposeInput<T extends HistoryMessage> {
   order: ContextOrder
-  /** Il system prompt fisso com'è oggi: istruzioni, situazione, stile (e piano). Usato dagli ordini A e B. */
+  /** L'apertura del prompt: ruolo e situazione, ciascuno con il suo titolo. */
   base: string
-  /** Le due metà di `base`, per l'ordine C: le istruzioni vanno accanto alla domanda, la situazione resta nel sistema. */
-  instructions?: string
-  situation?: string
   /** Testo del riassunto (senza titolo), se allineato allo storico. */
   summary?: string | null
-  /** Blocchi che cambiano a ogni domanda, nell'ordine in cui vanno letti. */
+  /** I blocchi che seguono il riassunto, nell'ordine fisso: memoria, tecniche, esempi, documenti, regole, stile, piano. */
   blocks?: ReadonlyArray<ComposeBlock>
   /** Promemoria del ruolo, già pronto; '' = nessuno. Sta sempre accanto alla domanda. */
   reminder?: string
@@ -65,11 +62,11 @@ export function composeMessages<T extends HistoryMessage>(input: ComposeInput<T>
   const reminder = input.reminder ?? ''
   const flat = join([withSummary(input.base, input.summary), ...sections])
 
-  let system = withSummary(input.order === 'C' ? (input.situation ?? '') : input.base, input.summary)
-  let tail: string[] = []
-  if (input.order === 'C' && input.instructions) tail.push(input.instructions)
-  if (input.order === 'A') system = join([system, ...sections])
-  else tail.push(...sections)
+  // La sequenza dei blocchi è una sola: l'ordine sceglie soltanto quanti stanno nel messaggio di sistema.
+  // A: tutti; B: ruolo, situazione e riassunto; C: nessuno (tutto viaggia con la domanda).
+  const opening = withSummary(input.base, input.summary)
+  let system = input.order === 'A' ? join([opening, ...sections]) : input.order === 'B' ? opening : ''
+  let tail: string[] = input.order === 'A' ? [] : input.order === 'B' ? [...sections] : [opening, ...sections].filter((s) => s)
   if (reminder) tail.push(reminder)
 
   // Lo storico entra finché c'è spazio: conta anche ciò che viaggia con la domanda.
@@ -86,11 +83,11 @@ export function composeMessages<T extends HistoryMessage>(input: ComposeInput<T>
   return { messages, picked, system, attached, flat }
 }
 
-/** Promemoria del ruolo: una riga, tra delimitatori, da mettere accanto alla domanda. */
+/** Promemoria del ruolo: una riga sotto il suo titolo, da mettere accanto alla domanda. */
 export function roleReminder(role: string | null | undefined, max = 240): string {
   const line = (role ?? '').split('\n').map((l) => l.trim()).find((l) => l) ?? ''
   if (!line) return ''
-  return `[${t('prompt.reminder')}: ${line.length > max ? `${line.slice(0, max).replace(/\s+\S*$/, '')}…` : line}]`
+  return `# ${t('prompt.reminder')}\n${line.length > max ? `${line.slice(0, max).replace(/\s+\S*$/, '')}…` : line}`
 }
 
 // ---------------------------------------------------------------- impostazioni
@@ -161,8 +158,14 @@ export function detectSystemSlot(template: unknown, modelfile?: unknown): System
 
 // ---------------------------------------------------------------- disegno dell'ordine
 
+/**
+ * L'ordine fisso dei blocchi del prompt, uguale per ogni ruolo e per ogni ordine del contesto. Ogni blocco ha
+ * il suo titolo e una sola competenza (docs/ruoli.md, «Contratto del prompt»).
+ */
+export const BLOCK_SEQUENCE = ['instructions', 'situation', 'summary', 'memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan', 'reminder', 'question'] as const
+
 /** Un blocco del contesto, per i disegni dell'interfaccia. */
-export type ContextBlock = 'instructions' | 'situation' | 'summary' | 'memory' | 'behavior' | 'examples' | 'knowledge' | 'rules' | 'reminder' | 'history' | 'question'
+export type ContextBlock = 'instructions' | 'situation' | 'summary' | 'memory' | 'behavior' | 'examples' | 'knowledge' | 'rules' | 'style' | 'plan' | 'reminder' | 'history' | 'question'
 
 /** Con l'ordine C le istruzioni complete sono già accanto alla domanda: il promemoria non aggiunge nulla. */
 export const reminderApplies = (order: ContextOrder): boolean => order !== 'C'
@@ -172,10 +175,11 @@ export const reminderApplies = (order: ContextOrder): boolean => order !== 'C'
  * dell'utente con la domanda. È la stessa disposizione che produce composeMessages, in forma di schema.
  */
 export function orderLayout(order: ContextOrder, reminder: boolean): { system: ContextBlock[]; conversation: ContextBlock[]; user: ContextBlock[]; reuse: 'none' | 'previous' } {
-  // Le regole scelte dall'utente chiudono il materiale: sono l'ultima cosa che il modello legge prima della domanda.
-  const dynamic: ContextBlock[] = ['memory', 'behavior', 'examples', 'knowledge', 'rules']
+  // La sequenza è una sola (vedi BLOCK_SEQUENCE): l'ordine dice quanti blocchi stanno nel messaggio di sistema.
+  const opening: ContextBlock[] = ['instructions', 'situation', 'summary']
+  const rest: ContextBlock[] = ['memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan']
   const rem: ContextBlock[] = reminder && reminderApplies(order) ? ['reminder'] : []
-  if (order === 'A') return { system: ['instructions', 'summary', ...dynamic], conversation: ['history'], user: [...rem, 'question'], reuse: 'none' }
-  if (order === 'B') return { system: ['instructions', 'summary'], conversation: ['history'], user: [...dynamic, ...rem, 'question'], reuse: 'previous' }
-  return { system: ['situation', 'summary'], conversation: ['history'], user: ['instructions', ...dynamic, 'question'], reuse: 'previous' }
+  if (order === 'A') return { system: [...opening, ...rest], conversation: ['history'], user: [...rem, 'question'], reuse: 'none' }
+  if (order === 'B') return { system: opening, conversation: ['history'], user: [...rest, ...rem, 'question'], reuse: 'previous' }
+  return { system: [], conversation: ['history'], user: [...opening, ...rest, 'question'], reuse: 'previous' }
 }

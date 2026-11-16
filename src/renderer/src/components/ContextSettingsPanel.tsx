@@ -18,6 +18,8 @@ const BLOCK: Record<ContextBlock, string> = {
   examples: 'bg-lime-500 text-white',
   knowledge: 'bg-emerald-500 text-white',
   rules: 'bg-brand-700 text-white',
+  style: 'bg-violet-400 text-white',
+  plan: 'bg-orange-400 text-white',
   reminder: 'bg-rose-400 text-white',
   history: 'bg-brand-200 text-brand-900',
   question: 'bg-amber-500 text-white'

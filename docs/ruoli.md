@@ -326,20 +326,44 @@ i ruoli.
 
 ## 5. Composizione del contesto
 
-### 5.1 I blocchi
+### 5.1 Il contratto del prompt
 
-| Blocco | Contenuto | Cambia a ogni domanda? |
-|---|---|---|
-| **Istruzioni del ruolo** | `# Ruolo`: il testo fisso del ruolo, poi lo stile della risposta. Apre il prompt | No |
-| **Regole scelte** | `# Regole di questa conversazione`: una voce per ogni opzione scelta, con la frase «valgono più di tecniche ed esempi». È l'ultimo blocco prima della domanda (in coda al sistema con l'ordine A, accanto alla domanda con B e C) | No |
-| **Situazione** | Il campo libero dell'utente | No |
-| **Riassunto** | Riassunto automatico dei messaggi vecchi | Raramente |
-| **Conversazione** | Messaggi recenti | Si allunga |
-| **Memoria** | Estratti della memoria a lungo termine della conversazione | Sì |
-| **Comportamento** | Tecniche dalla base di comportamento del ruolo | Sì (se a estratti) |
-| **Esempi** | Esempi dalla base di esempi del ruolo | Sì (se a estratti) |
-| **Documenti** | Testi dell'utente, con le fonti | Sì (se a estratti) |
-| **Domanda** | L'ultimo messaggio dell'utente | Sì |
+Tre regole, valide per ogni ruolo e per il Generalista. Sono il riferimento per chi scrive un ruolo e per la
+futura app che valida i ruoli prima della pubblicazione sullo Store.
+
+1. **Ordine fisso.** I blocchi arrivano sempre in questa sequenza (`BLOCK_SEQUENCE` in `src/shared/compose.ts`).
+2. **Un titolo per blocco.** Il primo livello (`#`) è riservato ai blocchi dell'app: i titoli scritti
+   dall'utente nella situazione scendono di un livello.
+3. **Una competenza per blocco.** Ogni blocco parla solo di ciò che gli spetta: così nessun blocco può
+   contraddirne un altro.
+
+| # | Blocco | Titolo | Parla solo di… | Chi lo scrive |
+|---|---|---|---|---|
+| 1 | Testo del ruolo | `# Ruolo` | chi è l'assistente e cosa fa | ruolo |
+| 2 | Situazione | `# Situazione` | il contesto dell'utente | utente |
+| 3 | Riassunto | `# Riassunto della conversazione finora` | ciò che è già stato detto | app |
+| 4 | Memoria | `# Messaggi precedenti` | estratti di messaggi già riassunti | app |
+| 5 | Tecniche | `# Come lavorare`, una `## sezione` per tecnica | conoscenze del mestiere | ruolo (base di comportamento) |
+| 6 | Esempi | `# Esempi`, un `## titolo` per esempio | risposte da imitare | ruolo (base di esempi) |
+| 7 | Documenti | `# Base di conoscenza` | testi su cui rispondere | utente, o ruolo |
+| 8 | Opzioni scelte | `# Regole di questa conversazione` | le scelte dell'utente: una voce per opzione, con il nome del parametro | ruolo (frasi delle opzioni) |
+| 9 | Lunghezza | `# Stile della risposta` | quanto è lunga la risposta | app |
+| 10 | Piano | `# Modalità piano` / `# Piano approvato` | il piano | app |
+| 11 | Promemoria | `# Promemoria` | una riga che richiama il ruolo | ruolo |
+| 12 | Domanda | `# Domanda` | il messaggio dell'utente | utente |
+
+Un blocco vuoto non compare. La domanda non ha titolo quando è sola nel suo messaggio (il confine del
+messaggio la delimita già).
+
+Conseguenze per chi scrive un ruolo:
+
+- Il **testo del ruolo** dice chi è l'assistente e cosa fa: niente formato, niente lunghezza, niente regole che
+  dipendono da una scelta.
+- Le **frasi delle opzioni** sono le uniche regole che dipendono dalle scelte. Due opzioni che si possono
+  scegliere insieme non devono contraddirsi.
+- **Tecniche ed esempi** non danno ordini sulle scelte: una sezione che vale solo con certe scelte lo dichiara
+  (`sections`, §3.3), così non arriva quando contraddirebbe la regola.
+- La **lunghezza** della risposta è dell'app (`mind.style`): il ruolo non la ripete nelle sue frasi.
 
 ### 5.2 Perché l'ordine conta
 
@@ -354,51 +378,22 @@ Inoltre i modelli danno più peso a ciò che sta all'inizio e alla fine del cont
 
 ### 5.3 I tre ordini (impostazione)
 
-**Ordine A — tutto nel system prompt** (comportamento di oggi; predefinito)
+La sequenza dei blocchi è sempre quella del §5.1. L'ordine scelto in Impostazioni → Contesto dice soltanto
+quanti blocchi stanno nel messaggio di sistema e quanti viaggiano con la domanda.
 
-```
-SISTEMA     Istruzioni del ruolo
-            Situazione
-            Riassunto
-            Memoria · Comportamento · Esempi · Documenti      ← cambia a ogni domanda
-UTENTE/ASSISTENTE   conversazione                             ← ricalcolata ogni volta
-UTENTE      Domanda
-```
-
-**Ordine B — conoscenza accanto alla domanda**
-
-```
-SISTEMA     Istruzioni del ruolo
-            Situazione
-            Riassunto
-UTENTE/ASSISTENTE   conversazione                             ← riusata
-UTENTE      Memoria · Comportamento · Esempi · Documenti      ← ricalcolato
-            Domanda
-```
-
-**Ordine C — anche il ruolo accanto alla domanda** (diagnostico)
-
-```
-SISTEMA     Situazione
-            Riassunto
-UTENTE/ASSISTENTE   conversazione                             ← riusata
-UTENTE      Istruzioni del ruolo                              ← ricalcolato
-            Memoria · Comportamento · Esempi · Documenti
-            Domanda
-```
-
-| | A | B | C |
+| | A (predefinito) | B | C (diagnostico) |
 |---|---|---|---|
-| Il system prompt cambia a ogni domanda | Sì | No | No |
+| Nel messaggio di sistema | blocchi 1–10 | blocchi 1–3 (ruolo, situazione, riassunto) | nessuno |
+| Con la domanda | 11–12 | 4–12 | 1–12 |
+| Il system prompt cambia a ogni domanda | Sì | No | — |
 | Cosa si ricalcola | Tutto | Ultimo messaggio | Ultimo messaggio |
-| Distanza conoscenza–domanda | Tutta la conversazione | Minima | Minima |
-| Ruolo nel posto «sistema» | Sì | Sì | No |
 
-L'ordine C non dà vantaggi di riuso rispetto al B: resta come opzione di prova, utile soprattutto con i modelli
-che non hanno un posto dedicato per il sistema (vedi sotto).
+L'ordine C non dà vantaggi di riuso rispetto al B: resta come opzione di prova, utile con i modelli che non
+hanno un posto dedicato per il sistema (vedi sotto). Con C il promemoria non si applica: tutto è già accanto
+alla domanda.
 
-**Promemoria del ruolo** (sì/no, indipendente dall'ordine): una riga breve con l'essenziale del ruolo, accanto
-alla domanda. Serve a tenere il ruolo nelle conversazioni lunghe senza toglierlo dal system prompt.
+**Promemoria del ruolo** (sì/no): una riga breve con l'essenziale del ruolo, sotto il titolo `# Promemoria`,
+accanto alla domanda. Serve a tenere il ruolo nelle conversazioni lunghe senza toglierlo dal system prompt.
 
 **Il posto «sistema» dipende dal modello.** Alcuni modelli hanno un posto dedicato per il messaggio di sistema;
 altri (es. Gemma 2 e 3) lo incollano in testa al primo messaggio dell'utente. L'informazione sta nel template di

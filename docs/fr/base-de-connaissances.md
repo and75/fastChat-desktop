@@ -219,11 +219,10 @@ budget = min( part × num_ctx ,
 
 ## 6. Dans le prompt
 
-- Section `# Base de connaissances`, dans le prompt système après les instructions du rôle, la situation, le
-  style, le résumé et la mémoire de la conversation. Avant elle viennent, s'il y en a, les techniques
-  (`# Comment travailler`, chaque section avec son titre `## …`) et les exemples (`# Exemples`) du rôle. Après la base, dernier bloc
-  avant la question, les règles choisies par l'utilisateur parmi les options du rôle
-  (`# Règles de cette conversation`). Le rôle peut déclarer, pour chaque base, les sections qui dépendent des
+- Section `# Base de connaissances`, à sa place dans l'ordre fixe des blocs : rôle, situation, résumé, mémoire
+  (`# Messages précédents`), techniques (`# Comment travailler`, chaque section avec son titre `## …`),
+  exemples (`# Exemples`, chacun avec son titre), **base de connaissances**, règles choisies
+  (`# Règles de cette conversation`), style de la réponse, plan, rappel, question. Le rôle peut déclarer, pour chaque base, les sections qui dépendent des
   choix (`sections` dans `role.json`) : une technique ou un exemple qui contredit les choix n'entre pas dans
   le prompt.
 - Introduction pour « documents complets » ou pour « extraits » (et une phrase de liaison quand il y a les deux) ;

@@ -146,7 +146,8 @@ describe('chat con riassunto', () => {
 
     await chat.wait((await chat.send({}, conv.id, 'ancora')).streamId)
     const body = chatRequests().at(-1)!.body as { messages: Array<{ role: string; content: string }> }
-    expect(body.messages[0]).toEqual({ role: 'system', content: '# Ruolo\nTutor\n\n# Riassunto della conversazione finora\nBreve.' })
+    // il Brief non convertito è la situazione (i suoi titoli un livello sotto); il riassunto la segue
+    expect(body.messages[0]).toEqual({ role: 'system', content: '# Situazione\n## Ruolo\nTutor\n\n# Riassunto della conversazione finora\nBreve.' })
     // dopo il system: solo i messaggi non coperti (m6 è una domanda, quindi resta)
     expect(body.messages.slice(1).map((m) => m.content.slice(0, 7))).toEqual(['6 xxxxx', 'domanda', 'Breve.', 'ancora'])
   })
@@ -159,7 +160,7 @@ describe('chat con riassunto', () => {
     await chat.wait((await chat.send({}, conv.id, 'domanda')).streamId)
     expect((await getConversation(h.db, conv.id))!.summary).toBeNull()
     const body = chatRequests().at(-1)!.body as { messages: Array<{ role: string; content: string }> }
-    expect(body.messages[0].content).toBe('# Ruolo\nTutor')
+    expect(body.messages[0].content).toBe('# Situazione\n## Ruolo\nTutor')
   })
 })
 

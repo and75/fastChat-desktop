@@ -185,14 +185,15 @@ describe('scelte', () => {
       ]
     }
     expect(orderedParameters(role).map((p) => p.id)).toEqual(['i', 'm'])
-    // senza testo fisso non c'è il blocco «Ruolo»: restano le regole scelte, sotto il loro titolo
-    expect(roleInstructions(role)).toBe(`${RULES}\n- Identità.\n- Metodo.`)
+    // senza testo fisso non c'è il blocco «Ruolo»: restano le regole scelte, sotto il loro titolo; ogni voce porta
+    // il nome del suo parametro
+    expect(roleInstructions(role)).toBe(`${RULES}\n- I: Identità.\n- M: Metodo.`)
     expect(roleIdentity(role)).toBe('')
     expect(roleRules(role)).toBe(roleInstructions(role))
   })
 })
 
-const RULES = '# Regole di questa conversazione\nLe ha scelte l\'utente. Se una tecnica o un esempio qui sopra dice altro, valgono queste regole.'
+const RULES = '# Regole di questa conversazione\nLe ha scelte l\'utente per questa conversazione: applicale sempre.'
 
 describe('istruzioni (docs/ruoli.md §7)', () => {
   it('Generalista: nessuna istruzione', () => {
@@ -208,12 +209,12 @@ describe('istruzioni (docs/ruoli.md §7)', () => {
         "Sei l'assistente di FastChat. Rispondi solo a domande sull'uso dell'app, usando la documentazione fornita. Usa i nomi esatti di schede e pulsanti. Se una funzione non esiste, dillo.",
         '',
         RULES,
-        "- Guida l'utente a compiere l'azione.",
-        '- Vai dritto al punto, senza concetti di base.',
-        '- Rispondi in una o due frasi.',
-        '- Indica sempre il percorso: finestra → scheda → pulsante.',
-        "- Quando è pertinente, indica l'effetto su memoria e velocità.",
-        '- Se la documentazione non copre la domanda, dillo e non inventare.'
+        "- Scopo della risposta: Guida l'utente a compiere l'azione.",
+        '- Livello: Vai dritto al punto, senza concetti di base.',
+        '- Formato atteso: Rispondi in una o due frasi.',
+        '- Percorso: Indica sempre il percorso: finestra → scheda → pulsante.',
+        "- Argomenti da collegare: Quando è pertinente, indica l'effetto su memoria e velocità.",
+        '- Se la Guida non lo dice: Se la documentazione non copre la domanda, dillo e non inventare.'
       ].join('\n')
     )
     expect(roleMind(assistente, { choices })).toEqual({ model: 'gemma4:e4b', temperature: 0.2, think: false, style: 'essential', knowledge: true })
@@ -241,14 +242,15 @@ describe('istruzioni (docs/ruoli.md §7)', () => {
         "Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive.",
         '',
         RULES,
-        '- Scrivi per modelli piccoli: una istruzione per riga, niente premesse.',
-        '- Non riscrivere: elenca i problemi in ordine di gravità.',
-        '- Usa pure i termini tecnici del prompt engineering.',
-        '- Restituisci solo il risultato richiesto, senza commenti.',
-        '- Usa frasi brevi e imperative.',
-        '- Quando scrivi o riscrivi un prompt, specifica il formato esatto della risposta.',
-        '- Quando scrivi o riscrivi un prompt, chiedi al modello di procedere per passi numerati.',
-        '- Rispondi direttamente.'
+        '- Specializzazione: Scrivi per modelli piccoli: una istruzione per riga, niente premesse.',
+        '- Intervento: Non riscrivere: elenca i problemi in ordine di gravità.',
+        '- Chi userà il prompt: Usa pure i termini tecnici del prompt engineering.',
+        '- Risultato: Restituisci solo il risultato richiesto, senza commenti.',
+        '- Stile del prompt: Usa frasi brevi e imperative.',
+        // una scelta multipla ripete il nome del parametro su ogni voce
+        '- Tecniche da usare: Quando scrivi o riscrivi un prompt, specifica il formato esatto della risposta.',
+        '- Tecniche da usare: Quando scrivi o riscrivi un prompt, chiedi al modello di procedere per passi numerati.',
+        '- Prima di rispondere: Rispondi direttamente.'
       ].join('\n')
     )
     expect(roleMind(prompt, { choices })).toEqual({ model: 'gemma4:12b', temperature: 0.3, think: true, style: 'concise', knowledge: false })
@@ -332,26 +334,32 @@ describe('profili (D28, D29)', () => {
 })
 
 describe('il ruolo nel prompt (passo 2.3)', () => {
-  it('istruzioni, poi la situazione con il suo titolo, poi lo stile', () => {
+  it('il prompt si apre con il ruolo e la situazione, ciascuno con il suo titolo; regole e stile sono blocchi a parte', () => {
     const p = rolePrompt(assistente, { roleParams: { formato: 'breve' }, situation: '  Uso la versione 0.1.22  ', style: 'essential' })
     expect(p.instructions).toBe(roleInstructions(assistente, { formato: 'breve' }))
     expect(p.situation).toBe('# Situazione\nUso la versione 0.1.22')
-    // il prompt si apre con il ruolo (testo fisso), poi situazione e stile; le regole scelte viaggiano a parte, in fondo
-    expect(p.system.startsWith(`${roleIdentity(assistente)}\n\n# Situazione\nUso la versione 0.1.22\n\n# Stile della risposta\nRispondi nel modo più breve possibile`)).toBe(true)
+    // l'apertura è ruolo + situazione; le regole scelte e lo stile vengono dopo il materiale (li mette il compositore)
+    expect(p.system).toBe(`${roleIdentity(assistente)}\n\n# Situazione\nUso la versione 0.1.22`)
+    expect(roleIdentity(assistente).startsWith('# Ruolo\n')).toBe(true)
     expect(p.system).not.toContain('Regole di questa conversazione')
+    expect(p.system).not.toContain('Stile della risposta')
     expect(p.rules).toBe(roleRules(assistente, { formato: 'breve' }))
-    expect(p.rules).toContain('- Rispondi in una o due frasi.')
+    expect(p.rules).toContain('- Formato atteso: Rispondi in una o due frasi.')
+    // i titoli scritti dall'utente nella situazione scendono di un livello: «#» resta ai blocchi dell'app
+    expect(rolePrompt(assistente, { roleParams: null, situation: '# Il mio computer\nUn portatile' }).situation).toBe('# Situazione\n## Il mio computer\nUn portatile')
     // Senza situazione non resta un titolo vuoto.
     expect(rolePrompt(assistente, { roleParams: null, situation: ' ' })).toMatchObject({ situation: '', system: roleIdentity(assistente) })
   })
 
-  it('Generalista: la situazione senza titolo; una riga non convertita vale il suo Brief', () => {
-    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: 'Contesto mio' })).toEqual({ instructions: '', rules: '', situation: 'Contesto mio', system: 'Contesto mio' })
+  it('Generalista: la situazione ha il suo titolo anche senza ruolo; una riga non convertita vale il suo Brief', () => {
+    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: 'Contesto mio' })).toEqual({ instructions: '', rules: '', situation: '# Situazione\nContesto mio', system: '# Situazione\nContesto mio' })
     expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: '' }).system).toBe('')
     const brief = { role: 'Sei un tutor', context: '', goals: 'Spiegare', constraints: '' }
-    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: null, ...brief, style: 'concise' }).system).toBe(buildSystemPrompt(brief, 'concise'))
+    // I campi del Brief sono la situazione: i loro titoli scendono di un livello. Lo stile non fa parte dell'apertura.
+    expect(buildSystemPrompt(brief)).toBe('# Ruolo\nSei un tutor\n\n# Obiettivi\nSpiegare')
+    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: null, ...brief, style: 'concise' }).system).toBe('# Situazione\n## Ruolo\nSei un tutor\n\n## Obiettivi\nSpiegare')
     // Una volta convertita, il Brief non conta più.
-    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: 'Altro', ...brief }).system).toBe('Altro')
+    expect(rolePrompt(GENERALIST_ROLE, { roleParams: null, situation: 'Altro', ...brief }).system).toBe('# Situazione\nAltro')
   })
 
   it('promemoria: il campo del ruolo, o la prima frase delle istruzioni', () => {

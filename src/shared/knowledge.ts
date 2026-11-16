@@ -292,7 +292,15 @@ export function buildBehaviorSection(picked: ReadonlyArray<SectionItem>): string
 export function buildExamplesSection(picked: ReadonlyArray<SectionItem>): string {
   if (picked.length === 0) return ''
   const tag = t('knowledge.examples.tag')
-  return [t('knowledge.examples.heading'), t('knowledge.examples.intro', { tag }), ...ordered(picked).map((p) => `<${tag}>\n${p.text}\n</${tag}>`)].join('\n\n')
+  return [
+    t('knowledge.examples.heading'),
+    t('knowledge.examples.intro', { tag }),
+    ...ordered(picked).map((p) => {
+      // Ogni esempio sotto il suo titolo, come le tecniche: dice in quale caso vale.
+      const title = p.locator?.split(' › ').at(-1)?.trim()
+      return `${title ? `## ${title}\n\n` : ''}<${tag}>\n${p.text}\n</${tag}>`
+    })
+  ].join('\n\n')
 }
 
 /** Ordine in cui i tipi di base ricevono lo spazio avanzato: prima i documenti dell'utente. */

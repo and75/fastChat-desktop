@@ -204,7 +204,8 @@ try {
     assert.match(await panel.getByTestId('situation-count').textContent(), /^68 di 1\.638 caratteri$/)
     assert.equal(
       await panel.getByTestId('system-preview').textContent(),
-      '# Ruolo\nSei un tutor paziente.\n\n# Vincoli\nRispondi solo in italiano.'
+      // la situazione sta sempre sotto il suo titolo; i titoli scritti dall'utente scendono di un livello
+      '# Situazione\n## Ruolo\nSei un tutor paziente.\n\n## Vincoli\nRispondi solo in italiano.'
     )
   })
 
@@ -221,7 +222,7 @@ try {
     const body = lastChat()
     assert.equal(body.model, 'llama3.2:3b')
     assert.deepEqual(body.messages, [
-      { role: 'system', content: '# Ruolo\nSei un tutor paziente.\n\n# Vincoli\nRispondi solo in italiano.' },
+      { role: 'system', content: '# Situazione\n## Ruolo\nSei un tutor paziente.\n\n## Vincoli\nRispondi solo in italiano.' },
       { role: 'user', content: 'Ciao!' }
     ])
     assert.equal('think' in body, false)
@@ -670,7 +671,7 @@ try {
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
     // estratti nel system prompt, dopo il riassunto, con l'avvertenza sulle correzioni
     const system = lastChat().messages[0].content
-    assert.ok(system.indexOf('# Riassunto della conversazione finora') < system.indexOf('# Dalla conversazione precedente'), 'estratti dopo il riassunto')
+    assert.ok(system.indexOf('# Riassunto della conversazione finora') < system.indexOf('# Messaggi precedenti'), 'estratti dopo il riassunto')
     assert.match(system, /valgono il riassunto e i messaggi recenti/)
     const embeds = fake.requests.filter((r) => r.path === '/api/embed')
     assert.ok(embeds.length >= 2, 'indicizzazione + domanda')
@@ -688,7 +689,7 @@ try {
     await box.press('Enter')
     await page.getByTestId('message-assistant').last().filter({ hasText: 'risposta0' }).waitFor()
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
-    assert.doesNotMatch(lastChat().messages[0].content, /# Dalla conversazione precedente/)
+    assert.doesNotMatch(lastChat().messages[0].content, /# Messaggi precedenti/)
     await setSwitch(page.getByTestId('model-settings'), 'Memoria a lungo termine', true)
   })
 
@@ -910,8 +911,8 @@ try {
     await composer.press('Enter')
     await waitUntil(() => chatRequests().length > before)
     const system = chatRequests()[before].body.messages[0].content
-    assert.match(system, /# Come lavorare\n\nTecniche e regole del tuo ruolo/)
-    assert.doesNotMatch(system, /forniti dall'utente/)
+    assert.match(system, /# Come lavorare\n\nConoscenze del tuo mestiere/)
+    assert.doesNotMatch(system, /Estratti dei documenti di questa conversazione|riportati per intero \(/)
     await page.getByTestId('message-streaming').waitFor({ state: 'detached', timeout: 30000 }).catch(() => undefined)
     // si torna a «Documenti» e si scollega, per non toccare i passi successivi
     await linked.getByTestId('knowledge-purpose').selectOption('documents')
@@ -945,13 +946,14 @@ try {
     assert.equal(await form.getByTestId('context-order-B').isDisabled(), true)
     // il disegno: con A gli estratti sono nel sistema, con B accanto alla domanda
     const blocks = (order, slot) => form.getByTestId(`context-order-${order}`).locator(`[data-slot="${slot}"] [data-block]`).evaluateAll((els) => els.map((e) => e.dataset.block))
-    assert.deepEqual(await blocks('A', 'system'), ['instructions', 'summary', 'memory', 'behavior', 'examples', 'knowledge', 'rules'])
-    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'rules', 'question'])
+    assert.deepEqual(await blocks('A', 'system'), ['instructions', 'situation', 'summary', 'memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan'])
+    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan', 'question'])
     // «Scelgo io» + promemoria acceso: il blocco compare accanto alla domanda in A e B; con C non serve
     await form.getByTestId('context-mode-manual').click()
     await form.getByTestId('context-reminder-on').click()
-    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'rules', 'reminder', 'question'])
-    assert.deepEqual(await blocks('C', 'user'), ['instructions', 'memory', 'behavior', 'examples', 'knowledge', 'rules', 'question'])
+    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan', 'reminder', 'question'])
+    assert.deepEqual(await blocks('C', 'user'), ['instructions', 'situation', 'summary', 'memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan', 'question'])
+    assert.deepEqual(await blocks('C', 'system'), [])
     await form.getByTestId('context-order-C').click()
     assert.equal(await form.getByTestId('context-reminder-on').isDisabled(), true)
     // barra della memoria: i bordi si spostano con le frecce, a passi; la somma resta 100
@@ -985,7 +987,7 @@ try {
     // Il Generalista non ha un ruolo da ricordare: nessun promemoria accanto
     // alla domanda (con un ruolo vero c'è: lo verificano i test unitari, in attesa della scelta del ruolo).
     assert.deepEqual(sent, [
-      { role: 'system', content: '# Ruolo\nSei un tutor' },
+      { role: 'system', content: '# Situazione\n## Ruolo\nSei un tutor' },
       { role: 'user', content: 'ciao' }
     ])
     // nella chat si vede il testo scritto dall'utente, non il promemoria
@@ -1111,7 +1113,7 @@ try {
     assert.equal(planRequests().length, before + 1)
     const req = planRequests().at(-1).body
     assert.deepEqual(req.format.required, ['steps'])
-    assert.match(req.messages[0].content, /^# Vincoli\nUsa esempi con la pizza\.\n\n# Modalità piano/)
+    assert.match(req.messages[0].content, /^# Situazione\n## Vincoli\nUsa esempi con la pizza\.\n\n# Modalità piano/)
     assert.equal(await checklist.getByTestId('plan-step').count(), 3)
     // nessuna risposta dell'assistente finché il piano non è approvato
     assert.equal(await page.getByTestId('message-assistant').count(), 0)
@@ -1141,7 +1143,7 @@ try {
     const body = lastChat()
     assert.equal(body.format, undefined)
     const system = body.messages[0].content
-    assert.match(system, /^# Vincoli\nUsa esempi con la pizza\.\n\n# Piano approvato\n/)
+    assert.match(system, /^# Situazione\n## Vincoli\nUsa esempi con la pizza\.\n\n# Piano approvato\n/)
     assert.match(
       system,
       /1\. Cos'è una frazione — Riassumere cosa chiede l'utente\.\n2\. Scrivere la risposta — Rispondere in modo ordinato\.\n3\. Esempio con la pizza — Una pizza in otto fette\.$/
@@ -1295,7 +1297,7 @@ try {
     await writeSituation('Classifico email di assistenza')
     const preview = await page.getByTestId('system-preview').textContent()
     // il ruolo apre il prompt, poi la situazione; le regole scelte chiudono, con la frase che dice che prevalgono
-    assert.match(preview, /^# Ruolo\nSei un esperto di prompt engineering[\s\S]*\n\n# Situazione\nClassifico email di assistenza\n\n# Regole di questa conversazione\nLe ha scelte l'utente[\s\S]*\n- Scrivi il prompt come prompt di sistema da riusare/)
+    assert.match(preview, /^# Ruolo\nSei un esperto di prompt engineering[\s\S]*\n\n# Situazione\nClassifico email di assistenza\n\n# Regole di questa conversazione\nLe ha scelte l'utente[\s\S]*\n- Tipo di prompt: Scrivi il prompt come prompt di sistema da riusare/)
 
     // ciò che parte verso il modello è ciò che l'anteprima mostra
     const before = chatRequests().length
@@ -1900,7 +1902,7 @@ try {
     await composer.press('Enter')
     await page.getByTestId('message-assistant').first().waitFor()
     const req = chatRequests()[before].body
-    assert.match(req.messages[0].content, /^# Role\nTutor/)
+    assert.match(req.messages[0].content, /^# Situation\n## Role\nTutor/)
     // store e basi installate: i titoli seguono la lingua dell'interfaccia
     await page.getByTestId('store-open').filter({ hasText: 'Store' }).click()
     const store = page.getByTestId('store-dialog')

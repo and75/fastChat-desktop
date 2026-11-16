@@ -3,7 +3,7 @@
 // Qui un «ruolo» è il contenuto di `role.json`; nome, lingua e gruppo stanno nel manifesto del pacchetto.
 import { reminderApplies, CONTEXT_ORDERS } from './compose'
 import { t } from './i18n'
-import { briefToSituation, buildRolePrompt, DEFAULT_CHARS_PER_TOKEN, situationSection } from './prompt'
+import { briefToSituation, DEFAULT_CHARS_PER_TOKEN, situationSection } from './prompt'
 import {
   BASE_PURPOSES,
   DEFAULT_CONTEXT_SETTINGS,
@@ -426,11 +426,15 @@ export function roleIdentity(role: Role): string {
  */
 export function roleRules(role: Role, choices?: RoleChoices | null): string {
   const resolved = resolveChoices(role, choices)
-  const phrases = orderedParameters(role)
-    .flatMap((p) => activeOptions(p, resolved).map((o) => (o.instruction ?? '').trim()))
-    .filter(Boolean)
+  // Ogni voce porta il nome del suo parametro: si vede a quale scelta appartiene.
+  const phrases = orderedParameters(role).flatMap((p) =>
+    activeOptions(p, resolved)
+      .map((o) => (o.instruction ?? '').trim())
+      .filter(Boolean)
+      .map((line) => `- ${p.label.trim()}: ${line}`)
+  )
   if (phrases.length === 0) return ''
-  return [`# ${t('prompt.rulesHeading')}`, t('prompt.rulesIntro'), ...phrases.map((line) => `- ${line}`)].join('\n')
+  return [`# ${t('prompt.rulesHeading')}`, t('prompt.rulesIntro'), ...phrases].join('\n')
 }
 
 /**
@@ -609,9 +613,10 @@ export function rolePrompt(role: Role, conv: RolePromptSource): { instructions: 
   const identity = roleIdentity(role)
   const rules = roleRules(role, conv.roleParams)
   const text = conv.situation ?? briefToSituation(conv)
-  // `system` apre il prompt (ruolo, situazione, stile); `rules` lo chiude, accanto alla domanda. `instructions` è
-  // la somma delle due parti del ruolo, per le stime.
-  return { instructions: [identity, rules].filter(Boolean).join('\n\n'), rules, situation: situationSection(text, !!identity), system: buildRolePrompt({ instructions: identity, situation: text, style: conv.style }) }
+  // `system` apre il prompt (ruolo, poi situazione); `rules` viene dopo il materiale, prima di stile e piano.
+  // `instructions` è la somma delle due parti scritte dal ruolo, per le stime.
+  const situation = situationSection(text)
+  return { instructions: [identity, rules].filter(Boolean).join('\n\n'), rules, situation, system: [identity, situation].filter(Boolean).join('\n\n') }
 }
 
 /** L'essenziale del ruolo per il promemoria: il campo `reminder`, o la prima frase delle istruzioni. '' per il Generalista. */

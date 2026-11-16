@@ -196,10 +196,10 @@ budget = min( quota × num_ctx ,
 
 ## 6. Nel prompt
 
-- Sezione `# Base di conoscenza`, nel system prompt dopo istruzioni del ruolo, situazione, stile, riassunto e memoria
-  della conversazione. Prima vengono, se ci sono, le tecniche (`# Come lavorare`, ogni sezione con il suo
-  titolo `## …`) e gli esempi (`# Esempi`) del ruolo. Dopo la base, ultimo blocco prima della domanda, le
-  regole scelte dall'utente tra le opzioni del ruolo (`# Regole di questa conversazione`).
+- Sezione `# Base di conoscenza`, al suo posto nell'ordine fisso dei blocchi (`docs/ruoli.md` §5.1): ruolo,
+  situazione, riassunto, memoria (`# Messaggi precedenti`), tecniche (`# Come lavorare`, ogni sezione con il
+  suo titolo `## …`), esempi (`# Esempi`, ognuno con il suo titolo), **base di conoscenza**, regole scelte
+  (`# Regole di questa conversazione`), stile della risposta, piano, promemoria, domanda.
 - Il ruolo può dichiarare, per ogni base, quali sezioni dipendono dalle scelte (`sections` in `role.json`,
   vedi `docs/ruoli.md` §3.3): una tecnica o un esempio che contraddice le scelte non entra nel prompt, e un
   esempio «fissato» entra sempre tra i due inviati.

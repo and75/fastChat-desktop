@@ -194,10 +194,10 @@ budget = min( share × num_ctx ,
 
 ## 6. In the prompt
 
-- `# Knowledge base` section, in the system prompt after role instructions, situation, style, summary and
-  conversation memory. Before it come, if present, the role's techniques (`# How to work`, each section with
-  its `## …` title) and examples (`# Examples`). After the knowledge base, as the last block before the
-  question, come the rules the user chose among the role's options (`# Rules for this conversation`). A role
+- `# Knowledge base` section, at its place in the fixed block order: role, situation, summary, memory
+  (`# Earlier messages`), techniques (`# How to work`, each section with its `## …` title), examples
+  (`# Examples`, each with its title), **knowledge base**, chosen rules (`# Rules for this conversation`),
+  response style, plan, reminder, question. A role
   can declare, per base, which sections depend on the choices (`sections` in `role.json`): a technique or
   example that contradicts the choices is left out of the prompt.
 - Introduction for “complete documents” or for “excerpts” (and a linking sentence when both are present);
