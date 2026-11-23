@@ -65,6 +65,8 @@ interface ChatState {
   warning: string | null
   /** Tipo dello stream fallito: decide cosa fa "Riprova". */
   errorKind: StreamKind | null
+  /** L'errore è «memoria insufficiente per caricare il modello»: si offre di riprovare con meno memoria. */
+  errorMemory: boolean
   loading: boolean
   /**
    * Bottone libro: scelta per la prossima domanda, se diversa dall'impostazione della conversazione
@@ -80,6 +82,8 @@ interface ChatState {
   regenerate(): Promise<void>
   /** "Riprova" dopo un errore: ripete l'ultima operazione (risposta o piano). */
   retry(): Promise<void>
+  /** Dopo «memoria insufficiente»: imposta la memoria della conversazione a `numCtx` e riprova. */
+  retryWithMemory(numCtx: number): Promise<void>
   abort(): Promise<void>
   approvePlan(planId: string, steps: PlanStep[]): Promise<void>
   regeneratePlan(): Promise<void>
@@ -114,7 +118,7 @@ export const useChat = create<ChatState>((set, get) => {
     await flushPendingSaves()
     const conv = get().conversation
     if (!conv || get().streams[conv.id]) return false
-    set({ error: null, errorKind: null, warning: null })
+    set({ error: null, errorKind: null, errorMemory: false, warning: null })
     const res = await call(conv)
     if (!res.ok) {
       set({ error: res.error, errorKind: kind })
@@ -139,14 +143,15 @@ export const useChat = create<ChatState>((set, get) => {
     streams: {},
     error: null,
     warning: null,
+    errorMemory: false,
     errorKind: null,
     loading: false,
     knowledgeNext: null,
     setKnowledgeNext: (value) => set({ knowledgeNext: value }),
 
     async load(id) {
-      if (!id) return set({ conversation: null, messages: [], plans: [], error: null, errorKind: null, warning: null, knowledgeNext: null })
-      set({ loading: true, error: null, errorKind: null, warning: null, knowledgeNext: null })
+      if (!id) return set({ conversation: null, messages: [], plans: [], error: null, errorKind: null, errorMemory: false, warning: null, knowledgeNext: null })
+      set({ loading: true, error: null, errorKind: null, errorMemory: false, warning: null, knowledgeNext: null })
       const res = await window.api.conversations.get(id)
       if (res.ok) {
         set({ conversation: res.data.conversation, messages: res.data.messages, plans: res.data.plans, loading: false })
@@ -178,6 +183,16 @@ export const useChat = create<ChatState>((set, get) => {
     async retry() {
       if (get().errorKind === 'plan') await get().regeneratePlan()
       else await get().regenerate()
+    },
+
+    async retryWithMemory(numCtx) {
+      const conv = get().conversation
+      if (!conv) return
+      await flushPendingSaves()
+      const res = await window.api.conversations.update(conv.id, { numCtx })
+      if (!res.ok) return set({ error: res.error })
+      get().replaceConversation(res.data)
+      await get().retry()
     },
 
     async abort() {
@@ -267,7 +282,7 @@ export const useChat = create<ChatState>((set, get) => {
               streams,
               plans,
               messages: event.message ? [...s.messages, event.message] : s.messages,
-              ...(event.type === 'error' ? { error: event.error ?? 'Errore sconosciuto', errorKind: event.kind } : {}),
+              ...(event.type === 'error' ? { error: event.error ?? 'Errore sconosciuto', errorKind: event.kind, errorMemory: event.errorCode === 'memory' } : {}),
               ...(event.type === 'done' && (event.skipped?.length || event.reloaded)
                 ? { warning: [event.skipped?.length ? skippedNotice(event.skipped) : '', event.reloaded ? reloadedNotice(event.reloaded) : ''].filter(Boolean).join(' ') }
                 : {})
@@ -278,7 +293,7 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     clearError() {
-      set({ error: null, errorKind: null })
+      set({ error: null, errorKind: null, errorMemory: false })
     },
 
     clearWarning() {

@@ -75,6 +75,7 @@ export const fr: Record<Key, string> = {
   'chat.continuePrompt': 'Continue là où tu t\'es arrêté, sans répéter ce qui est déjà écrit.',
   'chat.regenerate': 'Régénérer',
   'chat.retry': 'Réessayer',
+  'chat.retryLessMemory': 'Réessayer avec une mémoire de {tokens} tokens',
   'chat.skipped': 'Réponse donnée sans {steps} : l’étape a échoué. La raison est dans le journal de diagnostic (Paramètres).',
   'chat.skipped.summary': 'le résumé des anciens messages',
   'chat.skipped.documents': 'les documents',
@@ -374,6 +375,7 @@ export const fr: Record<Key, string> = {
   'suggest.computed': 'Calculé sur {ram} de RAM{unified} et un modèle de {model}{kv}',
   'suggest.unified': ' unifiée',
   'suggest.kv': ', avec cache KV {type}.',
+  'suggest.capped': ' La suggestion s’arrête à {cap} tokens : choisissez davantage à la main, si la mémoire vidéo suffit.',
   // Moniteur du contexte
   'call.chat': 'Réponse',
   'call.plan': 'Plan',

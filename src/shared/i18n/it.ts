@@ -73,6 +73,7 @@ export const it = {
   'chat.continuePrompt': 'Continua da dove ti sei fermato, senza ripetere quanto già scritto.',
   'chat.regenerate': 'Rigenera',
   'chat.retry': 'Riprova',
+  'chat.retryLessMemory': 'Riprova con memoria a {tokens} token',
   'chat.skipped': 'Risposta data senza {steps}: il passo non è riuscito. Il motivo è nel registro diagnostico (Impostazioni).',
   'chat.skipped.summary': 'il riassunto dei messaggi più vecchi',
   'chat.skipped.documents': 'i documenti',
@@ -372,6 +373,7 @@ export const it = {
   'suggest.computed': 'Calcolato su {ram} di RAM{unified} e un modello da {model}{kv}',
   'suggest.unified': ' unificata',
   'suggest.kv': ', con cache KV {type}.',
+  'suggest.capped': ' Il suggerimento si ferma a {cap} token: di più si sceglie a mano, se la memoria video basta.',
   // Monitor del contesto
   'call.chat': 'Risposta',
   'call.plan': 'Piano',

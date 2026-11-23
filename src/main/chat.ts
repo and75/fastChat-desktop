@@ -655,7 +655,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         emit(target, { ...base, type: 'done', ...done, ...(missing.size && !result.aborted ? { skipped: [...missing] } : {}), ...(reloaded && !result.aborted ? { reloaded } : {}) })
       } catch (err) {
         log.error('chat', 'risposta fallita', { conversation: conv.id, kind: mode.kind, model: conv.model, modelAtStart: wait.first ?? 'unknown', ...times, totalMs: Date.now() - t0, error: errorDetail(err) })
-        emit(target, { ...base, type: 'error', error: err instanceof Error ? err.message : String(err) })
+        emit(target, { ...base, type: 'error', error: err instanceof Error ? err.message : String(err), ...(err instanceof OllamaError && err.code === 'memory' ? { errorCode: 'memory' as const } : {}) })
       } finally {
         stopWaiting()
         // La conversazione è di nuovo libera prima di generare il titolo.

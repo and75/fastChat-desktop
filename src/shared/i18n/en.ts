@@ -74,6 +74,7 @@ export const en: Record<Key, string> = {
   'chat.continuePrompt': 'Continue from where you stopped, without repeating what you already wrote.',
   'chat.regenerate': 'Regenerate',
   'chat.retry': 'Retry',
+  'chat.retryLessMemory': 'Retry with memory at {tokens} tokens',
   'chat.skipped': 'Answer given without {steps}: the step failed. The reason is in the diagnostic log (Settings).',
   'chat.skipped.summary': 'the summary of older messages',
   'chat.skipped.documents': 'the documents',
@@ -373,6 +374,7 @@ export const en: Record<Key, string> = {
   'suggest.computed': 'Computed from {ram} of RAM{unified} and a {model} model{kv}',
   'suggest.unified': ' (unified)',
   'suggest.kv': ', with {type} KV cache.',
+  'suggest.capped': ' The suggestion stops at {cap} tokens: choose more by hand, if there is enough video memory.',
   // Monitor del contesto
   'call.chat': 'Answer',
   'call.plan': 'Plan',

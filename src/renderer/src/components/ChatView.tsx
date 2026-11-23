@@ -1,7 +1,9 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { t } from '@shared/i18n'
+import { fmtInt, t } from '@shared/i18n'
+import { reducedNumCtx, resolveSettings } from '@shared/settings'
 import { stageLabel, useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
+import { useModels } from '../store/useModels'
 import { readyCount, useKnowledge } from '../store/useKnowledge'
 import { ContextMeter } from './ContextMeter'
 import { ConversationTimeline, type TimelineItem } from './ConversationTimeline'
@@ -174,9 +176,12 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
 export const continuePrompt = (): string => t('chat.continuePrompt')
 
 export function ChatView(): React.JSX.Element {
-  const { conversation, messages, plans, streams, error, warning, regenerate, retry, clearError, clearWarning, send } = useChat()
+  const { conversation, messages, plans, streams, error, errorMemory, warning, regenerate, retry, retryWithMemory, clearError, clearWarning, send } = useChat()
   const create = useConversations((s) => s.create)
   const live = conversation ? streams[conversation.id] : undefined
+  // Dopo «memoria insufficiente»: la memoria con cui si offre di riprovare (metà di quella attuale), se si può scendere.
+  const caps = useModels((s) => (conversation ? s.capabilities[conversation.model] : undefined))
+  const lessMemory = errorMemory && conversation ? reducedNumCtx(resolveSettings(conversation, caps).numCtx) : null
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
@@ -337,6 +342,11 @@ export function ChatView(): React.JSX.Element {
                 className="flex items-center gap-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
               >
                 <span className="flex-1">{error}</span>
+                {last?.role === 'user' && lessMemory != null && (
+                  <button type="button" className="shrink-0 font-medium underline" onClick={() => void retryWithMemory(lessMemory)} data-testid="retry-less-memory">
+                    {t('chat.retryLessMemory', { tokens: fmtInt(lessMemory) })}
+                  </button>
+                )}
                 {last?.role === 'user' && (
                   <button type="button" className="font-medium underline" onClick={() => void retry()}>
                     {t('chat.retry')}

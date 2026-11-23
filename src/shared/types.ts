@@ -639,6 +639,8 @@ export interface StreamEvent {
   type: StreamEventType
   delta?: string
   error?: string
+  /** Sull'evento 'error': 'memory' se Ollama non ha potuto caricare il modello per mancanza di memoria. */
+  errorCode?: 'memory'
   /** Sull'evento 'waiting': stato del modello in Ollama, nome del modello e token stimati del contesto inviato. */
   modelState?: ModelState
   model?: string

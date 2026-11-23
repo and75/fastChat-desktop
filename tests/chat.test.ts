@@ -728,6 +728,25 @@ describe('attesa del primo token: cosa fa Ollama', () => {
     expect(lines.filter((l) => l.message === 'risposta').at(-1)?.data).toMatchObject({ reloaded: true, othersInMemory: 'bge-m3:latest', modelAtStart: 'loading' })
   })
 
+  it('memoria insufficiente per caricare il modello: l’errore lo dice e porta il codice per «riprova con meno memoria»', async () => {
+    const client = createOllamaClient(() => fake.url)
+    const chat = createChatService({
+      db: h.db,
+      emit: (_t, e) => events.push(e),
+      ollama: { ...client, chatStream: async () => Promise.reject(new OllamaError('memory', 'Memoria insufficiente per caricare il modello', 500)) }
+    })
+    const conv = await createConversation(h.db, { model: 'llama3.2', title: 'Già col titolo' })
+    const { streamId } = await chat.send(target, conv.id, 'ciao')
+    await chat.wait(streamId)
+    expect(events.find((e) => e.streamId === streamId && e.type === 'error')).toMatchObject({ errorCode: 'memory', error: 'Memoria insufficiente per caricare il modello' })
+
+    // un altro errore non porta il codice
+    const other = createChatService({ db: h.db, emit: (_t, e) => events.push(e), ollama: { ...client, chatStream: async () => Promise.reject(new OllamaError('http', 'Ollama 500: altro', 500)) } })
+    const again = await other.regenerate(target, conv.id)
+    await other.wait(again.streamId)
+    expect(events.find((e) => e.streamId === again.streamId && e.type === 'error')?.errorCode).toBeUndefined()
+  })
+
   it('un passo facoltativo che fallisce non ferma la risposta, ma lascia il motivo nel registro', async () => {
     const { log, lines } = memoryLog()
     const client = createOllamaClient(() => fake.url)
