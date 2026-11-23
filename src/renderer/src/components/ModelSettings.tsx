@@ -689,7 +689,14 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
 
   // Stessi calcoli del main: ciò che si mostra come "suggerito" è ciò che la calibrazione scriverebbe.
   const effective = resolveSettings(conversation, caps)
-  const input = { system, modelBytes, caps: caps ?? null }
+  // Il modello di embedding (se installato ed è un altro modello) sta in memoria insieme a quello di chat.
+  const embeddingBytes = useModels((s) => {
+    const name = s.settings?.embeddingModel
+    if (!name || name === conversation.model) return null
+    return s.models.find((m) => m.name === name || m.name === `${name}:latest`)?.size ?? null
+  })
+  const runSetting = useModels((s) => s.modelSettings[conversation.model])
+  const input = { system, modelBytes, caps: caps ?? null, embeddingBytes, cpuOnly: runSetting?.numGpu === 0, failedNumCtx: runSetting?.failedNumCtx ?? null }
   const suggested = suggestSettings(input)
   const machineCtx = suggestNumCtx(input)
   const ctxSteps = contextSteps(maxNumCtx(caps))
@@ -697,7 +704,6 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
   const allSuggested =
     effective.temperature === suggested.temperature && effective.topP === suggested.topP && effective.numCtx === suggested.numCtx
 
-  const runSetting = useModels((s) => s.modelSettings[conversation.model])
   const runInfo = useModels((s) => s.models.find((m) => m.name === conversation.model))
   const bestRun = runSetting?.benchmark?.find((r) => r.numGpu === runSetting.numGpu)
   const runSummary =

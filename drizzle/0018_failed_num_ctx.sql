@@ -1,0 +1,1 @@
+ALTER TABLE `model_settings` ADD `failed_num_ctx` integer;

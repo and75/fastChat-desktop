@@ -119,6 +119,8 @@ export default function App(): React.JSX.Element {
       useChat.getState().handleStream(event)
       // A fine risposta la conversazione è salita in cima: riallineiamo la lista.
       if (event.type === 'done' || event.type === 'error') void useConversations.getState().refresh()
+      // Memoria insufficiente: il main ha annotato il limite del modello, e il suggerimento cambia.
+      if (event.type === 'error' && event.errorCode === 'memory') void useModels.getState().loadModelSettings()
     })
     // Conversazioni modificate dal main, es. titolo generato dopo il primo scambio.
     const offUpdated = window.api.conversations.onUpdated((conv) => {

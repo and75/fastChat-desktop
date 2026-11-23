@@ -7,10 +7,12 @@ import {
   resolveNumCtx,
   resolveSettings,
   resolveTopP,
+  MEMORY_MARGIN_BYTES,
+  MEMORY_SHARE,
+  memoryBudget,
   ramNumCtx,
   reducedNumCtx,
-  SUGGEST_MAX_CTX,
-  suggestionCapped,
+  suggestionLowered,
   suggestNumCtx,
   suggestSettings,
   type SystemInfo
@@ -39,45 +41,62 @@ describe('memoria della conversazione suggerita dalla RAM', () => {
     expect(floorPow2(43_000)).toBe(32768)
   })
 
-  it('ciò che sta in RAM: (RAM − pesi) ÷ costo per token, potenza di 2 inferiore', () => {
-    expect(ramNumCtx({ system: mac(8), modelBytes: 2.5 * GB, caps: big(262_144) })).toBe(32768) // 5,5 GB → 45k
-    expect(ramNumCtx({ system: mac(16), modelBytes: 5 * GB, caps: big(262_144) })).toBe(65536) // 11 GB → 90k
-    expect(ramNumCtx({ system: mac(64), modelBytes: 18 * GB, caps: big(262_144, 256 * 1024) })).toBe(131_072) // 46 GB → 188k
-    expect(ramNumCtx({ system: pc(32), modelBytes: 5 * GB, caps: big(262_144) })).toBe(131_072) // 27 GB → 221k
-    // costo per token dichiarato dal modello: 11 GB ÷ 64 KiB → 180k
-    expect(ramNumCtx({ system: mac(16), modelBytes: 5 * GB, caps: big(262_144, 64 * 1024) })).toBe(131_072)
-    // cache KV quantizzata: ogni token costa meno. 90k → 65.536; q8_0 (×0,53) → 169k → 131.072; q4_0 (×0,28) → 320k → 262.144
-    expect(ramNumCtx({ system: mac(16, 'q8_0'), modelBytes: 5 * GB, caps: big(262_144) })).toBe(131_072)
-    expect(ramNumCtx({ system: mac(16, 'q4_0'), modelBytes: 5 * GB, caps: big(262_144) })).toBe(262_144)
-    // modello più grande della RAM: non ci sta nulla
-    expect(ramNumCtx({ system: mac(2), modelBytes: 3 * GB, caps: big(8192) })).toBe(0)
+  it('conti della memoria: utilizzabile (RAM × quota) − modello − modello di embedding − margine', () => {
+    expect(MEMORY_SHARE).toEqual({ cpu: 1, unified: 2 / 3, shared: 1 / 2 })
+    expect(MEMORY_MARGIN_BYTES).toBe(1.5 * GB)
+    // PC con 32 GB: metà della RAM. 16 − 7,5 − 1,5 = 7 GB per il contesto
+    expect(memoryBudget({ system: pc(32), modelBytes: 7.5 * GB, caps: bare })).toEqual({ kind: 'shared', usable: 16 * GB, embedding: 0, context: 7 * GB })
+    // con il modello di embedding (1 GB) installato: 6 GB
+    expect(memoryBudget({ system: pc(32), modelBytes: 7.5 * GB, caps: bare, embeddingBytes: 1 * GB })?.context).toBe(6 * GB)
+    // Mac con memoria unificata: due terzi. 24 × ⅔ = 16 GB
+    expect(memoryBudget({ system: mac(24), modelBytes: 5 * GB, caps: bare })).toMatchObject({ kind: 'unified', usable: 16 * GB, context: 9.5 * GB })
+    // modello solo in CPU: tutta la RAM
+    expect(memoryBudget({ system: pc(32), modelBytes: 7.5 * GB, caps: bare, cpuOnly: true })).toMatchObject({ kind: 'cpu', usable: 32 * GB, context: 23 * GB })
   })
 
-  it('il suggerimento si ferma al tetto (8.192), anche con molta RAM e un modello dal contesto enorme', () => {
-    expect(SUGGEST_MAX_CTX).toBe(8192)
-    expect(suggestNumCtx({ system: mac(8), modelBytes: 2.5 * GB, caps: big(262_144) })).toBe(8192)
-    expect(suggestNumCtx({ system: pc(32), modelBytes: 5 * GB, caps: big(262_144) })).toBe(8192)
-    expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: big(262_144) })).toBe(8192)
-    // il caso che faceva fallire il caricamento in GPU: 12B, contesto dichiarato di un milione di token
+  it('token che stanno in memoria: byte ÷ costo per token, potenza di 2 inferiore', () => {
+    // 7 GB ÷ 128 KiB = 57k → 32.768
+    expect(ramNumCtx({ system: pc(32), modelBytes: 7.5 * GB, caps: big(262_144) })).toBe(32768)
+    // costo per token dichiarato dal modello (64 KiB): 114k → 65.536
+    expect(ramNumCtx({ system: pc(32), modelBytes: 7.5 * GB, caps: big(262_144, 64 * 1024) })).toBe(65536)
+    // cache KV quantizzata: ogni token costa meno. q8_0 (×0,53) → 107k → 65.536; q4_0 (×0,28) → 203k → 131.072
+    expect(ramNumCtx({ system: { ...pc(32), kvCacheType: 'q8_0' }, modelBytes: 7.5 * GB, caps: big(262_144) })).toBe(65536)
+    expect(ramNumCtx({ system: { ...pc(32), kvCacheType: 'q4_0' }, modelBytes: 7.5 * GB, caps: big(262_144) })).toBe(131_072)
+    // il modello non lascia spazio: nulla
+    expect(ramNumCtx({ system: pc(8), modelBytes: 5 * GB, caps: big(8192) })).toBe(0)
+  })
+
+  it('il caso che faceva fallire il caricamento: 12B con un milione di token dichiarati, GPU a memoria condivisa', () => {
+    // MN-12B: 7,5 GB di pesi, 160 KiB per token, contesto massimo dichiarato 1.024.000
     const nemo = big(1_024_000, 163_840)
-    expect(ramNumCtx({ system: pc(32), modelBytes: 7.5 * GB, caps: nemo })).toBe(131_072)
-    expect(suggestNumCtx({ system: pc(32), modelBytes: 7.5 * GB, caps: nemo })).toBe(8192)
-    expect(suggestionCapped({ system: pc(32), modelBytes: 7.5 * GB, caps: nemo })).toBe(true)
+    // prima: (32 − 7,5) GB ÷ 160 KiB → 131.072 token (20 GB di solo contesto). Ora: 7 GB → 44k → 32.768
+    expect(suggestNumCtx({ system: pc(32), modelBytes: 7.5 * GB, caps: nemo })).toBe(32768)
+    // con il modello di embedding in memoria (1,2 GB): 5,8 GB → 37k → 32.768; su 16 GB di RAM non resta spazio → minimo
+    expect(suggestNumCtx({ system: pc(32), modelBytes: 7.5 * GB, caps: nemo, embeddingBytes: 1.2 * GB })).toBe(32768)
+    expect(suggestNumCtx({ system: pc(16), modelBytes: 7.5 * GB, caps: nemo })).toBe(4096)
+    // il massimo dichiarato dal modello non conta più: decide la memoria
+    expect(suggestNumCtx({ system: pc(32), modelBytes: 7.5 * GB, caps: big(131_072, 163_840) })).toBe(32768)
   })
 
-  it('sotto il tetto: mai sopra il massimo del modello né sopra ciò che sta in RAM, mai sotto il minimo', () => {
-    expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: big(4096) })).toBe(4096)
-    expect(suggestionCapped({ system: mac(128), modelBytes: 5 * GB, caps: big(8192) })).toBe(false)
-    // poca RAM: 1,5 GB liberi ÷ 512 KiB per token → 3.072 → 2.048, alzato al minimo del modello (4.096)
-    expect(suggestNumCtx({ system: mac(4), modelBytes: 2.5 * GB, caps: big(262_144, 512 * 1024) })).toBe(4096)
-    // modello più grande della RAM: mai sotto il minimo del modello (predefinito di Ollama)
+  it('tra il minimo e il massimo del modello', () => {
+    expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: big(8192) })).toBe(8192)
+    expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: big(262_144) })).toBe(262_144)
+    // modello più grande della memoria utilizzabile: mai sotto il minimo del modello (predefinito di Ollama)
     expect(suggestNumCtx({ system: mac(2), modelBytes: 3 * GB, caps: big(8192) })).toBe(4096)
-    // il Modelfile chiede più del tetto: vale il Modelfile, e il tetto non c'entra
-    const author = { ...big(131_072), defaults: { ...big(131_072).defaults, numCtx: 32768 } }
-    expect(suggestNumCtx({ system: mac(64), modelBytes: 5 * GB, caps: author })).toBe(32768)
-    expect(suggestionCapped({ system: mac(64), modelBytes: 5 * GB, caps: author })).toBe(false)
-    // massimo ignoto (32k): resta il tetto
-    expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: bare })).toBe(8192)
+    expect(suggestNumCtx({ system: mac(2), modelBytes: 3 * GB, caps: { ...big(8192), defaults: { ...big(8192).defaults, numCtx: 8192 } } })).toBe(8192)
+    // massimo ignoto: 32k
+    expect(suggestNumCtx({ system: mac(128), modelBytes: 5 * GB, caps: bare })).toBe(32768)
+  })
+
+  it('dopo un caricamento fallito per memoria insufficiente il suggerimento resta sotto quel valore', () => {
+    const input = { system: pc(32), modelBytes: 7.5 * GB, caps: big(1_024_000, 163_840) }
+    expect(suggestNumCtx({ ...input, failedNumCtx: 32768 })).toBe(16384)
+    expect(suggestionLowered({ ...input, failedNumCtx: 32768 })).toBe(true)
+    // un fallimento con una memoria più grande di quella suggerita non cambia nulla
+    expect(suggestNumCtx({ ...input, failedNumCtx: 131_072 })).toBe(32768)
+    expect(suggestionLowered({ ...input, failedNumCtx: 131_072 })).toBe(false)
+    // fallito già al minimo: si resta al minimo
+    expect(suggestNumCtx({ ...input, failedNumCtx: 2048 })).toBe(2048)
   })
 
   it('senza RAM (Ollama remoto) o senza dimensione del modello: nessun suggerimento', () => {
@@ -86,14 +105,15 @@ describe('memoria della conversazione suggerita dalla RAM', () => {
     expect(suggestNumCtx({ system: mac(16), modelBytes: null, caps })).toBeNull()
   })
 
-  it('describeSuggestion', () => {
-    expect(describeSuggestion({ system: mac(16), modelBytes: 5 * GB, caps })).toBe('Calcolato su 16 GB di RAM unificata e un modello da 5 GB.')
-    expect(describeSuggestion({ system: pc(32), modelBytes: 5 * GB, caps })).toBe('Calcolato su 32 GB di RAM e un modello da 5 GB.')
-    expect(describeSuggestion({ system: mac(16, 'q8_0'), modelBytes: 5 * GB, caps })).toBe('Calcolato su 16 GB di RAM unificata e un modello da 5 GB, con cache KV q8_0.')
-    // suggerimento fermato dal tetto: lo si dice
-    expect(describeSuggestion({ system: pc(32), modelBytes: 5 * GB, caps: big(262_144) })).toBe(
-      'Calcolato su 32 GB di RAM e un modello da 5 GB. Il suggerimento si ferma a 8.192 token: di più si sceglie a mano, se la memoria video basta.'
+  it('describeSuggestion: i conti in chiaro', () => {
+    expect(describeSuggestion({ system: pc(32), modelBytes: 5 * GB, caps })).toBe('Calcolato su 16 GB di memoria utilizzabile (metà di 32 GB di RAM), meno il modello (5 GB) e 1,5 GB di margine.')
+    expect(describeSuggestion({ system: mac(24), modelBytes: 5 * GB, caps })).toBe('Calcolato su 16 GB di memoria utilizzabile (due terzi di 24 GB di RAM unificata), meno il modello (5 GB) e 1,5 GB di margine.')
+    expect(describeSuggestion({ system: pc(32), modelBytes: 5 * GB, caps, cpuOnly: true, embeddingBytes: 0.6 * GB })).toBe(
+      'Calcolato su 32 GB di memoria utilizzabile (tutta la RAM: il modello gira in CPU), meno il modello (5 GB), il modello di embedding (0,6 GB) e 1,5 GB di margine.'
     )
+    expect(describeSuggestion({ system: { ...pc(32), kvCacheType: 'q8_0' }, modelBytes: 5 * GB, caps })).toBe('Calcolato su 16 GB di memoria utilizzabile (metà di 32 GB di RAM), meno il modello (5 GB) e 1,5 GB di margine, con cache KV q8_0.')
+    // suggerimento abbassato da un caricamento fallito: lo si dice
+    expect(describeSuggestion({ system: pc(32), modelBytes: 7.5 * GB, caps: big(1_024_000, 163_840), failedNumCtx: 32768 })).toMatch(/margine\. Ridotto: con 32\.768 token il caricamento del modello è fallito per memoria insufficiente\.$/)
     expect(describeSuggestion({ system: { ramBytes: null, unified: false, kvCacheType: 'f16' }, modelBytes: 5 * GB, caps })).toMatch(/non è su questa macchina/)
   })
 })

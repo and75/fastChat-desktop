@@ -159,7 +159,9 @@ export const modelSettings = sqliteTable('model_settings', {
   benchmark: text('benchmark', { mode: 'json' }).$type<BenchmarkRun[]>(),
   benchmarkedAt: integer('benchmarked_at'),
   gpuAvailable: integer('gpu_available', { mode: 'boolean' }),
-  dismissed: integer('dismissed', { mode: 'boolean' }).notNull().default(false)
+  dismissed: integer('dismissed', { mode: 'boolean' }).notNull().default(false),
+  /** Memoria della conversazione (num_ctx) con cui il caricamento è fallito per memoria insufficiente. */
+  failedNumCtx: integer('failed_num_ctx')
 })
 
 /**

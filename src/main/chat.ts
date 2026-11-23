@@ -35,6 +35,7 @@ import {
   planToFollow,
   getConversation,
   getModelSetting,
+  saveModelSetting,
   getPlan,
   listMessages,
   listPlans,
@@ -627,6 +628,11 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         await contextLog?.record(callInput(start, result))
         // Ricarica inattesa: il modello aveva risposto da poco, ma all'inizio non era più in memoria e Ollama ha
         // impiegato tempo a caricarlo. Tipico dello scambio con il modello di embedding quando la memoria è poca.
+        // Un caricamento riuscito con almeno la memoria che era fallita: quel limite non vale più.
+        const failed = (await getModelSetting(db, conv.model).catch(() => null))?.failedNumCtx
+        if (failed != null && !result.aborted && (request.options?.num_ctx ?? 0) >= failed) {
+          await saveModelSetting(db, conv.model, { failedNumCtx: null }).catch(() => undefined)
+        }
         const previous = lastAnswerAt.get(conv.model)
         const reloaded =
           wait.first === 'loading' && (result.loadMs ?? 0) >= RELOAD_MIN_MS && previous != null && t0 - previous < RELOAD_WINDOW_MS
@@ -654,6 +660,13 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         answered = !!done.message
         emit(target, { ...base, type: 'done', ...done, ...(missing.size && !result.aborted ? { skipped: [...missing] } : {}), ...(reloaded && !result.aborted ? { reloaded } : {}) })
       } catch (err) {
+        // Memoria insufficiente: si ricorda con quale memoria della conversazione il modello non si è caricato
+        // (il valore più piccolo), così il suggerimento per questo modello resta sotto.
+        if (err instanceof OllamaError && err.code === 'memory') {
+          const numCtx = resolveSettings(conv, caps).numCtx
+          const before = (await getModelSetting(db, conv.model).catch(() => null))?.failedNumCtx
+          if (before == null || numCtx < before) await saveModelSetting(db, conv.model, { failedNumCtx: numCtx }).catch(() => undefined)
+        }
         log.error('chat', 'risposta fallita', { conversation: conv.id, kind: mode.kind, model: conv.model, modelAtStart: wait.first ?? 'unknown', ...times, totalMs: Date.now() - t0, error: errorDetail(err) })
         emit(target, { ...base, type: 'error', error: err instanceof Error ? err.message : String(err), ...(err instanceof OllamaError && err.code === 'memory' ? { errorCode: 'memory' as const } : {}) })
       } finally {

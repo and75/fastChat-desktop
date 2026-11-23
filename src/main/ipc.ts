@@ -39,6 +39,7 @@ import {
   listContextCalls,
   listModelSettings,
   removeModelSetting,
+  getModelSetting,
   saveModelSetting,
   listMessages,
   listPlans,
@@ -121,7 +122,7 @@ const requireId = (id: unknown): string => {
 export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl, log = nullLogger }: IpcDeps): void {
   const watched = new WeakSet<WebContents>()
   const system = async (): Promise<SystemInfo> => systemInfo(getOllamaUrl(), (await getSettings(db)).kvCacheType)
-  const calibrate: CalibrateDeps = { ollama, system }
+  const calibrate: CalibrateDeps = { ollama, system, embeddingModel: async () => (await getSettings(db)).embeddingModel, modelSetting: (model) => getModelSetting(db, model) }
   // Monitor del contesto: ogni chiamata registrata arriva a tutte le finestre.
   const contextLog = createContextLog(db, (call) => {
     for (const w of BrowserWindow.getAllWindows()) if (!w.webContents.isDestroyed()) w.webContents.send(IPC.contextCallAdded, call)

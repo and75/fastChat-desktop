@@ -91,8 +91,9 @@ const app = await electron.launch({
     FASTCHAT_CONTEXT_EXPORT: join(userData, 'contesto.csv'),
     // Base di conoscenza: «Aggiungi documenti» salta il dialog e aggiunge questi file.
     FASTCHAT_KNOWLEDGE_FILES: [join(root, 'tests', 'fixtures', 'relazione.txt'), join(root, 'tests', 'fixtures', 'bilancio.pdf')].join(process.platform === 'win32' ? ';' : ':'),
-    // Macchina finta: 16 GB di RAM. Con un modello da 2 GB e 128 KiB per token la memoria suggerita
-    // in RAM è ~115k, ma il suggerimento si ferma al tetto di 8.192 (il massimo di thinker:8b è 32.768).
+    // Macchina finta: 16 GB di RAM, non unificata: utilizzabile la metà (8 GB). Con un modello da 2 GB e
+    // 1,5 GB di margine restano 4,5 GB: a 128 KiB per token sono ~37k, cioè 32.768 (anche il massimo di
+    // thinker:8b); 8.192 per i modelli con contesto 8k.
     FASTCHAT_LANG: 'it',
     FASTCHAT_SYSTEM_RAM: String(16 * 1024 ** 3),
     FASTCHAT_SYSTEM_UNIFIED: '0',
@@ -414,11 +415,10 @@ try {
     assert.equal(await settings.getByTestId('execution-row').isVisible(), true)
 
     // al cambio modello i cursori partono dai valori suggeriti: top_p dal Modelfile, memoria calcolata
-    // dalla macchina (16 GB, modello da 2 GB: in RAM starebbe il massimo, 32.768; il suggerimento si ferma a 8.192)
+    // dalla memoria (metà di 16 GB, meno il modello da 2 GB e il margine → 32.768, che è anche il massimo del modello)
     await settings.getByTestId('top_p-value').filter({ hasText: '0,95 (consigliato dal modello)' }).waitFor()
-    await settings.getByTestId('num_ctx-value').filter({ hasText: '8.192 token ≈ 6.100 parole (calcolato per questa macchina)' }).waitFor()
-    await settings.getByText('Calcolato su 16 GB di RAM e un modello da 2 GB.').waitFor()
-    await settings.getByText('Il suggerimento si ferma a 8.192 token').waitFor()
+    await settings.getByTestId('num_ctx-value').filter({ hasText: '32.768 token ≈ 24.600 parole (calcolato per questa macchina)' }).waitFor()
+    await settings.getByText('Calcolato su 8 GB di memoria utilizzabile (metà di 16 GB di RAM), meno il modello (1,9 GB) e 1,5 GB di margine.').waitFor()
     // la temperatura è stata cambiata (1,2) e il Modelfile consiglia 0,6: compare il ripristino
     await settings.getByRole('button', { name: 'Torna al valore suggerito: Temperatura' }).filter({ hasText: '↺ Suggerito 0.60' }).waitFor()
 
@@ -428,7 +428,7 @@ try {
     const memory = settings.getByLabel('Memoria della conversazione')
     await memory.focus()
     await memory.press('ArrowLeft')
-    await settings.getByTestId('num_ctx-value').filter({ hasText: '4.096 token' }).waitFor()
+    await settings.getByTestId('num_ctx-value').filter({ hasText: '16.384 token' }).waitFor()
     await settings.getByLabel('Risposte ripetibili').fill('7')
     await page.getByTestId('composer-temperature').filter({ hasText: '1.20' }).waitFor()
     await page.waitForTimeout(400) // debounce del salvataggio
@@ -438,7 +438,7 @@ try {
     })
     assert.equal(conv.temperature, 1.2)
     assert.equal(conv.topP, 0.9)
-    assert.equal(conv.numCtx, 4096)
+    assert.equal(conv.numCtx, 16384)
     assert.equal(conv.seed, 7)
     assert.equal(conv.think, true)
   })
@@ -462,14 +462,14 @@ try {
     const body = lastChat()
     assert.equal(body.think, true)
     // nessun num_predict: la lunghezza della risposta la governa lo stile nel system prompt
-    assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, num_ctx: 4096, seed: 7 })
+    assert.deepEqual(body.options, { temperature: 1.2, top_p: 0.9, num_ctx: 16384, seed: 7 })
   })
 
   await step('cursore della memoria: "↺ Suggerito" riporta al valore calcolato, che è ciò che va a Ollama', async () => {
     const settings = page.getByTestId('model-settings')
     await settings.getByRole('button', { name: 'Torna al valore suggerito: Memoria della conversazione' }).click()
-    await settings.getByTestId('num_ctx-value').filter({ hasText: '8.192 token' }).waitFor()
-    await waitUntil(async () => (await latestConversation()).numCtx === 8192)
+    await settings.getByTestId('num_ctx-value').filter({ hasText: '32.768 token' }).waitFor()
+    await waitUntil(async () => (await latestConversation()).numCtx === 32768)
   })
 
   await step('ragionamento spento: think=false e nessun blocco', async () => {
@@ -479,7 +479,7 @@ try {
     await composer.press('Enter')
     await page.getByTestId('message-assistant').nth(1).waitFor()
     assert.equal(lastChat().think, false)
-    assert.deepEqual(lastChat().options, { temperature: 1.2, top_p: 0.9, num_ctx: 8192, seed: 7 })
+    assert.deepEqual(lastChat().options, { temperature: 1.2, top_p: 0.9, num_ctx: 32768, seed: 7 })
     assert.equal(await page.getByTestId('message-assistant').nth(1).getByTestId('thinking-block').count(), 0)
   })
 
@@ -488,10 +488,10 @@ try {
     await settings.getByRole('button', { name: '↺ Tutti i valori suggeriti' }).click()
     await settings.getByTestId('temperature-value').filter({ hasText: '0.60 (consigliato dal modello)' }).waitFor()
     await settings.getByTestId('top_p-value').filter({ hasText: '0,95 (consigliato dal modello)' }).waitFor()
-    await settings.getByTestId('num_ctx-value').filter({ hasText: '8.192 token' }).waitFor()
+    await settings.getByTestId('num_ctx-value').filter({ hasText: '32.768 token' }).waitFor()
     await waitUntil(async () => {
       const c = await latestConversation()
-      return c.temperature === 0.6 && c.topP === 0.95 && c.numCtx === 8192 && c.seed === 7
+      return c.temperature === 0.6 && c.topP === 0.95 && c.numCtx === 32768 && c.seed === 7
     })
     assert.equal(await settings.getByRole('button', { name: '↺ Tutti i valori suggeriti' }).count(), 0)
   })

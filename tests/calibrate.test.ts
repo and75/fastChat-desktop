@@ -30,10 +30,22 @@ const deps = (ramGb: number, unified = true) => ({
 
 describe('calibrazione', () => {
   it('suggestFor: num_ctx dalla RAM e dal costo per token del modello, temperatura e top_p dal Modelfile', async () => {
-    // (16 − 5) GB ÷ 128 KiB ≈ 90k → 65.536 in RAM, ma il suggerimento si ferma al tetto: 8.192
-    expect(await suggestFor(deps(16), 'otto')).toEqual({ temperature: 0.6, topP: 0.95, numCtx: 8192 })
+    // memoria unificata: 16 × ⅔ − 5 (modello) − 1,5 (margine) = 4,2 GB ÷ 128 KiB ≈ 34k → 32.768
+    expect(await suggestFor(deps(16), 'otto')).toEqual({ temperature: 0.6, topP: 0.95, numCtx: 32768 })
     // modello senza Modelfile né architettura: Ollama + 128 KiB per token, entro il massimo del modello
     expect(await suggestFor(deps(16), 'nudo')).toEqual({ temperature: 0.8, topP: 0.9, numCtx: 4096 })
+  })
+
+  it('suggestFor: il modello di embedding installato, la sola CPU e un caricamento già fallito entrano nel conto', async () => {
+    // «nudo» (2 GB) fa da modello di embedding: 10,7 − 5 − 2 − 1,5 = 2,2 GB → 17k → 16.384
+    expect((await suggestFor({ ...deps(16), embeddingModel: () => 'nudo' }, 'otto'))?.numCtx).toBe(16384)
+    // modello di embedding non installato, o lo stesso modello di chat: non conta
+    expect((await suggestFor({ ...deps(16), embeddingModel: () => 'manca' }, 'otto'))?.numCtx).toBe(32768)
+    expect((await suggestFor({ ...deps(16), embeddingModel: () => 'otto' }, 'otto'))?.numCtx).toBe(32768)
+    // solo CPU: tutta la RAM. 16 − 5 − 1,5 = 9,5 GB → 77k → 65.536
+    expect((await suggestFor({ ...deps(16), modelSetting: async () => ({ numGpu: 0, failedNumCtx: null }) }, 'otto'))?.numCtx).toBe(65536)
+    // con 32.768 il caricamento è già fallito: si suggerisce la metà
+    expect((await suggestFor({ ...deps(16), modelSetting: async () => ({ numGpu: null, failedNumCtx: 32768 }) }, 'otto'))?.numCtx).toBe(16384)
   })
 
   it('suggestFor: null se il modello non esiste o Ollama non risponde', async () => {
@@ -44,9 +56,9 @@ describe('calibrazione', () => {
   })
 
   it('calibrationPatch: solo i campi vuoti, oppure tutti (cambio modello)', async () => {
-    expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: null, numCtx: null }, true)).toEqual({ topP: 0.95, numCtx: 8192 })
+    expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: null, numCtx: null }, true)).toEqual({ topP: 0.95, numCtx: 32768 })
     expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: 0.5, numCtx: 1024 }, true)).toEqual({})
-    expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: 0.5, numCtx: 1024 }, false)).toEqual({ temperature: 0.6, topP: 0.95, numCtx: 8192 })
+    expect(await calibrationPatch(deps(16), 'otto', { temperature: 0.7, topP: 0.5, numCtx: 1024 }, false)).toEqual({ temperature: 0.6, topP: 0.95, numCtx: 32768 })
     // Ollama non risponde: nessuna modifica, si riproverà
     expect(await calibrationPatch({ ...deps(16), ollama: createOllamaClient(() => 'http://127.0.0.1:1') }, 'otto', {}, false)).toEqual({})
   })

@@ -525,6 +525,11 @@ export interface ModelSetting {
   gpuAvailable: boolean | null
   /** L'utente non vuole l'avviso «fai il test» per questo modello. */
   dismissed: boolean
+  /**
+   * Memoria della conversazione (num_ctx) più piccola con cui il caricamento del modello è fallito per memoria
+   * insufficiente: il suggerimento resta sotto. null = mai successo (o superato da un caricamento riuscito).
+   */
+  failedNumCtx: number | null
 }
 
 export type ModelSettingPatch = Partial<Pick<ModelSetting, 'numGpu' | 'dismissed'>>

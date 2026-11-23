@@ -1,5 +1,5 @@
 // Parametri del modello per una conversazione: valori suggeriti (calibrazione) e valori effettivi.
-import { fmtInt, t } from './i18n'
+import { fmtInt, fmtNum, t } from './i18n'
 //
 // Principio: il valore configurato nella conversazione è ciò che l'utente vede sul cursore e ciò che
 // va a Ollama. L'app lo riempie quando si sceglie il modello (calibrazione), poi l'utente lo cambia
@@ -46,11 +46,17 @@ export const MIN_NUM_CTX = 2048
 /** Massimo usato se il modello non dichiara la lunghezza del contesto. */
 export const FALLBACK_MAX_CTX = 32768
 /**
- * Tetto del suggerimento. La RAM non dice quanta memoria video c'è, e alcuni modelli dichiarano un contesto
- * massimo enorme (un milione di token): un suggerimento «tutto ciò che sta in RAM» fa fallire il caricamento
- * in GPU. Oltre questo valore si sale a mano con il cursore, fino al massimo del modello.
+ * Tabella dei valori fissi del calcolo.
+ * Quota della RAM che il modello può davvero occupare, secondo dove gira:
+ * - `cpu`: il modello gira solo in CPU (0 layer su GPU): tutta la RAM;
+ * - `unified`: memoria unificata (Mac Apple Silicon): la GPU ne usa circa due terzi;
+ * - `shared`: gli altri computer. Una GPU integrata prende la memoria dalla RAM e il sistema gliene concede
+ *   circa la metà; con una scheda dedicata il valore è prudente.
+ * Margine: buffer di calcolo di Ollama, sistema e altre applicazioni.
  */
-export const SUGGEST_MAX_CTX = 8192
+export const MEMORY_SHARE = { cpu: 1, unified: 2 / 3, shared: 1 / 2 } as const
+export type MemoryKind = keyof typeof MEMORY_SHARE
+export const MEMORY_MARGIN_BYTES = 1.5 * 1024 ** 3
 
 /**
  * Memoria minima consigliata: il num_ctx predefinito di Ollama per il modello (Modelfile, altrimenti 4096),
@@ -65,6 +71,12 @@ export interface SuggestNumCtxInput {
   /** Dimensione del file del modello (pesi), da /api/tags. */
   modelBytes: number | null
   caps: ModelCapabilities | null
+  /** Pesi del modello di embedding, se installato: sta in memoria insieme a quello di chat. */
+  embeddingBytes?: number | null
+  /** Il modello è configurato per girare solo in CPU (0 layer su GPU). */
+  cpuOnly?: boolean
+  /** Memoria con cui il caricamento di questo modello è già fallito per memoria insufficiente, se è successo. */
+  failedNumCtx?: number | null
 }
 
 /** Potenza di 2 minore o uguale a n (n ≥ 1). */
@@ -73,46 +85,74 @@ export const floorPow2 = (n: number): number => 2 ** Math.floor(Math.log2(n))
 /** Contesto massimo del modello, o il valore di riserva se ignoto. */
 export const maxNumCtx = (caps: ModelCapabilities | null | undefined): number => caps?.contextLength ?? FALLBACK_MAX_CTX
 
-/**
- * Token di contesto che stanno nella RAM di questa macchina con questo modello: (RAM − pesi) ÷ costo per token,
- * arrotondato alla potenza di 2 inferiore. null se mancano RAM o dimensione del modello.
- */
-export function ramNumCtx({ system, modelBytes, caps }: SuggestNumCtxInput): number | null {
-  if (!system?.ramBytes || !modelBytes) return null
-  const forContext = system.ramBytes - modelBytes
-  const perToken = (caps?.kvBytesPerToken ?? DEFAULT_KV_BYTES_PER_TOKEN) * KV_CACHE_SCALE[system.kvCacheType]
-  return forContext > 0 ? floorPow2(forContext / perToken) : 0
+/** Dove gira il modello, per la quota della tabella. */
+export function memoryKind(input: Pick<SuggestNumCtxInput, 'system' | 'cpuOnly'>): MemoryKind {
+  return input.cpuOnly ? 'cpu' : input.system?.unified ? 'unified' : 'shared'
 }
 
 /**
- * Memoria della conversazione suggerita per questa macchina e questo modello, in token: il più piccolo tra ciò
- * che sta in RAM, il massimo del modello e il tetto del suggerimento (SUGGEST_MAX_CTX); mai sotto il minimo
- * consigliato (minNumCtx: se il Modelfile chiede di più del tetto, vale il Modelfile). null se mancano RAM o modello.
+ * Conti della memoria per questa macchina e questo modello, in byte:
+ * utilizzabile (RAM × quota) − pesi del modello − pesi del modello di embedding − margine = memoria per il contesto.
+ * null se mancano RAM o dimensione del modello.
+ */
+export function memoryBudget(input: SuggestNumCtxInput): { kind: MemoryKind; usable: number; embedding: number; context: number } | null {
+  const { system, modelBytes } = input
+  if (!system?.ramBytes || !modelBytes) return null
+  const kind = memoryKind(input)
+  const usable = system.ramBytes * MEMORY_SHARE[kind]
+  const embedding = input.embeddingBytes ?? 0
+  return { kind, usable, embedding, context: usable - modelBytes - embedding - MEMORY_MARGIN_BYTES }
+}
+
+/**
+ * Token di contesto che stanno nella memoria per il contesto: byte ÷ costo per token, arrotondato alla potenza
+ * di 2 inferiore (0 se non resta spazio). null se mancano RAM o dimensione del modello.
+ */
+export function ramNumCtx(input: SuggestNumCtxInput): number | null {
+  const budget = memoryBudget(input)
+  if (!budget) return null
+  const perToken = (input.caps?.kvBytesPerToken ?? DEFAULT_KV_BYTES_PER_TOKEN) * KV_CACHE_SCALE[input.system!.kvCacheType]
+  const tokens = budget.context / perToken
+  return tokens >= 1 ? floorPow2(tokens) : 0
+}
+
+/**
+ * Memoria della conversazione suggerita per questa macchina e questo modello, in token: ciò che sta in memoria,
+ * tra il minimo consigliato (minNumCtx) e il massimo del modello. Se un caricamento è già fallito per memoria
+ * insufficiente, il suggerimento resta sotto quel valore (la metà). null se mancano RAM o modello.
  */
 export function suggestNumCtx(input: SuggestNumCtxInput): number | null {
   const tokens = ramNumCtx(input)
   if (tokens == null) return null
-  return Math.max(MIN_NUM_CTX, minNumCtx(input.caps), Math.min(tokens, maxNumCtx(input.caps), SUGGEST_MAX_CTX))
+  const fits = Math.max(MIN_NUM_CTX, minNumCtx(input.caps), Math.min(tokens, maxNumCtx(input.caps)))
+  const safe = input.failedNumCtx ? (reducedNumCtx(input.failedNumCtx) ?? MIN_NUM_CTX) : null
+  return safe != null ? Math.min(fits, safe) : fits
 }
 
-/** Vero se il suggerimento è fermato dal tetto: in RAM e nel modello ci starebbe di più. */
-export function suggestionCapped(input: SuggestNumCtxInput): boolean {
-  const tokens = ramNumCtx(input)
-  return tokens != null && Math.min(tokens, maxNumCtx(input.caps)) > SUGGEST_MAX_CTX && minNumCtx(input.caps) <= SUGGEST_MAX_CTX
+/** Vero se il suggerimento è stato abbassato perché un caricamento è già fallito per memoria insufficiente. */
+export function suggestionLowered(input: SuggestNumCtxInput): boolean {
+  const withoutFailure = suggestNumCtx({ ...input, failedNumCtx: null })
+  const actual = suggestNumCtx(input)
+  return withoutFailure != null && actual != null && actual < withoutFailure
 }
 
-/** Riga per l'interfaccia: da dove viene il suggerimento. */
+/** Gigabyte con al massimo un decimale, nella lingua attiva («1,5 GB»). */
+const gb = (bytes: number): string => `${fmtNum(bytes / 1024 ** 3, 1)} GB`
+
+/** Riga per l'interfaccia: da dove viene il suggerimento, con i conti della memoria. */
 export function describeSuggestion(input: SuggestNumCtxInput): string {
-  const gb = (b: number): string => `${Math.round(b / 1024 ** 3)} GB`
   if (!input.system?.ramBytes) return t('suggest.remote')
-  if (!input.modelBytes) return t('suggest.noSize')
+  const budget = memoryBudget(input)
+  if (!budget || !input.modelBytes) return t('suggest.noSize')
   const computed = t('suggest.computed', {
-    ram: gb(input.system.ramBytes),
-    unified: input.system.unified ? t('suggest.unified') : '',
+    usable: gb(budget.usable),
+    share: t(`suggest.share.${budget.kind}`, { ram: gb(input.system.ramBytes) }),
     model: gb(input.modelBytes),
+    embedding: budget.embedding ? t('suggest.embedding', { size: gb(budget.embedding) }) : '',
+    margin: gb(MEMORY_MARGIN_BYTES),
     kv: input.system.kvCacheType === 'f16' ? '.' : t('suggest.kv', { type: input.system.kvCacheType })
   })
-  return suggestionCapped(input) ? computed + t('suggest.capped', { cap: fmtInt(SUGGEST_MAX_CTX) }) : computed
+  return suggestionLowered(input) ? computed + t('suggest.failed', { tokens: fmtInt(input.failedNumCtx!) }) : computed
 }
 
 /**

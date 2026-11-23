@@ -9,7 +9,7 @@ import {
   fallbackTitle
 } from '../src/main/chat'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { createConversation, getConversation, getPlan, listContextCalls, listMessages, listPlans, removeMessage, saveRole, updateConversation, updatePlan } from '../src/main/db/repo'
+import { createConversation, getConversation, getModelSetting, getPlan, listContextCalls, listMessages, listPlans, removeMessage, saveRole, updateConversation, updatePlan } from '../src/main/db/repo'
 import { createContextLog } from '../src/main/contextLog'
 import { parseRole } from '../src/shared/roles'
 import { createOllamaClient, OllamaError } from '../src/main/ollama'
@@ -740,11 +740,25 @@ describe('attesa del primo token: cosa fa Ollama', () => {
     await chat.wait(streamId)
     expect(events.find((e) => e.streamId === streamId && e.type === 'error')).toMatchObject({ errorCode: 'memory', error: 'Memoria insufficiente per caricare il modello' })
 
+    // il modello ricorda con quale memoria non si è caricato (4.096, il valore della conversazione)
+    expect((await getModelSetting(h.db, 'llama3.2'))?.failedNumCtx).toBe(4096)
+
     // un altro errore non porta il codice
     const other = createChatService({ db: h.db, emit: (_t, e) => events.push(e), ollama: { ...client, chatStream: async () => Promise.reject(new OllamaError('http', 'Ollama 500: altro', 500)) } })
     const again = await other.regenerate(target, conv.id)
     await other.wait(again.streamId)
     expect(events.find((e) => e.streamId === again.streamId && e.type === 'error')?.errorCode).toBeUndefined()
+    expect((await getModelSetting(h.db, 'llama3.2'))?.failedNumCtx).toBe(4096)
+
+    // un caricamento riuscito con una memoria più piccola non toglie il limite…
+    await updateConversation(h.db, conv.id, { numCtx: 2048 })
+    const working = service()
+    await working.wait((await working.regenerate(target, conv.id)).streamId)
+    expect((await getModelSetting(h.db, 'llama3.2'))?.failedNumCtx).toBe(4096)
+    // …uno riuscito con la stessa memoria sì: non era un limite vero (es. memoria occupata da altro in quel momento)
+    await updateConversation(h.db, conv.id, { numCtx: 4096 })
+    await working.wait((await working.regenerate(target, conv.id)).streamId)
+    expect((await getModelSetting(h.db, 'llama3.2'))?.failedNumCtx).toBeNull()
   })
 
   it('un passo facoltativo che fallisce non ferma la risposta, ma lascia il motivo nel registro', async () => {
