@@ -645,6 +645,11 @@ export interface StreamEvent {
   promptTokens?: number
   /** Sull'evento 'done': passi facoltativi non riusciti, se ce ne sono. */
   skipped?: SkippedStep[]
+  /**
+   * Sull'evento 'done': Ollama ha dovuto ricaricare il modello benché avesse risposto da poco in questa sessione
+   * (l'aveva tolto dalla memoria). `others`: i modelli che aveva in memoria al suo posto all'inizio della risposta.
+   */
+  reloaded?: { loadMs: number; others: string[] }
   /** Sull'evento 'done': il messaggio dell'assistente salvato (assente se interrotto senza testo). */
   message?: Message
   /** Sull'evento 'done': true se la generazione è stata interrotta dall'utente. */

@@ -14,6 +14,11 @@ export type OllamaErrorCode = 'unreachable' | 'timeout' | 'interrupted' | 'memor
 export const QUICK_TIMEOUT_MS = 15_000
 /** Tempo massimo per sapere quali modelli sono in memoria: oltre, Ollama è considerato muto. */
 export const PS_TIMEOUT_MS = 5_000
+/**
+ * Per quanto vale l'elenco dei modelli appena letto: l'app lo chiede decine di volte in un attimo (elenco,
+ * capacità, basi di conoscenza), e ogni richiesta pesa su un Ollama che sta caricando un modello.
+ */
+export const TAGS_TTL_MS = 2_000
 
 /** Ollama ha rifiutato di caricare il modello per mancanza di memoria (RAM o memoria video)? */
 export const isOutOfMemory = (detail: string): boolean => /out[- ]of[- ]memory|failed to allocate|requires more system memory|insufficient memory/i.test(detail)
@@ -204,6 +209,8 @@ interface RequestMeta {
 
 export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLike = fetch, log: Logger = nullLogger): OllamaClient {
   const capsCache = new Map<string, ModelCapabilities>()
+  /** Ultimo elenco dei modelli (o la richiesta in corso), per l'URL da cui viene. */
+  let tags: { url: string; at: number; value: Promise<OllamaModel[]> } | null = null
 
   const url = (path: string): string => getBaseUrl().replace(/\/+$/, '') + path
 
@@ -263,7 +270,19 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     return t('err.memory', { model: meta.model ?? '', ctx, detail })
   }
 
-  async function listModels(): Promise<OllamaModel[]> {
+  /** Elenco dei modelli: richieste ravvicinate condividono la stessa risposta. Un errore non resta in memoria. */
+  function listModels(): Promise<OllamaModel[]> {
+    const base = getBaseUrl()
+    if (tags && tags.url === base && Date.now() - tags.at < TAGS_TTL_MS) return tags.value.then((list) => [...list])
+    const entry = { url: base, at: Date.now(), value: fetchModels() }
+    tags = entry
+    entry.value.catch(() => {
+      if (tags === entry) tags = null
+    })
+    return entry.value.then((list) => [...list])
+  }
+
+  async function fetchModels(): Promise<OllamaModel[]> {
     const res = await request('/api/tags', {}, { timeoutMs: QUICK_TIMEOUT_MS })
     const body = (await res.json()) as {
       models?: Array<{
@@ -468,11 +487,13 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     }
     handle(buffer + decoder.decode())
     capsCache.clear()
+    tags = null
   }
 
   async function deleteModel(name: string): Promise<void> {
     await request('/api/delete', { method: 'DELETE', body: JSON.stringify({ model: name }) }, { model: name, timeoutMs: QUICK_TIMEOUT_MS })
     capsCache.clear()
+    tags = null
   }
 
   async function embed(model: string, input: string[], options?: { num_gpu?: number }, onStats?: (stats: EmbedStats) => void): Promise<number[][]> {
@@ -486,5 +507,9 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     return body.embeddings
   }
 
-  return { listModels, showModel, chatStream, loadedModels, pullModel, deleteModel, embed, clearCache: () => capsCache.clear() }
+  return { listModels, showModel, chatStream, loadedModels, pullModel, deleteModel, embed, clearCache: () => {
+      capsCache.clear()
+      tags = null
+    }
+  }
 }

@@ -458,6 +458,12 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     return docs.some((d) => purposeOf(d) === 'documents')
   }
 
+  /** Le due domande qui sopra e qui sotto con una sola lettura: documenti su cui rispondere, e basi del ruolo. */
+  async function availability(conversationId: string): Promise<{ documents: boolean; role: boolean }> {
+    const { docs, purposeOf } = await readyDocuments(conversationId)
+    return { documents: docs.some((d) => purposeOf(d) === 'documents'), role: docs.some((d) => purposeOf(d) !== 'documents') }
+  }
+
   /** Vero se la conversazione ha basi di comportamento o di esempi usabili: quelle entrano sempre, anche a libro spento. */
   async function hasRole(conversationId: string): Promise<boolean> {
     const { docs, purposeOf } = await readyDocuments(conversationId)
@@ -977,6 +983,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     disconnect,
     ensureModel,
     hasReady,
+    availability,
     hasRole,
     recall,
     recallAll,

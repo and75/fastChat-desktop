@@ -80,6 +80,8 @@ export const en: Record<Key, string> = {
   'chat.skipped.memory': 'the conversation memory',
   'chat.skipped.embedding': 'the search by meaning',
   'chat.skipped.and': ' and ',
+  'chat.reloaded': 'Ollama reloaded the model ({seconds} s): it was no longer in memory.',
+  'chat.reloaded.others': 'Ollama reloaded the model ({seconds} s): it was no longer in memory, which held {others} instead. If this happens at every question, the two models do not fit in memory together.',
   'chat.message': 'Message',
   'chat.placeholder.noModel': 'Select a model to start',
   'chat.placeholder.plan': 'Describe the request: the model will propose a plan first…',

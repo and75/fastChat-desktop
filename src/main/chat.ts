@@ -61,6 +61,12 @@ import { errorDetail, nullLogger, type Logger } from './log'
 
 /** Ogni quanto si richiede a Ollama lo stato del modello mentre si aspetta il primo token. */
 const MODEL_POLL_MS = 1500
+/**
+ * Ricarica inattesa: il modello aveva risposto da meno di così (Ollama di norma lo tiene 5 minuti) e il
+ * caricamento è durato almeno RELOAD_MIN_MS.
+ */
+const RELOAD_WINDOW_MS = 4 * 60_000
+const RELOAD_MIN_MS = 1000
 
 /** Destinatario degli eventi di stream (in produzione: il WebContents che ha fatto la richiesta). */
 export type StreamTarget = object
@@ -311,14 +317,18 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     return null
   }
 
-  /** Il modello è in memoria in Ollama? «nome» vale anche per «nome:latest». */
-  async function modelState(model: string): Promise<ModelState> {
+  /** Quando ogni modello ha finito l'ultima risposta (in quel momento era in memoria), per riconoscere le ricariche. */
+  const lastAnswerAt = new Map<string, number>()
+
+  /** Il modello è in memoria in Ollama? «nome» vale anche per «nome:latest». `others`: gli altri modelli in memoria. */
+  async function modelState(model: string): Promise<{ state: ModelState; others: string[] }> {
     try {
       const loaded = await ollama.loadedModels()
-      return loaded.some((m) => m.name === model || m.name === `${model}:latest`) ? 'loaded' : 'loading'
+      const mine = (m: { name: string }): boolean => m.name === model || m.name === `${model}:latest`
+      return { state: loaded.some(mine) ? 'loaded' : 'loading', others: loaded.filter((m) => !mine(m)).map((m) => m.name) }
     } catch (err) {
       // Ollama non raggiungibile o muto; un altro errore (versione senza /api/ps) non dice nulla.
-      return err instanceof OllamaError && (err.code === 'unreachable' || err.code === 'timeout') ? 'silent' : 'unknown'
+      return { state: err instanceof OllamaError && (err.code === 'unreachable' || err.code === 'timeout') ? 'silent' : 'unknown', others: [] }
     }
   }
 
@@ -477,7 +487,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         times[name] = Date.now() - since
       }
       // Stato del modello in Ollama mentre si aspetta il primo token.
-      const wait: { timer: ReturnType<typeof setInterval> | null; stopped: boolean; first: ModelState | null } = { timer: null, stopped: false, first: null }
+      const wait: { timer: ReturnType<typeof setInterval> | null; stopped: boolean; first: ModelState | null; others: string[] } = { timer: null, stopped: false, first: null, others: [] }
       // Passi facoltativi non riusciti: la risposta arriva lo stesso, ma l'utente lo vede.
       const missing = new Set<SkippedStep>()
       const miss = (step: SkippedStep) => (): void => void missing.add(step)
@@ -512,9 +522,11 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         let recall: Recall = { section: '', refs: [] }
         const history = await listMessages(db, conv.id)
         const question = history.findLast((m) => m.role === 'user') ?? null
-        const useKnowledge = !!knowledge && wantsKnowledge(conv, question) && (await knowledge.hasReady(conv.id).catch(() => false))
+        // Una sola lettura delle basi per le due domande: ci sono documenti su cui rispondere? ci sono basi del ruolo?
+        const available = knowledge ? await knowledge.availability(conv.id).catch(() => ({ documents: false, role: false })) : { documents: false, role: false }
+        const useKnowledge = wantsKnowledge(conv, question) && available.documents
         // Tecniche ed esempi del ruolo entrano sempre, anche a libro spento: fanno parte del ruolo.
-        const useRole = !!knowledge && (await knowledge.hasRole(conv.id).catch(() => false))
+        const useRole = available.role
         const useMemory = !!memory && (await memory.canRecall(conv).catch(() => false))
         if (useKnowledge || useRole || useMemory) {
           emit(target, { ...base, type: useKnowledge || useRole ? 'searching' : 'remembering' })
@@ -571,9 +583,12 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         let state: ModelState = 'unknown'
         waiting(state)
         const refresh = async (): Promise<void> => {
-          const next = await modelState(conv.model)
+          const { state: next, others } = await modelState(conv.model)
           if (wait.stopped || next === 'unknown') return
-          if (next !== 'silent') wait.first ??= next
+          if (next !== 'silent' && wait.first == null) {
+            wait.first = next
+            wait.others = others
+          }
           if (next !== state) {
             state = next
             waiting(state)
@@ -610,12 +625,22 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
           })
         stopWaiting()
         await contextLog?.record(callInput(start, result))
+        // Ricarica inattesa: il modello aveva risposto da poco, ma all'inizio non era più in memoria e Ollama ha
+        // impiegato tempo a caricarlo. Tipico dello scambio con il modello di embedding quando la memoria è poca.
+        const previous = lastAnswerAt.get(conv.model)
+        const reloaded =
+          wait.first === 'loading' && (result.loadMs ?? 0) >= RELOAD_MIN_MS && previous != null && t0 - previous < RELOAD_WINDOW_MS
+            ? { loadMs: result.loadMs!, others: wait.others }
+            : null
+        if (!result.aborted) lastAnswerAt.set(conv.model, Date.now())
         log.info('chat', result.aborted ? 'risposta interrotta' : 'risposta', {
           conversation: conv.id,
           kind: mode.kind,
           model: conv.model,
           numCtx: request.options?.num_ctx,
           modelAtStart: wait.first ?? 'unknown',
+          othersInMemory: wait.others.join(', ') || undefined,
+          reloaded: reloaded ? true : undefined,
           ...times,
           promptTokensEstimated: promptTokens,
           promptTokens: result.promptEvalCount,
@@ -627,7 +652,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         })
         const done = await finish(conv, mode, result, recall.refs, found.documents.refs)
         answered = !!done.message
-        emit(target, { ...base, type: 'done', ...done, ...(missing.size && !result.aborted ? { skipped: [...missing] } : {}) })
+        emit(target, { ...base, type: 'done', ...done, ...(missing.size && !result.aborted ? { skipped: [...missing] } : {}), ...(reloaded && !result.aborted ? { reloaded } : {}) })
       } catch (err) {
         log.error('chat', 'risposta fallita', { conversation: conv.id, kind: mode.kind, model: conv.model, modelAtStart: wait.first ?? 'unknown', ...times, totalMs: Date.now() - t0, error: errorDetail(err) })
         emit(target, { ...base, type: 'error', error: err instanceof Error ? err.message : String(err) })

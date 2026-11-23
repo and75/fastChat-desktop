@@ -79,6 +79,8 @@ export const it = {
   'chat.skipped.memory': 'la memoria della conversazione',
   'chat.skipped.embedding': 'la ricerca per significato',
   'chat.skipped.and': ' e ',
+  'chat.reloaded': 'Ollama ha ricaricato il modello ({seconds} s): non era più in memoria.',
+  'chat.reloaded.others': 'Ollama ha ricaricato il modello ({seconds} s): non era più in memoria, dove c’era {others}. Se succede a ogni domanda, i due modelli non stanno in memoria insieme.',
   'chat.message': 'Messaggio',
   'chat.placeholder.noModel': 'Seleziona un modello per iniziare',
   'chat.placeholder.plan': 'Descrivi la richiesta: il modello proporrà prima un piano…',

@@ -696,6 +696,38 @@ describe('attesa del primo token: cosa fa Ollama', () => {
     }
   })
 
+  it('ricarica inattesa: il modello aveva appena risposto ma Ollama lo ha tolto dalla memoria → avviso con chi c’era al suo posto', async () => {
+    const { log, lines } = memoryLog()
+    const client = createOllamaClient(() => fake.url)
+    const chat = createChatService({
+      db: h.db,
+      log,
+      emit: (_t, e) => events.push(e),
+      ollama: {
+        ...client,
+        // in memoria c'è solo il modello di embedding; il caricamento dura 3 secondi
+        loadedModels: async () => [{ name: 'bge-m3:latest', size: 1, sizeVram: 0, contextLength: null }],
+        chatStream: async (req, handlers, signal) => {
+          await new Promise((r) => setTimeout(r, 40))
+          return { ...(await client.chatStream(req, handlers, signal)), loadMs: 3000 }
+        }
+      }
+    })
+    const conv = await createConversation(h.db, { model: 'llama3.2', title: 'Già col titolo' })
+    const doneOf = (id: string): StreamEvent | undefined => events.find((e) => e.streamId === id && e.type === 'done')
+
+    // prima risposta della sessione: caricare il modello è normale, nessun avviso
+    const first = await chat.send(target, conv.id, 'ciao')
+    await chat.wait(first.streamId)
+    expect(doneOf(first.streamId)?.reloaded).toBeUndefined()
+
+    // subito dopo il modello non è più in memoria: è una ricarica
+    const second = await chat.send(target, conv.id, 'ancora')
+    await chat.wait(second.streamId)
+    expect(doneOf(second.streamId)?.reloaded).toEqual({ loadMs: 3000, others: ['bge-m3:latest'] })
+    expect(lines.filter((l) => l.message === 'risposta').at(-1)?.data).toMatchObject({ reloaded: true, othersInMemory: 'bge-m3:latest', modelAtStart: 'loading' })
+  })
+
   it('un passo facoltativo che fallisce non ferma la risposta, ma lascia il motivo nel registro', async () => {
     const { log, lines } = memoryLog()
     const client = createOllamaClient(() => fake.url)

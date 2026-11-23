@@ -81,6 +81,8 @@ export const fr: Record<Key, string> = {
   'chat.skipped.memory': 'la mémoire de la conversation',
   'chat.skipped.embedding': 'la recherche par le sens',
   'chat.skipped.and': ' et ',
+  'chat.reloaded': 'Ollama a rechargé le modèle ({seconds} s) : il n’était plus en mémoire.',
+  'chat.reloaded.others': 'Ollama a rechargé le modèle ({seconds} s) : il n’était plus en mémoire, où se trouvait {others}. Si cela arrive à chaque question, les deux modèles ne tiennent pas ensemble en mémoire.',
   'chat.message': 'Message',
   'chat.placeholder.noModel': 'Sélectionnez un modèle pour commencer',
   'chat.placeholder.plan': 'Décrivez la demande : le modèle proposera d\'abord un plan…',

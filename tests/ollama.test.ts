@@ -24,6 +24,41 @@ beforeAll(async () => {
 
 afterAll(() => fake.close())
 
+describe('elenco dei modelli condiviso', () => {
+  it('richieste ravvicinate fanno una sola chiamata a Ollama; dopo un’eliminazione o un errore si richiede di nuovo', async () => {
+    let calls = 0
+    let fail = false
+    const fetchImpl: typeof fetch = async (url) => {
+      if (String(url).endsWith('/api/tags')) {
+        calls++
+        if (fail) throw new TypeError('fetch failed')
+        return new Response(JSON.stringify({ models: [{ name: 'b', size: 1, modified_at: '' }, { name: 'a', size: 1, modified_at: '' }] }), { status: 200 })
+      }
+      return new Response('{}', { status: 200 })
+    }
+    const client = createOllamaClient(() => 'http://x', fetchImpl)
+    const [one, two] = await Promise.all([client.listModels(), client.listModels()])
+    expect(calls).toBe(1)
+    expect(one.map((m) => m.name)).toEqual(['a', 'b'])
+    // ogni chiamante ha la sua copia dell'elenco
+    expect(one).not.toBe(two)
+    await client.listModels()
+    expect(calls).toBe(1)
+
+    await client.deleteModel('a')
+    await client.listModels()
+    expect(calls).toBe(2)
+
+    // un errore non resta in memoria: la richiesta successiva riprova
+    client.clearCache()
+    fail = true
+    await expect(client.listModels()).rejects.toBeInstanceOf(OllamaError)
+    fail = false
+    expect((await client.listModels()).length).toBe(2)
+    expect(calls).toBe(4)
+  })
+})
+
 const client = () => createOllamaClient(() => fake.url)
 
 describe('listModels', () => {

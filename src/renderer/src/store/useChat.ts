@@ -32,6 +32,12 @@ export function skippedNotice(steps: SkippedStep[]): string {
   return t('chat.skipped', { steps: list })
 }
 
+/** Avviso sotto la risposta: Ollama ha dovuto ricaricare il modello, e cosa aveva in memoria al suo posto. */
+export function reloadedNotice(reloaded: { loadMs: number; others: string[] }): string {
+  const seconds = Math.round(reloaded.loadMs / 1000)
+  return reloaded.others.length ? t('chat.reloaded.others', { seconds, others: reloaded.others.join(', ') }) : t('chat.reloaded', { seconds })
+}
+
 /** Etichetta dell'attesa prima del primo token: cosa sta succedendo davvero. undefined a risposta iniziata. */
 export function stageLabel(live: Pick<LiveStream, 'summarizing' | 'remembering' | 'searching' | 'waiting'>): string | undefined {
   if (live.summarizing) return t('message.summarizing')
@@ -262,7 +268,9 @@ export const useChat = create<ChatState>((set, get) => {
               plans,
               messages: event.message ? [...s.messages, event.message] : s.messages,
               ...(event.type === 'error' ? { error: event.error ?? 'Errore sconosciuto', errorKind: event.kind } : {}),
-              ...(event.type === 'done' && event.skipped?.length ? { warning: skippedNotice(event.skipped) } : {})
+              ...(event.type === 'done' && (event.skipped?.length || event.reloaded)
+                ? { warning: [event.skipped?.length ? skippedNotice(event.skipped) : '', event.reloaded ? reloadedNotice(event.reloaded) : ''].filter(Boolean).join(' ') }
+                : {})
             }
           })
         }
