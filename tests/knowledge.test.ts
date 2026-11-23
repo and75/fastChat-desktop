@@ -432,7 +432,8 @@ describe('base di conoscenza: nella chat', () => {
     let sent = await chat.send({}, conv.id, 'Quante persone ha assunto la sede di Torino?', { knowledge: false })
     await chat.wait(sent.streamId)
     expect(sent.userMessage?.knowledge).toBe(false)
-    expect(events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)[0]).toBe('content')
+    // nessuna ricerca: si passa subito all'attesa di Ollama
+    expect(events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)[0]).toBe('waiting')
     expect(embedQueries(before)).toBe(0)
     expect(chatBodyFor('Quante persone ha assunto la sede di Torino?').messages[0].role).toBe('user')
     expect((await listMessages(h.db, conv.id)).at(-1)!.knowledgeRefs).toBeNull()
@@ -460,7 +461,8 @@ describe('base di conoscenza: nella chat', () => {
     const before = fake.requests.length
     const sent = await chat.send({}, conv.id, 'Ciao')
     await chat.wait(sent.streamId)
-    expect(events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)[0]).toBe('content')
+    // nessuna ricerca: si passa subito all'attesa di Ollama
+    expect(events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)[0]).toBe('waiting')
     expect(embedQueries(before)).toBe(0)
     const plan = await chat.proposePlan({}, conv.id, 'Pianifica', { knowledge: true })
     await chat.wait(plan.streamId)

@@ -192,6 +192,18 @@ export function SettingsDialog({ onClose, onOpenStore }: { onClose(): void; onOp
           <span className="text-xs text-zinc-500">{t('settings.storeUrl.hint')}</span>
         </label>
 
+        <div className="flex items-center gap-3 text-sm" title={t('settings.log.hint')}>
+          <span className="font-medium">{t('settings.log')}</span>
+          <button
+            type="button"
+            className="rounded-lg border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            onClick={() => void window.api.log.open().then((res) => setError(res.ok ? null : res.error))}
+            data-testid="settings-log-open"
+          >
+            {t('settings.log.open')}
+          </button>
+        </div>
+
         {error && (
           <p role="alert" className="text-sm text-red-700 dark:text-red-400">
             {error}

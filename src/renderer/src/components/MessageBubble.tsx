@@ -14,12 +14,8 @@ interface Props {
   /** Statistiche mostrate sotto le risposte salvate. */
   meta?: Pick<Message, 'model' | 'evalCount' | 'durationMs'>
   streaming?: boolean
-  /** Durante lo streaming: i messaggi più vecchi vengono riassunti prima della risposta. */
-  summarizing?: boolean
-  /** Durante lo streaming: si cercano estratti nella conversazione prima della risposta. */
-  remembering?: boolean
-  /** Durante lo streaming: si cercano estratti nei documenti prima della risposta. */
-  searching?: boolean
+  /** Durante lo streaming, prima del primo token: cosa sta succedendo (riassunto, ricerca, caricamento del modello…). */
+  stage?: string
   /** Estratti della conversazione forniti al modello per questa risposta. */
   memoryRefs?: MemoryRef[] | null
   /** Estratti dei documenti (fonti) forniti al modello per questa risposta. */
@@ -52,9 +48,7 @@ export function MessageBubble({
   thinking,
   meta,
   streaming,
-  summarizing = false,
-  remembering = false,
-  searching = false,
+  stage,
   memoryRefs = null,
   knowledgeRefs = null,
   knowledge = null,
@@ -109,7 +103,7 @@ export function MessageBubble({
         {content ? (
           <Markdown text={content} />
         ) : streaming && !thinking ? (
-          <WaitingIndicator since={startedAt} label={summarizing ? t('message.summarizing') : searching ? t('message.searching') : remembering ? t('message.remembering') : undefined} />
+          <WaitingIndicator since={startedAt} label={stage} />
         ) : null}
         {streaming && content && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-zinc-400 align-middle" />}
       </div>

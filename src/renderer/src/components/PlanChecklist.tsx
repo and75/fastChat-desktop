@@ -159,13 +159,16 @@ export function PlanLoading({
   thinking,
   content,
   startedAt,
-  summarizing = false
+  summarizing = false,
+  stage
 }: {
   thinking: string
   content: string
   startedAt?: number
   /** I messaggi più vecchi vengono riassunti prima del piano. */
   summarizing?: boolean
+  /** Prima del primo token: cosa sta succedendo (ricerca, caricamento del modello…), al posto del testo generico. */
+  stage?: string
 }): React.JSX.Element {
   const found = (content.match(/"title"\s*:/g) ?? []).length
   return (
@@ -174,7 +177,7 @@ export function PlanLoading({
       <div role="status" className="flex items-center gap-2 text-sm text-brand-800 dark:text-brand-300">
         <TypingDots />
         <span>
-          {summarizing ? t('plan.loading.summarizing') : t('plan.loading')}
+          {summarizing ? t('plan.loading.summarizing') : (stage ?? t('plan.loading'))}
           {found > 0 && tn('plan.steps', found)}
         </span>
         <span aria-hidden>·</span>

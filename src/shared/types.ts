@@ -609,8 +609,17 @@ export interface SendOptions {
  * 'summarizing': prima della risposta i messaggi più vecchi vengono riassunti (la risposta arriva dopo).
  * 'searching': prima della risposta si cercano estratti pertinenti nei documenti della base di conoscenza.
  * 'remembering': prima della risposta si cercano estratti pertinenti nei messaggi riassunti.
+ * 'waiting': la richiesta è partita e si aspetta il primo token; `modelState` dice cosa fa Ollama (può
+ *   arrivare più volte, quando lo stato cambia).
  */
-export type StreamEventType = 'summarizing' | 'searching' | 'remembering' | 'thinking' | 'content' | 'done' | 'error'
+export type StreamEventType = 'summarizing' | 'searching' | 'remembering' | 'waiting' | 'thinking' | 'content' | 'done' | 'error'
+
+/**
+ * Cosa fa Ollama mentre si aspetta il primo token, letto da /api/ps:
+ * 'loading' il modello non è in memoria e Ollama lo sta caricando; 'loaded' è in memoria e legge il contesto;
+ * 'unknown' Ollama non ha ancora detto quali modelli ha in memoria.
+ */
+export type ModelState = 'loading' | 'loaded' | 'unknown'
 
 /** 'chat': risposta normale o esecuzione di un piano; 'plan': proposta di un piano (content è JSON). */
 export type StreamKind = 'chat' | 'plan'
@@ -622,6 +631,10 @@ export interface StreamEvent {
   type: StreamEventType
   delta?: string
   error?: string
+  /** Sull'evento 'waiting': stato del modello in Ollama, nome del modello e token stimati del contesto inviato. */
+  modelState?: ModelState
+  model?: string
+  promptTokens?: number
   /** Sull'evento 'done': il messaggio dell'assistente salvato (assente se interrotto senza testo). */
   message?: Message
   /** Sull'evento 'done': true se la generazione è stata interrotta dall'utente. */
@@ -779,5 +792,7 @@ export const IPC = {
   /** Evento main → renderer: la finestra è stata ingrandita o ripristinata. */
   windowMaximized: 'window:maximized',
   settingsGet: 'settings:get',
-  settingsSet: 'settings:set'
+  settingsSet: 'settings:set',
+  /** Apre il registro diagnostico con il programma predefinito del sistema. */
+  logOpen: 'log:open'
 } as const

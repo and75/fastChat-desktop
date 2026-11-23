@@ -206,4 +206,8 @@ export interface Api {
     get(): Promise<Result<AppSettings>>
     set(patch: Partial<AppSettings>): Promise<Result<AppSettings>>
   }
+  log: {
+    /** Apre il registro diagnostico (chiamate a Ollama, tempi, errori) con il programma predefinito. */
+    open(): Promise<Result<void>>
+  }
 }

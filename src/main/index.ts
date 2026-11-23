@@ -7,6 +7,7 @@ import { IPC } from '@shared/types'
 import { registerIpc, systemLocale } from './ipc'
 import { resolveLocale, setLocale } from '@shared/i18n'
 import { createOllamaClient } from './ollama'
+import { createFileLogger, errorDetail } from './log'
 
 // Per i test end-to-end: dati isolati in una cartella temporanea.
 if (process.env.FASTCHAT_USER_DATA) app.setPath('userData', process.env.FASTCHAT_USER_DATA)
@@ -77,11 +78,16 @@ async function bootstrap(): Promise<void> {
   // Dopo la lingua: i titoli dei Brief convertiti in situazione sono nella lingua dell'interfaccia.
   await ensureRoles(dbHandle.db)
   let ollamaUrl = process.env.OLLAMA_URL || settings.ollamaUrl
-  const ollama = createOllamaClient(() => ollamaUrl)
+  // Registro diagnostico: chiamate a Ollama, tempi delle risposte, errori. Mai il testo dei messaggi.
+  const log = createFileLogger(join(app.getPath('userData'), 'logs', 'fastchat.log'))
+  log.info('app', 'avvio', { version: app.getVersion(), platform: process.platform, arch: process.arch, electron: process.versions.electron, ollamaUrl })
+  process.on('unhandledRejection', (reason) => log.error('app', 'errore non gestito', { error: errorDetail(reason) }))
+  const ollama = createOllamaClient(() => ollamaUrl, fetch, log)
 
   registerIpc({
     db: dbHandle.db,
     ollama,
+    log,
     getOllamaUrl: () => ollamaUrl,
     setOllamaUrl: (url) => {
       ollamaUrl = url

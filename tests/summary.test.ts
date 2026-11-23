@@ -132,7 +132,9 @@ describe('chat con riassunto', () => {
     await chat.wait((await chat.send({}, conv.id, 'domanda ' + 'y'.repeat(392))).streamId)
 
     // il riassunto avviene PRIMA della risposta (evento 'summarizing'), così la risposta ha la riserva intera
-    expect(events.map((e) => e.type)).toEqual(['summarizing', 'content', 'done'])
+    // poi l'attesa di Ollama ('waiting'), che sostituisce l'etichetta del riassunto
+    expect(events.map((e) => e.type).slice(0, 2)).toEqual(['summarizing', 'waiting'])
+    expect(events.map((e) => e.type).filter((x) => x !== 'waiting')).toEqual(['summarizing', 'content', 'done'])
     const after = (await getConversation(h.db, conv.id))!
     expect(after.summary).toBe('Breve.')
     expect(updated.some((c) => c.summary === 'Breve.')).toBe(true)

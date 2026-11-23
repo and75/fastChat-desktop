@@ -312,7 +312,8 @@ try {
     await composer.press('Enter')
     const waiting = page.getByTestId('message-streaming').getByTestId('waiting-indicator')
     await waiting.waitFor()
-    assert.match(await waiting.textContent(), /^Il modello sta elaborando·\d,\d s$/)
+    // l'etichetta dice cosa fa Ollama: in attesa, poi caricamento del modello oppure lettura del contesto
+    assert.match(await waiting.textContent(), /^(In attesa di Ollama|Ollama sta caricando il modello lento-avvio:1b|Modello in memoria: legge il contesto \(circa \d+ token\))·\d,\d s$/)
     assert.equal(await waiting.locator('.loader-dot').count(), 3)
     // l'animazione gira davvero: l'opacità del primo punto cambia nel tempo
     const dot = waiting.locator('.loader-dot').first()

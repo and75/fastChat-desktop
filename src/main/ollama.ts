@@ -1,6 +1,7 @@
 import { detectSystemSlot } from '@shared/compose'
 import type { DoneReason, ModelCapabilities, ModelDefaults, OllamaModel } from '@shared/types'
 import { t } from '@shared/i18n'
+import { errorDetail, nullLogger, type Logger } from './log'
 
 export type OllamaErrorCode = 'unreachable' | 'http' | 'model' | 'parse'
 
@@ -170,12 +171,19 @@ export function kvBytesPerToken(info: Record<string, unknown>): number | null {
 const isAbort = (err: unknown): boolean =>
   err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
 
-export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLike = fetch): OllamaClient {
+export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLike = fetch, log: Logger = nullLogger): OllamaClient {
   const capsCache = new Map<string, ModelCapabilities>()
 
   const url = (path: string): string => getBaseUrl().replace(/\/+$/, '') + path
 
-  async function request(path: string, init: RequestInit = {}): Promise<Response> {
+  /**
+   * Richiesta a Ollama. Ogni esito va nel registro diagnostico: per /api/chat con stream «ok» vuol dire che
+   * Ollama ha cominciato a rispondere (il seguito lo registra chatStream).
+   */
+  async function request(path: string, init: RequestInit = {}, model?: string, quiet = false): Promise<Response> {
+    const started = Date.now()
+    const method = init.method ?? 'GET'
+    const took = (): number => Date.now() - started
     let res: Response
     try {
       res = await fetchImpl(url(path), {
@@ -183,7 +191,11 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
         headers: { 'content-type': 'application/json', ...init.headers }
       })
     } catch (err) {
-      if (isAbort(err)) throw err
+      if (isAbort(err)) {
+        log.info('ollama', `${method} ${path} interrotta`, { model, ms: took() })
+        throw err
+      }
+      log.error('ollama', `${method} ${path} senza risposta`, { model, ms: took(), url: getBaseUrl(), error: errorDetail(err) })
       throw new OllamaError('unreachable', t('err.unreachable', { url: getBaseUrl() }))
     }
     if (!res.ok) {
@@ -194,9 +206,12 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       } catch {
         /* corpo non JSON: resta lo statusText */
       }
+      log.error('ollama', `${method} ${path} errore`, { model, ms: took(), status: res.status, error: detail })
       const code: OllamaErrorCode = res.status === 404 ? 'model' : 'http'
       throw new OllamaError(code, `Ollama ${res.status}: ${detail}`, res.status)
     }
+    // `quiet`: chiamate ripetute (stato dei modelli durante l'attesa), di cui si registrano solo gli errori.
+    if (!quiet) log.info('ollama', `${method} ${path} ok`, { model, ms: took() })
     return res
   }
 
@@ -229,7 +244,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     const cached = capsCache.get(key)
     if (cached) return cached
 
-    const res = await request('/api/show', { method: 'POST', body: JSON.stringify({ model: name }) })
+    const res = await request('/api/show', { method: 'POST', body: JSON.stringify({ model: name }) }, name)
     const body = (await res.json()) as {
       capabilities?: string[]
       model_info?: Record<string, unknown>
@@ -307,12 +322,14 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       }
     }
 
+    let streaming = false
     try {
       const res = await request('/api/chat', {
         method: 'POST',
         body: JSON.stringify({ ...req, stream: true }),
         signal
-      })
+      }, req.model)
+      streaming = true
       if (!res.body) throw new OllamaError('parse', t('err.noBody'))
 
       const reader = res.body.getReader()
@@ -332,15 +349,33 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     } catch (err) {
       if (isAbort(err) || signal?.aborted) {
         result.aborted = true
+        log.info('ollama', 'chat interrotta', { model: req.model, ms: Date.now() - started, firstTokenMs: result.firstTokenMs })
         return result
+      }
+      // Errore a risposta iniziata (stream interrotto, riga non valida, errore dentro lo stream): quelli
+      // precedenti li ha già registrati `request`.
+      if (streaming) {
+        log.error('ollama', 'chat fallita durante la risposta', { model: req.model, ms: Date.now() - started, firstTokenMs: result.firstTokenMs, error: errorDetail(err) })
       }
       throw err
     }
+    log.info('ollama', 'chat finita', {
+      model: req.model,
+      numCtx: req.options?.num_ctx,
+      ms: Date.now() - started,
+      firstTokenMs: result.firstTokenMs,
+      loadMs: result.loadMs,
+      promptEvalMs: result.promptEvalMs,
+      evalMs: result.evalMs,
+      promptTokens: result.promptEvalCount,
+      tokens: result.evalCount,
+      doneReason: result.doneReason
+    })
     return result
   }
 
   async function loadedModels(): Promise<LoadedModel[]> {
-    const res = await request('/api/ps')
+    const res = await request('/api/ps', {}, undefined, true)
     const body = (await res.json()) as { models?: Array<{ name: string; size?: number; size_vram?: number; context_length?: number }> }
     return (body.models ?? []).map((m) => ({
       name: m.name,
@@ -355,7 +390,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     onProgress: (p: { status: string; completed: number | null; total: number | null }) => void,
     signal?: AbortSignal
   ): Promise<void> {
-    const res = await request('/api/pull', { method: 'POST', body: JSON.stringify({ model: name, stream: true }), signal })
+    const res = await request('/api/pull', { method: 'POST', body: JSON.stringify({ model: name, stream: true }), signal }, name)
     if (!res.body) throw new OllamaError('parse', t('err.noBody'))
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
@@ -381,16 +416,17 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
   }
 
   async function deleteModel(name: string): Promise<void> {
-    await request('/api/delete', { method: 'DELETE', body: JSON.stringify({ model: name }) })
+    await request('/api/delete', { method: 'DELETE', body: JSON.stringify({ model: name }) }, name)
     capsCache.clear()
   }
 
   async function embed(model: string, input: string[], options?: { num_gpu?: number }, onStats?: (stats: EmbedStats) => void): Promise<number[][]> {
-    const res = await request('/api/embed', { method: 'POST', body: JSON.stringify({ model, input, ...(options ? { options } : {}) }) })
+    const res = await request('/api/embed', { method: 'POST', body: JSON.stringify({ model, input, ...(options ? { options } : {}) }) }, model)
     const body = (await res.json()) as { embeddings?: number[][]; prompt_eval_count?: number; total_duration?: number; load_duration?: number }
     if (!Array.isArray(body.embeddings) || body.embeddings.length !== input.length) {
       throw new OllamaError('parse', t('err.badEmbed'))
     }
+    log.info('ollama', 'embedding', { model, texts: input.length, loadMs: ms(body.load_duration), totalMs: ms(body.total_duration) })
     onStats?.({ promptEvalCount: body.prompt_eval_count ?? null, durationMs: ms(body.total_duration), loadMs: ms(body.load_duration) })
     return body.embeddings
   }

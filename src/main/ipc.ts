@@ -2,7 +2,7 @@ import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import {
   IPC,
   KV_CACHE_TYPES,
@@ -59,6 +59,7 @@ import { electronCipher } from './knowledge/secrets'
 import { PACK_EXTENSION } from './knowledge/pack'
 import { TRUSTED_KEYS } from './knowledge/trust'
 import { createContextLog } from './contextLog'
+import { nullLogger, type Logger } from './log'
 import { callsToCsv } from '@shared/context'
 import { validateContextSettings } from '@shared/compose'
 import { isStoreBase } from '@shared/store'
@@ -77,6 +78,8 @@ export interface IpcDeps {
   getOllamaUrl(): string
   /** Aggiorna l'URL di Ollama usato dal client (tenuto in memoria nel main). */
   setOllamaUrl(url: string): void
+  /** Registro diagnostico su file (assente nei test). */
+  log?: Logger
 }
 
 function toMessage(err: unknown): string {
@@ -115,7 +118,7 @@ const requireId = (id: unknown): string => {
   return id
 }
 
-export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps): void {
+export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl, log = nullLogger }: IpcDeps): void {
   const watched = new WeakSet<WebContents>()
   const system = async (): Promise<SystemInfo> => systemInfo(getOllamaUrl(), (await getSettings(db)).kvCacheType)
   const calibrate: CalibrateDeps = { ollama, system }
@@ -146,6 +149,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
     knowledge,
     embedder,
     contextLog,
+    log,
     getContext: async () => (await getSettings(db)).context,
     emit: (target, event) => {
       const wc = target as WebContents
@@ -294,6 +298,13 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl }: IpcDeps)
   })
 
   handle(IPC.settingsGet, () => getSettings(db))
+  handle(IPC.logOpen, async () => {
+    if (!log.path) throw new Error(t('err.log.none'))
+    // Il file nasce alla prima riga: se manca ancora, la si scrive ora.
+    log.info('app', 'registro aperto')
+    const error = await shell.openPath(log.path)
+    if (error) throw new Error(error)
+  })
   handle(IPC.settingsSet, async (_e, patch: Partial<AppSettings>) => {
     if (patch.ollamaUrl !== undefined) patch.ollamaUrl = validOllamaUrl(patch.ollamaUrl)
     if (patch.embeddingModel !== undefined) {

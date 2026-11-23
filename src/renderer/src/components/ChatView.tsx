@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
-import { useChat } from '../store/useChat'
+import { stageLabel, useChat } from '../store/useChat'
 import { useConversations } from '../store/useConversations'
 import { readyCount, useKnowledge } from '../store/useKnowledge'
 import { ContextMeter } from './ContextMeter'
@@ -304,7 +304,7 @@ export function ChatView(): React.JSX.Element {
               </Fragment>
             ))}
             {live?.kind === 'plan' && (
-              <PlanLoading thinking={live.thinking} content={live.content} startedAt={live.startedAt} summarizing={live.summarizing} />
+              <PlanLoading thinking={live.thinking} content={live.content} startedAt={live.startedAt} summarizing={live.summarizing} stage={live.content || live.thinking ? undefined : stageLabel(live)} />
             )}
             {live?.kind === 'chat' && (
               <MessageBubble
@@ -312,9 +312,7 @@ export function ChatView(): React.JSX.Element {
                 role="assistant"
                 content={live.content}
                 thinking={live.thinking}
-                summarizing={live.summarizing}
-                remembering={live.remembering}
-                searching={live.searching}
+                stage={stageLabel(live)}
                 streaming
                 startedAt={live.startedAt}
               />

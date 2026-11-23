@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { flushPendingSaves } from './pendingSaves'
-import type { Conversation, Message, Plan, PlanStep, Result, SendResult, StreamEvent, StreamKind } from '@shared/types'
+import { t } from '@shared/i18n'
+import type { Conversation, Message, ModelState, Plan, PlanStep, Result, SendResult, StreamEvent, StreamKind } from '@shared/types'
 
 export interface LiveStream {
   streamId: string
@@ -15,6 +16,23 @@ export interface LiveStream {
   remembering: boolean
   /** Si cercano estratti pertinenti nei documenti della base di conoscenza, prima della risposta. */
   searching: boolean
+  /** La richiesta è partita e si aspetta il primo token: cosa fa Ollama, con quale modello e quanti token legge. */
+  waiting: { state: ModelState; model: string; promptTokens: number | null } | null
+}
+
+/** Etichetta dell'attesa prima del primo token: cosa sta succedendo davvero. undefined a risposta iniziata. */
+export function stageLabel(live: Pick<LiveStream, 'summarizing' | 'remembering' | 'searching' | 'waiting'>): string | undefined {
+  if (live.summarizing) return t('message.summarizing')
+  if (live.searching) return t('message.searching')
+  if (live.remembering) return t('message.remembering')
+  if (!live.waiting) return undefined
+  if (live.waiting.state === 'loading') return t('message.loadingModel', { model: live.waiting.model })
+  if (live.waiting.state === 'loaded') {
+    const tokens = live.waiting.promptTokens
+    // Stima: arrotondata alle centinaia sopra il migliaio, per non suggerire una precisione che non c'è.
+    return t('message.readingContext', { tokens: tokens == null ? '?' : tokens >= 1000 ? Math.round(tokens / 100) * 100 : tokens })
+  }
+  return t('message.waitingOllama')
 }
 
 interface ChatState {
@@ -57,7 +75,7 @@ const replacePlan = (plans: Plan[], plan: Plan): Plan[] => plans.map((p) => (p.i
 export const useChat = create<ChatState>((set, get) => {
   /** Registra un nuovo stream e applica gli eventi eventualmente già arrivati. */
   const startStream = (conversationId: string, streamId: string, kind: StreamKind): void => {
-    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '', startedAt: Date.now(), summarizing: false, remembering: false, searching: false } } }))
+    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '', startedAt: Date.now(), summarizing: false, remembering: false, searching: false, waiting: null } } }))
     const early = pending.get(streamId) ?? []
     pending.delete(streamId)
     early.forEach((e) => get().handleStream(e))
@@ -183,19 +201,33 @@ export const useChat = create<ChatState>((set, get) => {
 
       switch (event.type) {
         case 'summarizing':
-          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: true, remembering: false, searching: false } } }))
+          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: true, remembering: false, searching: false, waiting: null } } }))
           return
         case 'remembering':
-          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: true, searching: false } } }))
+          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: true, searching: false, waiting: null } } }))
           return
         case 'searching':
-          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: false, searching: true } } }))
+          set((s) => ({ streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: false, searching: true, waiting: null } } }))
+          return
+        case 'waiting':
+          set((s) => ({
+            streams: {
+              ...s.streams,
+              [event.conversationId]: {
+                ...live,
+                summarizing: false,
+                remembering: false,
+                searching: false,
+                waiting: { state: event.modelState ?? 'unknown', model: event.model ?? '', promptTokens: event.promptTokens ?? null }
+              }
+            }
+          }))
           return
         case 'thinking':
         case 'content': {
           const key = event.type === 'thinking' ? 'thinking' : 'content'
           set((s) => ({
-            streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: false, searching: false, [key]: live[key] + (event.delta ?? '') } }
+            streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: false, searching: false, waiting: null, [key]: live[key] + (event.delta ?? '') } }
           }))
           return
         }

@@ -129,6 +129,9 @@ const api: Api = {
   settings: {
     get: () => invoke(IPC.settingsGet),
     set: (patch) => invoke(IPC.settingsSet, patch)
+  },
+  log: {
+    open: () => invoke(IPC.logOpen)
   }
 }
 

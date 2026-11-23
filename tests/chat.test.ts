@@ -13,6 +13,7 @@ import { createConversation, getConversation, getPlan, listContextCalls, listMes
 import { createContextLog } from '../src/main/contextLog'
 import { parseRole } from '../src/shared/roles'
 import { createOllamaClient } from '../src/main/ollama'
+import type { Logger } from '../src/main/log'
 import type { Conversation, StreamEvent } from '../src/shared/types'
 import { startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
 
@@ -138,7 +139,9 @@ describe('chat service', () => {
     // llama3.2 non supporta il ragionamento: il parametro think non va inviato
     expect(body).not.toHaveProperty('think')
 
-    expect(events.map((e) => e.type)).toEqual(['content', 'content', 'done'])
+    // prima del primo token c'è solo l'attesa di Ollama ('waiting', una o più volte: vedi il test dedicato)
+    expect(events[0].type).toBe('waiting')
+    expect(events.map((e) => e.type).filter((x) => x !== 'waiting')).toEqual(['content', 'content', 'done'])
     expect(events.every((e) => e.streamId === streamId && e.conversationId === conv.id)).toBe(true)
     const done = events.at(-1)!
     expect(done.message).toMatchObject({ role: 'assistant', content: 'Ciao mondo!', evalCount: 42, durationMs: 1500, model: 'llama3.2' })
@@ -612,3 +615,83 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
     expect((await listContextCalls(h.db, plain.id)).find((c) => c.kind === 'chat')!.parts.map((p) => p.key)).toEqual(['situation', 'question'])
   })
 })
+
+describe('attesa del primo token: cosa fa Ollama', () => {
+  /** Registro in memoria. */
+  const memoryLog = (): { log: Logger; lines: Array<{ level: string; scope: string; message: string; data?: Record<string, unknown> }> } => {
+    const lines: Array<{ level: string; scope: string; message: string; data?: Record<string, unknown> }> = []
+    const at = (level: string) => (scope: string, message: string, data?: Record<string, unknown>) => void lines.push({ level, scope, message, data })
+    return { lines, log: { info: at('info'), warn: at('warn'), error: at('error'), path: null } }
+  }
+  const waitingOf = (streamId: string): StreamEvent[] => events.filter((e) => e.streamId === streamId && e.type === 'waiting')
+
+  it('modello già in memoria: «in attesa», poi «legge il contesto» con modello e token stimati; nulla dopo il primo token', async () => {
+    const slow = await startFakeOllama([{ name: 'lento', capabilities: ['completion'], startDelayMs: 250, chunks: [{ content: 'Fatto.' }] }])
+    try {
+      const { log, lines } = memoryLog()
+      const chat = createChatService({ db: h.db, ollama: createOllamaClient(() => slow.url), emit: (_t, e) => events.push(e), log })
+      const conv = await createConversation(h.db, { model: 'lento', title: 'Già col titolo' })
+      // la prima domanda porta il modello in memoria (il server finto lo segna caricato all'arrivo della richiesta)
+      await chat.wait((await chat.send(target, conv.id, 'scalda')).streamId)
+      lines.length = 0
+      const { streamId } = await chat.send(target, conv.id, 'ciao')
+      await chat.wait(streamId)
+
+      const mine = events.filter((e) => e.streamId === streamId)
+      const waiting = waitingOf(streamId)
+      expect(waiting.map((e) => e.modelState)).toEqual(['unknown', 'loaded'])
+      expect(waiting.every((e) => e.model === 'lento' && (e.promptTokens ?? 0) > 0)).toBe(true)
+      // dopo il primo frammento della risposta non arrivano altri stati d'attesa
+      const firstContent = mine.findIndex((e) => e.type === 'content')
+      expect(mine.slice(firstContent).some((e) => e.type === 'waiting')).toBe(false)
+
+      // il registro ha una riga per la risposta, con i tempi per stadio e lo stato del modello alla partenza
+      const answer = lines.find((l) => l.scope === 'chat' && l.message === 'risposta')
+      expect(answer?.data).toMatchObject({ conversation: conv.id, model: 'lento', modelAtStart: 'loaded' })
+      expect(answer?.data?.prepareMs).toBeTypeOf('number')
+      expect(answer?.data?.firstTokenMs).toBeGreaterThanOrEqual(200)
+    } finally {
+      await slow.close()
+    }
+  })
+
+  it('modello non in memoria: «Ollama sta caricando il modello»; se Ollama non dice lo stato resta «in attesa»', async () => {
+    const client = createOllamaClient(() => fake.url)
+    const conv = await createConversation(h.db, { model: 'llama3.2', title: 'Già col titolo' })
+
+    const cold = createChatService({ db: h.db, ollama: { ...client, loadedModels: async () => [] }, emit: (_t, e) => events.push(e) })
+    const first = await cold.send(target, conv.id, 'ciao')
+    await cold.wait(first.streamId)
+    // la risposta finta è immediata: lo stato «caricamento» arriva solo se /api/ps ha risposto prima del primo token
+    expect(waitingOf(first.streamId)[0].modelState).toBe('unknown')
+    expect(waitingOf(first.streamId).every((e) => e.modelState !== 'loaded')).toBe(true)
+
+    const mute = createChatService({
+      db: h.db,
+      ollama: { ...client, loadedModels: async () => Promise.reject(new Error('giù')) },
+      emit: (_t, e) => events.push(e)
+    })
+    const second = await mute.send(target, conv.id, 'ancora')
+    await mute.wait(second.streamId)
+    expect(waitingOf(second.streamId).map((e) => e.modelState)).toEqual(['unknown'])
+  })
+
+  it('un passo facoltativo che fallisce non ferma la risposta, ma lascia il motivo nel registro', async () => {
+    const { log, lines } = memoryLog()
+    const client = createOllamaClient(() => fake.url)
+    const chat = createChatService({
+      db: h.db,
+      ollama: client,
+      emit: (_t, e) => events.push(e),
+      log,
+      summarizer: { summarize: async () => Promise.reject(new Error('riassunto rotto')) } as never
+    })
+    const conv = await createConversation(h.db, { model: 'llama3.2', title: 'Già col titolo' })
+    const { streamId } = await chat.send(target, conv.id, 'ciao')
+    await chat.wait(streamId)
+    expect(events.some((e) => e.streamId === streamId && e.type === 'done' && e.message)).toBe(true)
+    const warn = lines.find((l) => l.level === 'warn' && l.message.startsWith('riassunto prima della risposta'))
+    expect(warn?.data).toMatchObject({ conversation: conv.id, error: 'riassunto rotto' })
+  })
+})
+
