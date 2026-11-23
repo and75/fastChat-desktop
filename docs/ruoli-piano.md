@@ -1,8 +1,8 @@
 # Ruoli — decisioni e piano di esecuzione
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
-1.7), che va eseguita sul computer dell'utente. **Seconda consegna completa e su `main`** (passi 2.1–2.8); da questo
-repository non risulta se sia stata rilasciata: la release parte solo con la conferma esplicita dell'utente.
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna rilasciata nella 0.2.0** (passi 2.1–2.8, 14
+novembre 2026): è la versione che l'utente usa. Ogni release parte solo con la sua conferma esplicita.
 **Dopo la seconda consegna**: lavoro di diagnostica e affidabilità sul branch `claude/vibrant-hopper-v149tl`, non
 ancora su `main` (vedi la Parte 3).
 
@@ -550,10 +550,10 @@ Scoperte durante il lavoro:
 ## Dove siamo
 
 - **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8).
-- **Seconda consegna** (ruoli): **completa e su `main`** (passi 2.1–2.8). Da questo repository non risulta se sia
-  stata rilasciata: resta il **Controllo 5**, l'utente guarda il risultato e decide.
+- **Seconda consegna** (ruoli): fatta, su `main` e rilasciata nella **0.2.0** (passi 2.1–2.8; il tag `v0.2.0` è
+  l'ultimo commit di `main`). È la versione che l'utente usa.
 - **Diagnostica e affidabilità** (dopo la seconda consegna): sul branch `claude/vibrant-hopper-v149tl`, **non su
-  `main`**, senza pull request e senza release. Vedi «Diagnostica e affidabilità» qui sotto.
+  `main`**, senza pull request e **non rilasciato**: la 0.2.0 non lo contiene. Vedi «Diagnostica e affidabilità» qui sotto.
 - Cosa c'è: ruoli scelti da «Parla con un…» e regolati nella scheda «Modello»; scheda «Situazione» al posto del
   Brief; due ruoli italiani inclusi nell'app con le loro basi; ruoli francesi, Guida francese e Guida inglese
   nello Store; testi riletti e approvati dall'utente.
@@ -679,6 +679,6 @@ memoria insufficiente con un modello da 12B.
 ## Messaggio di apertura suggerito per la nuova sessione
 
 > Riprendiamo FastChat. Leggi `docs/ruoli.md` e `docs/ruoli-piano.md` (soprattutto la Parte 3). La seconda
-> consegna è su `main`; il lavoro di diagnostica e affidabilità è sul branch `claude/vibrant-hopper-v149tl`, non su
+> consegna è rilasciata nella 0.2.0; il lavoro di diagnostica e affidabilità è sul branch `claude/vibrant-hopper-v149tl`, non su
 > `main`. Ti dico io da dove ripartire: i numeri del registro diagnostico, il rilascio, i profili per modello dopo
 > la prova con Ollama, o altro. Prima di scrivere codice dimmi in breve cosa farai e aspetta il mio ok.
