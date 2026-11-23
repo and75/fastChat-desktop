@@ -102,7 +102,7 @@ A base linked to a conversation has a **purpose** (`conversation_bases.purpose`)
 |---|---|---|---|
 | `documents` (default) | The content to answer from | Only with the switch or the book button on, as always | Yes |
 | `behavior` | The role's techniques and rules | Always | No |
-| `examples` | Well-made answers to imitate, each between `<example>…</example>` | Always | No |
+| `examples` | Well-made answers to imitate, each between `<example>…</example>` | Always: the two examples closest to the question | No |
 
 - Documents added to the conversation are always `documents`.
 - A role's bases arrive with their purpose, declared by the role. In the “Knowledge” tab they are kept apart,
@@ -198,9 +198,12 @@ budget = min( share × num_ctx ,
 
 ## 6. In the prompt
 
-- `# Knowledge base` section, in the system prompt after role instructions, situation, style, summary and
-  conversation memory. Before it come, if present, the role's techniques (`# How to work`) and examples
-  (`# Examples`).
+- `# Knowledge base` section, at its place in the fixed block order: role, situation, summary, memory
+  (`# Earlier messages`), techniques (`# How to work`, each section with its `## …` title), examples
+  (`# Examples`, each with its title), **knowledge base**, chosen rules (`# Rules for this conversation`),
+  response style, plan, reminder, question. A role
+  can declare, per base, which sections depend on the choices (`sections` in `role.json`): a technique or
+  example that contradicts the choices is left out of the prompt.
 - Introduction for “complete documents” or for “excerpts” (and a linking sentence when both are present);
   then each entry as `[Title, p. N]` followed by the text.
 - Instructions to the model: answer from the documents when they concern the question, cite the source in

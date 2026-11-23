@@ -2,7 +2,8 @@
 // validazione della definizione, istruzioni dalle scelte, calcolo della mente, profilo per il modello in uso.
 // Qui un «ruolo» è il contenuto di `role.json`; nome, lingua e gruppo stanno nel manifesto del pacchetto.
 import { reminderApplies, CONTEXT_ORDERS } from './compose'
-import { briefToSituation, buildRolePrompt, DEFAULT_CHARS_PER_TOKEN, situationSection } from './prompt'
+import { t } from './i18n'
+import { briefToSituation, DEFAULT_CHARS_PER_TOKEN, situationSection } from './prompt'
 import {
   BASE_PURPOSES,
   DEFAULT_CONTEXT_SETTINGS,
@@ -68,11 +69,32 @@ export interface RoleParameter {
   default?: string | string[]
 }
 
+/** Condizione sulle scelte: id del parametro → opzione (o una tra più opzioni) che deve essere scelta. */
+export type RoleCondition = Record<string, string | string[]>
+
+/**
+ * Regola per una sezione di una base del ruolo (una tecnica, un esempio): quando va inviata al modello.
+ * Le sezioni non elencate si inviano sempre.
+ */
+export interface RoleBaseSection {
+  /** Titolo della sezione nel documento (l'ultimo della catena dei titoli). */
+  title: string
+  /** Inviata solo se le scelte corrispondono. */
+  when?: RoleCondition
+  /** Non inviata se le scelte corrispondono. */
+  unless?: RoleCondition
+  /** Mai inviata (es. l'elenco delle fonti, che serve a chi legge il documento). */
+  skip?: boolean
+  /** Esempi: quando la sezione vale, è sempre tra quelli inviati, anche se altri somigliano di più alla domanda. */
+  pin?: boolean
+}
+
 export interface RoleBase {
   id: string
   purpose: BasePurpose
   /** Nome da mostrare quando la base non è installata (altrimenti si vede solo l'id del pacchetto). */
   name?: string
+  sections?: RoleBaseSection[]
 }
 
 export interface RoleProfileContext {
@@ -138,6 +160,9 @@ export interface RoleIssue {
     | 'base.shape'
     | 'base.duplicate'
     | 'base.purpose'
+    | 'base.sections'
+    | 'base.section.title'
+    | 'base.section.condition'
     | 'profile.shape'
     | 'profile.models'
     | 'profile.duplicate'
@@ -277,6 +302,41 @@ export function validateRole(raw: unknown): RoleIssue[] {
     seenBases.add(b.id)
     if (!BASE_PURPOSES.includes(b.purpose as BasePurpose)) issues.push({ code: 'base.purpose', at })
     if (b.name !== undefined && typeof b.name !== 'string') issues.push({ code: 'base.shape', at })
+
+    // Sezioni condizionate: titoli unici, condizioni su parametri e opzioni che esistono.
+    if (b.sections === undefined) continue
+    if (!Array.isArray(b.sections)) {
+      issues.push({ code: 'base.sections', at })
+      continue
+    }
+    const optionsOf = new Map<string, Set<string>>()
+    for (const p of Array.isArray(parameters) ? parameters : []) {
+      if (isObject(p) && isText(p.id)) optionsOf.set(p.id, new Set((Array.isArray(p.options) ? p.options : []).filter(isObject).map((o) => String(o.id))))
+    }
+    const titles = new Set<string>()
+    for (const [i, s] of b.sections.entries()) {
+      const sat = `${at}.sections[${i}]`
+      if (!isObject(s)) {
+        issues.push({ code: 'base.sections', at: sat })
+        continue
+      }
+      if (!isText(s.title) || titles.has(sectionKey(s.title))) issues.push({ code: 'base.section.title', at: sat })
+      else titles.add(sectionKey(s.title))
+      if ((s.skip !== undefined && typeof s.skip !== 'boolean') || (s.pin !== undefined && typeof s.pin !== 'boolean')) issues.push({ code: 'base.sections', at: sat })
+      for (const key of ['when', 'unless'] as const) {
+        const cond = s[key]
+        if (cond === undefined) continue
+        const ok =
+          isObject(cond) &&
+          Object.keys(cond).length > 0 &&
+          Object.entries(cond).every(([parameter, wanted]) => {
+            const ids = optionsOf.get(parameter)
+            const list = Array.isArray(wanted) ? wanted : [wanted]
+            return !!ids && list.length > 0 && list.every((id) => typeof id === 'string' && ids.has(id))
+          })
+        if (!ok) issues.push({ code: 'base.section.condition', at: `${sat}.${key}` })
+      }
+    }
   }
 
   // Profili
@@ -353,17 +413,73 @@ function activeOptions(parameter: RoleParameter, resolved: RoleChoices): RoleOpt
 
 // ---------------------------------------------------------------- istruzioni
 
+/** Il testo fisso del ruolo, sotto il suo titolo: apre il prompt. '' per il Generalista. */
+export function roleIdentity(role: Role): string {
+  const text = (role.instructions ?? '').trim()
+  return text ? `# ${t('prompt.roleHeading')}\n${text}` : ''
+}
+
 /**
- * Istruzioni del ruolo: testo fisso, poi una riga per ogni opzione scelta, nell'ordine delle sezioni e dei
- * parametri. '' per il Generalista.
+ * Le regole scelte dall'utente: una voce per ogni opzione attiva, nell'ordine delle sezioni e dei parametri,
+ * sotto un titolo e una frase che dice che prevalgono su tecniche ed esempi. È l'ultimo blocco prima della
+ * domanda. '' se nessuna opzione attiva porta una frase.
+ */
+export function roleRules(role: Role, choices?: RoleChoices | null): string {
+  const resolved = resolveChoices(role, choices)
+  // Ogni voce porta il nome del suo parametro: si vede a quale scelta appartiene.
+  const phrases = orderedParameters(role).flatMap((p) =>
+    activeOptions(p, resolved)
+      .map((o) => (o.instruction ?? '').trim())
+      .filter(Boolean)
+      .map((line) => `- ${p.label.trim()}: ${line}`)
+  )
+  if (phrases.length === 0) return ''
+  return [`# ${t('prompt.rulesHeading')}`, t('prompt.rulesIntro'), ...phrases].join('\n')
+}
+
+/**
+ * Tutto ciò che il ruolo scrive nel prompt (testo fisso e regole scelte), in un testo solo: serve a stimare lo
+ * spazio occupato e a mostrarlo. Nel prompt le due parti stanno lontane (vedi `rolePrompt`). '' per il Generalista.
  */
 export function roleInstructions(role: Role, choices?: RoleChoices | null): string {
+  return [roleIdentity(role), roleRules(role, choices)].filter(Boolean).join('\n\n')
+}
+
+/** Chiave di confronto del titolo di una sezione: senza differenze di maiuscole e spazi. */
+export const sectionKey = (title: string): string => title.trim().replace(/\s+/g, ' ').toLowerCase()
+
+function conditionHolds(condition: RoleCondition, resolved: RoleChoices): boolean {
+  return Object.entries(condition).every(([parameter, wanted]) => {
+    const chosen = resolved[parameter]
+    const have = Array.isArray(chosen) ? chosen : chosen === undefined ? [] : [chosen]
+    return (Array.isArray(wanted) ? wanted : [wanted]).some((id) => have.includes(id))
+  })
+}
+
+/** Per una base del ruolo: i titoli (come `sectionKey`) delle sezioni da non inviare e di quelle da inviare comunque. */
+export interface SectionRules {
+  skip: string[]
+  pin: string[]
+}
+
+/**
+ * Le regole di sezione in vigore con le scelte date, per id della base. Una tecnica o un esempio che contraddice
+ * le scelte non va al modello; un esempio «fissato» ci va sempre.
+ */
+export function roleSectionRules(role: Role, choices?: RoleChoices | null): Record<string, SectionRules> {
   const resolved = resolveChoices(role, choices)
-  const phrases = orderedParameters(role).flatMap((p) => activeOptions(p, resolved).map((o) => o.instruction ?? ''))
-  return [role.instructions ?? '', ...phrases]
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .join('\n')
+  const out: Record<string, SectionRules> = {}
+  for (const base of role.bases ?? []) {
+    if (!base.sections?.length) continue
+    const rules: SectionRules = { skip: [], pin: [] }
+    for (const s of base.sections) {
+      const skipped = s.skip === true || (s.when ? !conditionHolds(s.when, resolved) : false) || (s.unless ? conditionHolds(s.unless, resolved) : false)
+      if (skipped) rules.skip.push(sectionKey(s.title))
+      else if (s.pin) rules.pin.push(sectionKey(s.title))
+    }
+    out[base.id] = rules
+  }
+  return out
 }
 
 // ---------------------------------------------------------------- profili
@@ -493,10 +609,14 @@ export type RolePromptSource = Pick<RoleBinding, 'roleParams' | 'situation'> & P
  * com'è nel prompt (con il titolo se ci sono istruzioni), e il prompt intero con lo stile.
  * Una riga non ancora convertita (situazione assente) vale il suo Brief.
  */
-export function rolePrompt(role: Role, conv: RolePromptSource): { instructions: string; situation: string; system: string } {
-  const instructions = roleInstructions(role, conv.roleParams)
+export function rolePrompt(role: Role, conv: RolePromptSource): { instructions: string; rules: string; situation: string; system: string } {
+  const identity = roleIdentity(role)
+  const rules = roleRules(role, conv.roleParams)
   const text = conv.situation ?? briefToSituation(conv)
-  return { instructions, situation: situationSection(text, !!instructions), system: buildRolePrompt({ instructions, situation: text, style: conv.style }) }
+  // `system` apre il prompt (ruolo, poi situazione); `rules` viene dopo il materiale, prima di stile e piano.
+  // `instructions` è la somma delle due parti scritte dal ruolo, per le stime.
+  const situation = situationSection(text)
+  return { instructions: [identity, rules].filter(Boolean).join('\n\n'), rules, situation, system: [identity, situation].filter(Boolean).join('\n\n') }
 }
 
 /** L'essenziale del ruolo per il promemoria: il campo `reminder`, o la prima frase delle istruzioni. '' per il Generalista. */

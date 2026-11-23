@@ -104,7 +104,7 @@ Una base collegata a una conversazione ha un **uso** (`conversation_bases.purpos
 |---|---|---|---|
 | `documents` (predefinito) | I contenuti su cui rispondere | Solo con l'interruttore o il bottone libro accesi, come sempre | Sì |
 | `behavior` | Tecniche e regole del ruolo | Sempre | No |
-| `examples` | Risposte ben fatte da imitare, ciascuna tra `<esempio>…</esempio>` | Sempre | No |
+| `examples` | Risposte ben fatte da imitare, ciascuna tra `<esempio>…</esempio>` | Sempre: i due esempi più vicini alla domanda | No |
 
 - I documenti aggiunti alla conversazione sono sempre `documents`.
 - Le basi di un ruolo arrivano con il loro uso, dichiarato dal ruolo. Nella scheda «Conoscenza» stanno a parte,
@@ -200,8 +200,13 @@ budget = min( quota × num_ctx ,
 
 ## 6. Nel prompt
 
-- Sezione `# Base di conoscenza`, nel system prompt dopo istruzioni del ruolo, situazione, stile, riassunto e memoria
-  della conversazione. Prima vengono, se ci sono, le tecniche (`# Come lavorare`) e gli esempi (`# Esempi`) del ruolo.
+- Sezione `# Base di conoscenza`, al suo posto nell'ordine fisso dei blocchi (`docs/ruoli.md` §5.1): ruolo,
+  situazione, riassunto, memoria (`# Messaggi precedenti`), tecniche (`# Come lavorare`, ogni sezione con il
+  suo titolo `## …`), esempi (`# Esempi`, ognuno con il suo titolo), **base di conoscenza**, regole scelte
+  (`# Regole di questa conversazione`), stile della risposta, piano, promemoria, domanda.
+- Il ruolo può dichiarare, per ogni base, quali sezioni dipendono dalle scelte (`sections` in `role.json`,
+  vedi `docs/ruoli.md` §3.3): una tecnica o un esempio che contraddice le scelte non entra nel prompt, e un
+  esempio «fissato» entra sempre tra i due inviati.
 - Introduzione per «documenti completi» o per «estratti» (e una frase di raccordo quando ci sono entrambi);
   poi ogni voce come `[Titolo, p. N]` seguita dal testo.
 - Istruzioni al modello: rispondere dai documenti quando riguardano la domanda, citare la fonte tra

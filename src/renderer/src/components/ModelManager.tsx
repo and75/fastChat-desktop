@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fmtNum, t } from '@shared/i18n'
+import { fmtInt, fmtNum, t } from '@shared/i18n'
 import type { ModelSetting, OllamaModel } from '@shared/types'
 import { useModels } from '../store/useModels'
 
@@ -21,6 +21,7 @@ export function benchLabel(r: { label: string; numGpu?: number | null }): string
   if (r.label === 'gpu') return t('bench.label.gpu')
   if (r.label.startsWith('half:')) return t('bench.label.half', { n: r.label.slice(5) })
   if (r.label === 'prepare') return t('bench.step.prepare')
+  if (r.label.startsWith('ctx:')) return t('bench.label.ctx', { n: fmtInt(Number(r.label.slice(4))) })
   return r.label
 }
 
@@ -106,6 +107,46 @@ export function BenchmarkTable({ setting }: { setting: ModelSetting }): React.JS
         ))}
       </tbody>
     </table>
+  )
+}
+
+/** Seconda fase del test: memorie provate, e il tetto consigliato che ne deriva. */
+export function ContextRuns({ setting }: { setting: ModelSetting }): React.JSX.Element | null {
+  const runs = setting.contextRuns ?? []
+  if (runs.length === 0 || setting.ctxLimit == null) return null
+  const fmt = (n: number | null): string => (n == null ? '—' : fmtNum(n, 1))
+  const share = (n: number | null): string => (n == null ? '—' : `${Math.round(n * 100)}%`)
+  const failed = runs.find((r) => !r.ok)
+  return (
+    <div className="mt-1 flex flex-col gap-1 text-xs" data-testid="benchmark-context">
+      <p data-testid="benchmark-ctx-limit">
+        <span className="font-medium text-brand-700 dark:text-brand-300">{t('bench.ctx.limit', { limit: fmtInt(setting.ctxLimit) })}</span>
+        <span className="text-zinc-500">
+          {failed ? t('bench.ctx.limit.why', { failed: fmtInt(failed.numCtx), tps: failed.error ? t('bench.error') : fmt(failed.evalTps), share: share(failed.vramShare) }) : t('bench.ctx.limit.none')}
+        </span>
+      </p>
+      <table className="w-full" data-testid="benchmark-context-table">
+        <thead className="text-zinc-500">
+          <tr>
+            <th className="text-left font-normal">{t('bench.ctx.title')}</th>
+            <th className="text-right font-normal">{t('bench.write')}</th>
+            <th className="text-right font-normal">{t('bench.inGpu')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((r) => (
+            <tr key={r.numCtx} className={r.ok ? '' : 'text-amber-700 dark:text-amber-400'}>
+              <td>
+                {fmtInt(r.numCtx)}
+                {r.numCtx === setting.ctxLimit ? ' ✓' : r.ok ? '' : ` · ${t('bench.ctx.slow')}`}
+              </td>
+              <td className="text-right tabular-nums">{r.error ? t('bench.error') : fmt(r.evalTps)}</td>
+              <td className="text-right tabular-nums">{share(r.vramShare)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -215,6 +256,7 @@ export function ModelManager(): React.JSX.Element {
                 <p className="mt-1 text-xs text-zinc-500">{t('models.noGpu')}</p>
               )}
               {setting && <BenchmarkTable setting={setting} />}
+              {setting && <ContextRuns setting={setting} />}
             </li>
           )
         })}

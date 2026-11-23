@@ -14,6 +14,12 @@ export const KNOWLEDGE = {
   relativeScore: 0.5,
   /** Peso delle parole esatte (BM25) rispetto alla somiglianza semantica (coseno) nel punteggio ibrido. */
   bm25Weight: 0.4,
+  /**
+   * Esempi di un ruolo inviati a ogni domanda: i più vicini alla domanda, non tutti. Pochi esempi pertinenti
+   * guidano meglio di molti (Liu e altri 2021), e un contesto più corto si segue meglio (Levy e altri 2024).
+   * La base può quindi crescere senza allungare il prompt.
+   */
+  examplesMax: 2,
   /** Quota massima predefinita della memoria (num_ctx) per i documenti (regolabile per conversazione). */
   budgetShare: 0.5,
   /** Limiti di un documento: dimensione del file e caratteri estratti. */
@@ -267,7 +273,16 @@ const ordered = (items: ReadonlyArray<SectionItem>): SectionItem[] =>
  */
 export function buildBehaviorSection(picked: ReadonlyArray<SectionItem>): string {
   if (picked.length === 0) return ''
-  return [t('knowledge.behavior.heading'), t('knowledge.behavior.intro'), ...ordered(picked).map((p) => p.text)].join('\n\n')
+  // Ogni sezione arriva con il suo titolo (l'ultimo della catena dei titoli): senza, un elenco come «dal più
+  // grave al meno grave» non direbbe di cosa parla. Il titolo si scrive una volta, anche se la sezione ha più pezzi.
+  let last: string | null = null
+  const items = ordered(picked).map((p) => {
+    const title = p.locator?.split(' › ').at(-1)?.trim() || null
+    const text = title && title !== last ? `## ${title}\n\n${p.text}` : p.text
+    last = title
+    return text
+  })
+  return [t('knowledge.behavior.heading'), t('knowledge.behavior.intro'), ...items].join('\n\n')
 }
 
 /**
@@ -277,7 +292,15 @@ export function buildBehaviorSection(picked: ReadonlyArray<SectionItem>): string
 export function buildExamplesSection(picked: ReadonlyArray<SectionItem>): string {
   if (picked.length === 0) return ''
   const tag = t('knowledge.examples.tag')
-  return [t('knowledge.examples.heading'), t('knowledge.examples.intro', { tag }), ...ordered(picked).map((p) => `<${tag}>\n${p.text}\n</${tag}>`)].join('\n\n')
+  return [
+    t('knowledge.examples.heading'),
+    t('knowledge.examples.intro', { tag }),
+    ...ordered(picked).map((p) => {
+      // Ogni esempio sotto il suo titolo, come le tecniche: dice in quale caso vale.
+      const title = p.locator?.split(' › ').at(-1)?.trim()
+      return `${title ? `## ${title}\n\n` : ''}<${tag}>\n${p.text}\n</${tag}>`
+    })
+  ].join('\n\n')
 }
 
 /** Ordine in cui i tipi di base ricevono lo spazio avanzato: prima i documenti dell'utente. */

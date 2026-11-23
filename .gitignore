@@ -6,3 +6,5 @@ dist/
 .DS_Store
 test-results/
 *.tsbuildinfo
+bench/runs/
+bench/sources-cache/

@@ -12,6 +12,7 @@ import {
   memoryBudget,
   ramNumCtx,
   reducedNumCtx,
+  suggestionLimited,
   suggestionLowered,
   suggestNumCtx,
   suggestSettings,
@@ -103,6 +104,26 @@ describe('memoria della conversazione suggerita dalla RAM', () => {
     expect(suggestNumCtx({ system: { ramBytes: null, unified: false, kvCacheType: 'f16' }, modelBytes: 5 * GB, caps })).toBeNull()
     expect(suggestNumCtx({ system: null, modelBytes: 5 * GB, caps })).toBeNull()
     expect(suggestNumCtx({ system: mac(16), modelBytes: null, caps })).toBeNull()
+  })
+
+  it('tetto misurato dal test sul modello: la memoria consigliata non lo supera, e lo si dice', () => {
+    // 16 − 5 − 1,5 = 9,5 GB ÷ 128 KiB → 77k → 65.536
+    const input = { system: pc(32), modelBytes: 5 * GB, caps: big(262_144) }
+    expect(suggestNumCtx(input)).toBe(65536)
+    expect(suggestNumCtx({ ...input, ctxLimit: 16384 })).toBe(16384)
+    expect(suggestionLimited({ ...input, ctxLimit: 16384 })).toBe(true)
+    // un tetto più alto di ciò che la memoria consente non alza il suggerimento
+    expect(suggestNumCtx({ ...input, ctxLimit: 262_144 })).toBe(65536)
+    expect(suggestionLimited({ ...input, ctxLimit: 262_144 })).toBe(false)
+    expect(suggestNumCtx({ ...input, ctxLimit: null })).toBe(65536)
+    expect(suggestSettings({ ...input, ctxLimit: 16384 }).numCtx).toBe(16384)
+    expect(describeSuggestion({ ...input, ctxLimit: 16384 })).toBe(
+      'Calcolato su 16 GB di memoria utilizzabile (metà di 32 GB di RAM), meno il modello (5 GB) e 1,5 GB di margine. Il test sul modello la limita a 16.384 token: oltre, la risposta rallenta.'
+    )
+    expect(describeSuggestion({ ...input, ctxLimit: 262_144 })).toBe('Calcolato su 16 GB di memoria utilizzabile (metà di 32 GB di RAM), meno il modello (5 GB) e 1,5 GB di margine.')
+    // i tre limiti insieme: vale il più basso (calcolo 65.536, test 16.384, caricamento fallito a 16.384 → 8.192)
+    expect(suggestNumCtx({ ...input, ctxLimit: 16384, failedNumCtx: 16384 })).toBe(8192)
+    expect(suggestNumCtx({ ...input, ctxLimit: 4096, failedNumCtx: 32768 })).toBe(4096)
   })
 
   it('describeSuggestion: i conti in chiaro', () => {

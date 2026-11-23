@@ -176,6 +176,21 @@ tendina (scelta singola), caselle (scelta multipla), interruttore (sì/no).
 - Conviene che le basi di comportamento siano **corte**, così entrano intere: non dipendono dalla ricerca e non
   richiedono il modello di embedding a ogni domanda.
 - Le basi del ruolo sono normali pacchetti di conoscenza: si installano con il ruolo e sono in sola lettura.
+- **Sezioni condizionate dalle scelte.** Una tecnica o un esempio che contraddice le scelte dell'utente non deve
+  arrivare al modello (es. la sezione «Usare esempi» con la tecnica spenta, un esempio in prosa con «prompt di
+  sistema» scelto). Il ruolo lo dichiara su ogni base, in `role.json`:
+
+  ```json
+  { "id": "…kb.prompt-tecniche.it", "purpose": "behavior", "sections": [
+      { "title": "Usare esempi", "when": { "tecniche": "esempi" } },
+      { "title": "Dividere i compiti complessi", "unless": { "tecniche": "passi" } },
+      { "title": "Fonti", "skip": true } ] }
+  ```
+
+  `title` è il titolo `##` della sezione nel documento; `when` la invia solo se le scelte corrispondono (tutte le
+  condizioni insieme; un elenco vale «una di queste»); `unless` la esclude; `skip` non la invia mai; `pin`
+  (esempi) la mette sempre tra gli esempi inviati quando vale. Le sezioni non elencate si inviano sempre.
+  Codice: `roleSectionRules` in `src/shared/roles.ts`, filtro in `recallAll` (`src/main/knowledge/index.ts`).
 
 ### 3.4 Formato del pacchetto
 
@@ -311,19 +326,44 @@ i ruoli.
 
 ## 5. Composizione del contesto
 
-### 5.1 I blocchi
+### 5.1 Il contratto del prompt
 
-| Blocco | Contenuto | Cambia a ogni domanda? |
-|---|---|---|
-| **Istruzioni del ruolo** | Testo fisso del ruolo + frasi delle opzioni scelte + stile della risposta | No |
-| **Situazione** | Il campo libero dell'utente | No |
-| **Riassunto** | Riassunto automatico dei messaggi vecchi | Raramente |
-| **Conversazione** | Messaggi recenti | Si allunga |
-| **Memoria** | Estratti della memoria a lungo termine della conversazione | Sì |
-| **Comportamento** | Tecniche dalla base di comportamento del ruolo | Sì (se a estratti) |
-| **Esempi** | Esempi dalla base di esempi del ruolo | Sì (se a estratti) |
-| **Documenti** | Testi dell'utente, con le fonti | Sì (se a estratti) |
-| **Domanda** | L'ultimo messaggio dell'utente | Sì |
+Tre regole, valide per ogni ruolo e per il Generalista. Sono il riferimento per chi scrive un ruolo e per la
+futura app che valida i ruoli prima della pubblicazione sullo Store.
+
+1. **Ordine fisso.** I blocchi arrivano sempre in questa sequenza (`BLOCK_SEQUENCE` in `src/shared/compose.ts`).
+2. **Un titolo per blocco.** Il primo livello (`#`) è riservato ai blocchi dell'app: i titoli scritti
+   dall'utente nella situazione scendono di un livello.
+3. **Una competenza per blocco.** Ogni blocco parla solo di ciò che gli spetta: così nessun blocco può
+   contraddirne un altro.
+
+| # | Blocco | Titolo | Parla solo di… | Chi lo scrive |
+|---|---|---|---|---|
+| 1 | Testo del ruolo | `# Ruolo` | chi è l'assistente e cosa fa | ruolo |
+| 2 | Situazione | `# Situazione` | il contesto dell'utente | utente |
+| 3 | Riassunto | `# Riassunto della conversazione finora` | ciò che è già stato detto | app |
+| 4 | Memoria | `# Messaggi precedenti` | estratti di messaggi già riassunti | app |
+| 5 | Tecniche | `# Come lavorare`, una `## sezione` per tecnica | conoscenze del mestiere | ruolo (base di comportamento) |
+| 6 | Esempi | `# Esempi`, un `## titolo` per esempio | risposte da imitare | ruolo (base di esempi) |
+| 7 | Documenti | `# Base di conoscenza` | testi su cui rispondere | utente, o ruolo |
+| 8 | Opzioni scelte | `# Regole di questa conversazione` | le scelte dell'utente: una voce per opzione, con il nome del parametro | ruolo (frasi delle opzioni) |
+| 9 | Lunghezza | `# Stile della risposta` | quanto è lunga la risposta | app |
+| 10 | Piano | `# Modalità piano` / `# Piano approvato` | il piano | app |
+| 11 | Promemoria | `# Promemoria` | una riga che richiama il ruolo | ruolo |
+| 12 | Domanda | `# Domanda` | il messaggio dell'utente | utente |
+
+Un blocco vuoto non compare. La domanda non ha titolo quando è sola nel suo messaggio (il confine del
+messaggio la delimita già).
+
+Conseguenze per chi scrive un ruolo:
+
+- Il **testo del ruolo** dice chi è l'assistente e cosa fa: niente formato, niente lunghezza, niente regole che
+  dipendono da una scelta.
+- Le **frasi delle opzioni** sono le uniche regole che dipendono dalle scelte. Due opzioni che si possono
+  scegliere insieme non devono contraddirsi.
+- **Tecniche ed esempi** non danno ordini sulle scelte: una sezione che vale solo con certe scelte lo dichiara
+  (`sections`, §3.3), così non arriva quando contraddirebbe la regola.
+- La **lunghezza** della risposta è dell'app (`mind.style`): il ruolo non la ripete nelle sue frasi.
 
 ### 5.2 Perché l'ordine conta
 
@@ -338,51 +378,22 @@ Inoltre i modelli danno più peso a ciò che sta all'inizio e alla fine del cont
 
 ### 5.3 I tre ordini (impostazione)
 
-**Ordine A — tutto nel system prompt** (comportamento di oggi; predefinito)
+La sequenza dei blocchi è sempre quella del §5.1. L'ordine scelto in Impostazioni → Contesto dice soltanto
+quanti blocchi stanno nel messaggio di sistema e quanti viaggiano con la domanda.
 
-```
-SISTEMA     Istruzioni del ruolo
-            Situazione
-            Riassunto
-            Memoria · Comportamento · Esempi · Documenti      ← cambia a ogni domanda
-UTENTE/ASSISTENTE   conversazione                             ← ricalcolata ogni volta
-UTENTE      Domanda
-```
-
-**Ordine B — conoscenza accanto alla domanda**
-
-```
-SISTEMA     Istruzioni del ruolo
-            Situazione
-            Riassunto
-UTENTE/ASSISTENTE   conversazione                             ← riusata
-UTENTE      Memoria · Comportamento · Esempi · Documenti      ← ricalcolato
-            Domanda
-```
-
-**Ordine C — anche il ruolo accanto alla domanda** (diagnostico)
-
-```
-SISTEMA     Situazione
-            Riassunto
-UTENTE/ASSISTENTE   conversazione                             ← riusata
-UTENTE      Istruzioni del ruolo                              ← ricalcolato
-            Memoria · Comportamento · Esempi · Documenti
-            Domanda
-```
-
-| | A | B | C |
+| | A (predefinito) | B | C (diagnostico) |
 |---|---|---|---|
-| Il system prompt cambia a ogni domanda | Sì | No | No |
+| Nel messaggio di sistema | blocchi 1–10 | blocchi 1–3 (ruolo, situazione, riassunto) | nessuno |
+| Con la domanda | 11–12 | 4–12 | 1–12 |
+| Il system prompt cambia a ogni domanda | Sì | No | — |
 | Cosa si ricalcola | Tutto | Ultimo messaggio | Ultimo messaggio |
-| Distanza conoscenza–domanda | Tutta la conversazione | Minima | Minima |
-| Ruolo nel posto «sistema» | Sì | Sì | No |
 
-L'ordine C non dà vantaggi di riuso rispetto al B: resta come opzione di prova, utile soprattutto con i modelli
-che non hanno un posto dedicato per il sistema (vedi sotto).
+L'ordine C non dà vantaggi di riuso rispetto al B: resta come opzione di prova, utile con i modelli che non
+hanno un posto dedicato per il sistema (vedi sotto). Con C il promemoria non si applica: tutto è già accanto
+alla domanda.
 
-**Promemoria del ruolo** (sì/no, indipendente dall'ordine): una riga breve con l'essenziale del ruolo, accanto
-alla domanda. Serve a tenere il ruolo nelle conversazioni lunghe senza toglierlo dal system prompt.
+**Promemoria del ruolo** (sì/no): una riga breve con l'essenziale del ruolo, sotto il titolo `# Promemoria`,
+accanto alla domanda. Serve a tenere il ruolo nelle conversazioni lunghe senza toglierlo dal system prompt.
 
 **Il posto «sistema» dipende dal modello.** Alcuni modelli hanno un posto dedicato per il messaggio di sistema;
 altri (es. Gemma 2 e 3) lo incollano in testa al primo messaggio dell'utente. L'informazione sta nel template di
@@ -546,57 +557,76 @@ memoria · Lo dichiara.
 
 ### 7.3 Esperto di prompt engineering (IT, FR)
 
+Rivisto dopo la 0.2.0 (deciso dall'utente): alla prima prova con Gemma 4 i prompt prodotti erano rigidi. Tecniche,
+esempi e parametri sono stati rifatti partendo dalle guide ufficiali di Anthropic, Google e OpenAI e da raccolte
+di prompt reali (provenienza e licenze in `store/sources/FONTI.md`).
+
 - **Scopo**: scrivere, migliorare e spiegare prompt.
 - **Mente di partenza**: `gemma4:e4b` consigliato · temperatura 0,6 · ragionamento acceso · lunghezza «Normale».
-- **Istruzione fissa**: «Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive.»
+  Nessun parametro tocca la temperatura.
+- **Istruzione fissa**: «Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui il compito che il prompt descrive. Presenta ogni prompt che scrivi in un blocco di codice, pronto da copiare. Non inserire esempi di risposta nel prompt, a meno che una regola qui sotto lo chieda. Se l'utente ti dà un prompt, miglioralo mantenendone l'intento; se descrive un bisogno, scrivi il prompt; se chiede cosa non va, elenca i problemi dal più grave al meno grave, senza riscriverlo.»
 - **Promemoria**: «Sei un esperto di prompt engineering: lavori sui prompt, non esegui il compito che descrivono.»
-- **Basi**: comportamento «Tecniche di prompt» · esempi «Prompt deboli e migliorati».
+- **Basi**: comportamento «Tecniche di prompt» (sintesi delle guide) · esempi «Prompt deboli e migliorati» (sei
+  casi, quattro dei quali da prompt reali).
 
 | Sezione | Parametro | Tipo | Opzione | Frase per il modello | Mente |
 |---|---|---|---|---|---|
-| **Identità e obiettivi** | Specializzazione | Singola | Modelli locali piccoli ✓ | «Scrivi per modelli piccoli: un'istruzione per riga, niente premesse.» | — |
-|  |  |  | Modelli grandi | «Puoi usare istruzioni articolate, con contesto e criteri di qualità.» | — |
-|  | Intervento | Singola | Scrive da zero | «Se manca l'obiettivo chiedilo, poi scrivi il prompt completo.» | — |
-|  |  |  | Migliora ✓ | «Riscrivi il prompt dell'utente mantenendone l'intento.» | — |
-|  |  |  | Spiega cosa non va | «Non riscrivere il prompt: elenca i suoi problemi, dal più grave al meno grave.» | — |
-| **Stile e formato** | Chi userà il prompt | Singola | Principiante ✓ | «Evita i termini tecnici nelle spiegazioni.» | — |
-|  |  |  | Esperto | «Usa pure i termini tecnici del prompt engineering.» | — |
-|  | Risultato | Singola | Solo il risultato | «Restituisci solo il risultato richiesto, senza commenti.» | lunghezza «Conciso» |
-|  |  |  | Risultato con spiegazione ✓ | «Dopo il risultato, spiega in tre punti le scelte fatte.» | lunghezza «Normale» |
-|  | Stile del prompt | Singola | Asciutto ✓ | «Nei prompt che scrivi usa frasi brevi e imperative.» | temperatura 0,3 |
-|  |  |  | Dettagliato | «Nei prompt che scrivi motiva ogni istruzione in una riga.» | temperatura 0,6 |
+| **Identità e obiettivi** | Modello a cui è destinato il prompt | Singola | Modello locale piccolo ✓ | «Scrivi per un modello locale piccolo: istruzioni esplicite e un solo compito per prompt.» | — |
+|  |  |  | Modello grande | «Scrivi per un modello grande: dai l'obiettivo e i criteri di qualità, e lascia al modello i dettagli.» | — |
+| **Stile e formato** | Spiegazione | Singola | Nessuna | «Restituisci solo il risultato richiesto: ometti la spiegazione, anche se gli esempi la mostrano.» | lunghezza «Conciso» |
+|  |  |  | Semplice ✓ | «Dopo un prompt che hai scritto, spiega in tre punti le scelte fatte, con parole semplici e senza termini tecnici. Dopo un elenco di problemi non aggiungere spiegazioni.» | lunghezza «Normale» |
+|  |  |  | Tecnica | «Dopo un prompt che hai scritto, spiega in tre punti le scelte fatte, usando i termini del prompt engineering. Dopo un elenco di problemi non aggiungere spiegazioni.» | lunghezza «Normale» |
+|  | Tipo di prompt | Singola | Messaggio da incollare in chat ✓ | «Scrivi il prompt come un messaggio unico in prosa, da incollare in una chat, senza titoli di sezione.» | — |
+|  |  |  | Prompt di sistema da riusare | «Scrivi il prompt come prompt di sistema da riusare, diviso in sezioni con un titolo: identità, istruzioni, formato della risposta.» | — |
 | **Regole** | Tecniche da usare | Multipla | Ruolo esplicito ✓ | «Quando scrivi o riscrivi un prompt, aprilo dichiarando chi deve essere il modello.» | — |
-|  |  |  | Esempi nel prompt | «Quando scrivi o riscrivi un prompt, inserisci uno o due esempi di risposta attesa.» | — |
-|  |  |  | Formato di uscita ✓ | «Quando scrivi o riscrivi un prompt, specifica il formato esatto della risposta.» | — |
-|  |  |  | Passi numerati | «Quando scrivi o riscrivi un prompt, chiedi al modello di procedere per passi numerati.» | — |
-| **Metodo** | Prima di rispondere | Singola | Risponde subito ✓ | «Rispondi direttamente, senza fare domande.» | — |
-|  |  |  | Fa domande di chiarimento | «Se l'obiettivo non è chiaro, fai al massimo due domande prima di rispondere.» | — |
+|  |  |  | Formato di uscita ✓ | «Quando scrivi o riscrivi un prompt, specifica la forma esatta della risposta.» | — |
+|  |  |  | Cosa fare se manca un dato ✓ | «Quando il prompt lavora su un testo o su dati forniti, di' cosa deve fare il modello se un'informazione manca.» | — |
+|  |  |  | Esempi della risposta attesa | «Quando scrivi o riscrivi un prompt, inserisci due o tre esempi della risposta attesa.» | — |
+|  |  |  | Passi numerati | «Quando scrivi o riscrivi un prompt, se il compito ha più fasi elencale in passi numerati.» | — |
+| **Metodo** | Prima di rispondere | Singola | Risponde subito | «Rispondi subito: se manca un'informazione, fai un'ipotesi ragionevole ed elenca le ipotesi in una riga prima del prompt.» | — |
+|  |  |  | Fa domande di chiarimento ✓ | «Se dalla richiesta non si capisce per chi è il risultato o a cosa serve, fai due o tre domande brevi e fermati: scrivi il prompt solo dopo le risposte.» | — |
+
+Cosa è cambiato rispetto alla prima versione: tolto «Intervento» (lo dice già la richiesta dell'utente, ed è ora
+nell'istruzione fissa); «Chi userà il prompt» e «Risultato» fusi in «Spiegazione»; «Stile del prompt» sostituito
+da «Tipo di prompt»; aggiunta la tecnica «Cosa fare se manca un dato».
+
+Ritocchi dopo le prove dell'utente con Gemma 4: «Fa domande di chiarimento» è il predefinito (la regola «se non
+sai, chiedi» non veniva mai applicata); «Risponde subito» obbliga a elencare le ipotesi; le frasi sul dato
+mancante e sull'esempio del formato sono condizionali. Degli esempi partono solo i due più vicini alla domanda
+(`KNOWLEDGE.examplesMax`): la base può crescere senza allungare il prompt. Gli esempi dentro i prompt prodotti
+dipendono solo dalla tecnica «Esempi della risposta attesa»: il modello li aggiungeva comunque, spinto dalla
+frase di «Modello locale piccolo» e da una riga delle tecniche, ora tolte.
 
 Documenti spenti in partenza: l'utente li accende quando vuole lavorare sui propri prompt.
 
-**Esempio di calibrazione** — Modelli locali piccoli · Spiega cosa non va · Esperto · Solo il risultato ·
-Asciutto · Tecniche: Formato di uscita + Passi numerati · Risponde subito.
+**Esempio di calibrazione** — Modello locale piccolo · Spiegazione: Nessuna · Prompt di sistema da riusare ·
+Tecniche: Formato di uscita + Passi numerati · Risponde subito.
 
-- Mente risultante: temperatura 0,3 · ragionamento acceso · lunghezza «Conciso».
+- Mente risultante: temperatura 0,6 · ragionamento acceso · lunghezza «Conciso».
 - Istruzioni che riceve il modello:
   > Sei un esperto di prompt engineering per modelli linguistici. Lavori sui prompt dell'utente: non esegui
-  > il compito che il prompt descrive.
-  > Scrivi per modelli piccoli: un'istruzione per riga, niente premesse.
-  > Non riscrivere il prompt: elenca i suoi problemi, dal più grave al meno grave.
-  > Usa pure i termini tecnici del prompt engineering.
-  > Restituisci solo il risultato richiesto, senza commenti.
-  > Nei prompt che scrivi usa frasi brevi e imperative.
-  > Quando scrivi o riscrivi un prompt, specifica il formato esatto della risposta.
-  > Quando scrivi o riscrivi un prompt, chiedi al modello di procedere per passi numerati.
-  > Rispondi direttamente, senza fare domande.
+  > il compito che il prompt descrive. Presenta ogni prompt che scrivi in un blocco di codice, pronto da
+  > copiare.
+  > Se l'utente ti dà un prompt, miglioralo mantenendone l'intento; se descrive un bisogno, scrivi il
+  > prompt; se chiede cosa non va, elenca i problemi dal più grave al meno grave, senza riscriverlo.
+  > Scrivi per un modello locale piccolo: istruzioni esplicite, un solo compito per prompt, il formato della
+  > risposta mostrato con un esempio.
+  > Restituisci solo il risultato richiesto: ometti la spiegazione, anche se gli esempi la mostrano.
+  > Scrivi il prompt come prompt di sistema da riusare, diviso in sezioni con un titolo: identità,
+  > istruzioni, formato della risposta.
+  > Quando scrivi o riscrivi un prompt, specifica la forma esatta della risposta.
+  > Quando scrivi o riscrivi un prompt, se il compito ha più fasi elencale in passi numerati.
+  > Rispondi subito: se manca un'informazione, fai un'ipotesi ragionevole ed elenca le ipotesi in una riga
+  > prima del prompt.
 
-Le frasi delle tecniche sono in forma condizionale: con «Spiega cosa non va» non entrano in conflitto. Le
-opzioni di «Prima di rispondere» non impostano il ragionamento: è già acceso nella mente di partenza.
+Nel prompt il testo fisso sta sotto `# Ruolo`, in apertura; le frasi delle opzioni stanno in fondo, sotto
+`# Regole di questa conversazione`, una per voce. Tecniche ed esempi seguono le scelte (§3.3): con i
+predefiniti non partono «Usare esempi», «Scrivere per un modello grande» e «Fonti»; con «prompt di sistema»
+l'esempio a sezioni è sempre presente e quelli in prosa no; con «fa domande» è sempre presente l'esempio
+«Quando l'obiettivo non è chiaro».
 
-Valori della mente ancora da provare: Gemma 4 ha temperatura predefinita 1; i valori più bassi scelti qui sono
-un'ipotesi. Con il ragionamento acceso il modello può pensare a lungo anche con risposta «Conciso»: da
-verificare se le opzioni di risposta breve debbano spegnerlo. I profili per modello arrivano dopo la prova con
-Ollama sul computer dell'utente.
+Valori della mente ancora da provare a fondo: l'utente ha verificato che con il ragionamento acceso il ruolo
+lavora meglio. I profili per modello arrivano dopo la prova con Ollama sul computer dell'utente.
 
 ### 7.4 Lo stesso schema su ruoli non inclusi (per verificarne la tenuta)
 

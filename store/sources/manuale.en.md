@@ -70,7 +70,7 @@ With “Plan mode” on, the send button becomes “Plan”. The model proposes 
 
 When the conversation no longer fits in the model's memory, the oldest messages are replaced by an “Automatic summary”, visible in the conversation. It can be read and corrected with “Show and edit”, redone with “Refresh”, removed with “Delete”.
 
-“Context status”, at the bottom of the “Model” tab, shows how much memory is in use.
+“Context status”, at the bottom of the “Model” tab, shows how much memory is in use. In the list of calls, “View the prompt sent” shows the exact messages sent to the model for an answer, with “Copy all”; the last 20 calls of each conversation are kept, on this computer only.
 
 ## Store
 

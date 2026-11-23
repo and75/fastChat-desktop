@@ -696,7 +696,9 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
     return s.models.find((m) => m.name === name || m.name === `${name}:latest`)?.size ?? null
   })
   const runSetting = useModels((s) => s.modelSettings[conversation.model])
-  const input = { system, modelBytes, caps: caps ?? null, embeddingBytes, cpuOnly: runSetting?.numGpu === 0, failedNumCtx: runSetting?.failedNumCtx ?? null }
+  // Il tetto misurato dal test sul modello e l'eventuale caricamento fallito entrano nel suggerimento, come nel main.
+  const ctxLimit = runSetting?.ctxLimit ?? null
+  const input = { system, modelBytes, caps: caps ?? null, embeddingBytes, cpuOnly: runSetting?.numGpu === 0, failedNumCtx: runSetting?.failedNumCtx ?? null, ctxLimit }
   const suggested = suggestSettings(input)
   const machineCtx = suggestNumCtx(input)
   const ctxSteps = contextSteps(maxNumCtx(caps))
@@ -813,7 +815,9 @@ export function ModelSettings({ conversation }: { conversation: Conversation }):
           warning={(v) =>
             v < minCtx
               ? t('param.numCtx.belowMin', { min: fmt(minCtx) })
-              : null
+              : ctxLimit && v > ctxLimit
+                ? t('param.numCtx.aboveLimit', { limit: fmt(ctxLimit) })
+                : null
           }
           onChange={(v) => save({ numCtx: v })}
         />

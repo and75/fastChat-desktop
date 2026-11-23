@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import {
   buildStyleSection,
   charsPerToken,
-  executePrompt,
-  planPrompt,
+  executeSection,
+  planSection,
   DEFAULT_HISTORY_LIMITS,
   estimateTokens,
   historyAfter,
@@ -54,7 +54,7 @@ import { OllamaError, type ChatMessage, type ChatOptions, type ChatRequest, type
 import { memoryBudget, type Memory, type Recall } from './memory'
 import type { Summarizer } from './summary'
 import { knowledgeBudget } from '@shared/knowledge'
-import { GENERALIST_ROLE, rolePrompt, roleReminderText, type Role } from '@shared/roles'
+import { GENERALIST_ROLE, rolePrompt, roleReminderText, roleSectionRules } from '@shared/roles'
 import { withPromptLanguage } from './promptLocale'
 import type { Knowledge, RoleRecall } from './knowledge'
 import type { Embedder } from './embedder'
@@ -155,13 +155,14 @@ export function buildChatMessages(
 export interface ComposeConfig {
   order: ContextOrder
   reminder: boolean
-  /** Per l'ordine C: le istruzioni senza la situazione, e la situazione da sola (insieme fanno `base`). */
-  instructions?: string
-  situation?: string
   /** La situazione com'è dentro `base`, per la sua voce nel monitor. */
   situationPart?: string
   /** L'essenziale del ruolo per il promemoria. Se manca si usa il campo Ruolo del Brief (conversazioni non convertite). */
   reminderText?: string
+  /** Le regole scelte dall'utente tra le opzioni del ruolo, già pronte: dopo il materiale, prima di stile e piano. */
+  rules?: string
+  /** Blocco del piano (richiesta di un piano, o piano approvato da eseguire), già pronto. */
+  plan?: string
 }
 
 /** Come buildChatMessages, più le voci per il monitor del contesto e i messaggi rimasti fuori. */
@@ -179,20 +180,24 @@ export function composeChat(
   const knowledge = extras.knowledge ?? ''
   const behavior = extras.behavior ?? ''
   const examples = extras.examples ?? ''
+  const rules = config.rules ?? ''
+  const plan = config.plan ?? ''
+  const style = buildStyleSection(conv.style)
   const reminder = config.reminder ? roleReminder(config.reminderText ?? conv.role) : ''
-  // Ordine di lettura: riassunto, memoria della conversazione, tecniche ed esempi del ruolo, documenti (i più
-  // vicini alla domanda per ultimi).
+  // Ordine fisso dei blocchi (BLOCK_SEQUENCE): dopo ruolo, situazione e riassunto vengono memoria, tecniche,
+  // esempi, documenti, regole scelte, stile della risposta e piano.
   const composed = composeMessages({
     order: config.order,
     base,
-    instructions: config.instructions,
-    situation: config.situation,
     summary: aligned ? conv.summary : null,
     blocks: [
       { key: 'memory', text: memory },
       { key: 'behavior', text: behavior },
       { key: 'examples', text: examples },
-      { key: 'knowledge', text: knowledge }
+      { key: 'knowledge', text: knowledge },
+      { key: 'rules', text: rules },
+      { key: 'style', text: style },
+      { key: 'plan', text: plan }
     ],
     reminder,
     history: recent,
@@ -201,16 +206,14 @@ export function composeChat(
   const picked = composed.picked
   // Le stime per voce si fanno sulle sezioni messe in fila (com'è l'ordine A): la posizione non cambia i token.
   const summary = (aligned ? withSummary(base, conv.summary) : base).slice(base.length)
-  const style = buildStyleSection(conv.style)
-  const hasStyle = !!style && base.includes(style)
   const cpt = charsPerToken(history)
   const situation = config.situationPart && base.includes(config.situationPart) ? config.situationPart : ''
-  const withoutStyle = hasStyle ? base.replace(style, '') : base
   const parts = chatParts({
     system: composed.flat,
-    instructions: situation ? withoutStyle.replace(situation, '') : withoutStyle,
+    // Sotto «istruzioni» si contano il testo del ruolo, le regole scelte e il piano, anche se non stanno vicini.
+    instructions: [situation ? base.replace(situation, '') : base, rules, plan].filter((x) => x.trim()).join('\n\n'),
     situation,
-    style: hasStyle ? style : '',
+    style,
     summary,
     memory,
     behavior,
@@ -262,16 +265,15 @@ export function fallbackTitle(question: string): string {
   return line.length > 50 ? line.slice(0, 50).replace(/\s+\S*$/, '') + '…' : line || DEFAULT_TITLE
 }
 
-/** System prompt della chiamata: istruzioni del ruolo, situazione e stile, più le istruzioni del piano se servono. */
-function systemFor(conv: Conversation, mode: Mode, role: Role = GENERALIST_ROLE): string {
-  const { system } = rolePrompt(role, conv)
+/** Il blocco del piano per questa chiamata: la richiesta di un piano, il piano approvato da eseguire, o nulla. */
+function planFor(mode: Mode): string {
   switch (mode.kind) {
     case 'plan':
-      return planPrompt(system)
+      return planSection()
     case 'execute':
-      return executePrompt(system, mode.plan.steps)
+      return executeSection(mode.plan.steps)
     default:
-      return system
+      return ''
   }
 }
 
@@ -445,10 +447,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     const history = await listMessages(db, conv.id)
     const context = resolveContext(await getContext?.().catch(() => null))
     const role = (await roleOf(db, conv)).definition
-    const situationPart = rolePrompt(role, conv).situation
-    // Ordine C: la situazione resta nel sistema; istruzioni del ruolo, stile e piano vanno con la domanda.
-    const split = context.order === 'C' ? { instructions: systemFor({ ...conv, situation: '' }, mode, role), situation: situationPart } : {}
-    const composed = composeChat(conv, history, systemFor(conv, mode, role), caps, extras, { ...context, ...split, situationPart, reminderText: roleReminderText(role) })
+    const { system, situation: situationPart, rules } = rolePrompt(role, conv)
+    const composed = composeChat(conv, history, system, caps, extras, { ...context, situationPart, rules, plan: planFor(mode), reminderText: roleReminderText(role) })
     const request: ChatRequest = {
       model: conv.model,
       messages: composed.messages,
@@ -466,7 +466,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
       contextOrder: context.order,
       reminder: context.reminder,
       systemSlot: caps?.systemSlot ?? null,
-      cpt: charsPerToken(history)
+      cpt: charsPerToken(history),
+      request: { messages: request.messages.map((m) => ({ role: m.role, content: m.content })), options: request.options as Record<string, unknown> | undefined, think: request.think ?? null }
     }
     return { request, start }
   }
@@ -546,7 +547,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
             const since = Date.now()
             const { shares } = resolveContext(await getContext?.().catch(() => null))
             found = await knowledge!
-              .recallAll(conv, { text: question?.content ?? '', vector }, { total: knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), shares, documents: useKnowledge }, cpt)
+              .recallAll(conv, { text: question?.content ?? '', vector }, { total: knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), shares, documents: useKnowledge, sections: roleSectionRules((await roleOf(db, conv)).definition, conv.roleParams) }, cpt)
               .catch((err: unknown) => {
                 skipped('ricerca nei documenti', conv.id, miss('documents'))(err)
                 return found

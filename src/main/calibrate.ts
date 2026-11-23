@@ -8,8 +8,11 @@ export interface CalibrateDeps {
   system(): SystemInfo | Promise<SystemInfo>
   /** Nome del modello di embedding delle Impostazioni: se è installato, occupa memoria insieme a quello di chat. */
   embeddingModel?(): string | Promise<string>
-  /** Configurazione del modello: gira solo in CPU? un caricamento è già fallito per memoria insufficiente? */
-  modelSetting?(model: string): Promise<Pick<ModelSetting, 'numGpu' | 'failedNumCtx'> | null>
+  /**
+   * Configurazione del modello: gira solo in CPU? un caricamento è già fallito per memoria insufficiente? il test
+   * sul modello ha misurato un tetto della memoria?
+   */
+  modelSetting?(model: string): Promise<Pick<ModelSetting, 'numGpu' | 'failedNumCtx' | 'ctxLimit'> | null>
 }
 
 /** Campi che la calibrazione riempie. */
@@ -33,7 +36,8 @@ export async function suggestFor(deps: CalibrateDeps, model: string): Promise<Su
       // Il modello di embedding conta solo se è un altro modello.
       embeddingBytes: embedding && embedding !== model ? sizeOf(embedding) : null,
       cpuOnly: setting?.numGpu === 0,
-      failedNumCtx: setting?.failedNumCtx ?? null
+      failedNumCtx: setting?.failedNumCtx ?? null,
+      ctxLimit: setting?.ctxLimit ?? null
     })
   } catch {
     return null

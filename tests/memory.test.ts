@@ -68,7 +68,7 @@ describe('memoria: funzioni pure', () => {
       ],
       30
     )
-    expect(s).toMatch(/^# Dalla conversazione precedente\n\n.*valgono il riassunto e i messaggi recenti/)
+    expect(s).toMatch(/^# Messaggi precedenti\n\n.*valgono il riassunto e i messaggi recenti/)
     expect(s.indexOf('[messaggio 2 di 30 · utente]')).toBeLessThan(s.indexOf('[messaggio 7 di 30 · assistente]'))
     expect(buildMemorySection([], 30)).toBe('')
   })
@@ -188,7 +188,7 @@ describe('memoria: indicizzazione e recupero', () => {
     expect(events.filter((e) => e.streamId === sent.streamId).map((e) => e.type)[0]).toBe('remembering')
     const body = fake.requests.filter((q) => q.path === '/api/chat').at(-1)!.body as { messages: Array<{ role: string; content: string }> }
     const system = body.messages[0].content
-    expect(system.indexOf('# Riassunto della conversazione finora')).toBeLessThan(system.indexOf('# Dalla conversazione precedente'))
+    expect(system.indexOf('# Riassunto della conversazione finora')).toBeLessThan(system.indexOf('# Messaggi precedenti'))
     expect(system).toContain('ottocento euro per persona')
     // i messaggi recenti (non riassunti) restano per intero e non diventano estratti
     expect(system).not.toContain('Gulbenkian')

@@ -3,6 +3,7 @@ import type {
   BenchmarkProgress,
   MemoryStatus,
   ContextCall,
+  ContextRequest,
   KnowledgeBaseInfo,
   KnowledgeConnection,
   KnowledgeDocument,
@@ -126,6 +127,8 @@ export interface Api {
     onCall(cb: (call: ContextCall) => void): () => void
     /** Salva le chiamate della conversazione come CSV: chiede dove; restituisce il percorso, o null se annullato. */
     exportCsv(conversationId: string): Promise<Result<string | null>>
+    /** I messaggi inviati al modello in una chiamata di chat, se sono ancora conservati (le ultime venti). */
+    request(callId: string): Promise<Result<ContextRequest | null>>
   }
   ollamaEnv: {
     /** Variabili d'ambiente di Ollama: valori attuali (Windows) e se l'app può applicarle da sola. */

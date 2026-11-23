@@ -70,7 +70,7 @@ Quand « Mode plan » est activé, le bouton d'envoi devient « Planifier ». Le
 
 Quand la conversation ne tient plus dans la mémoire du modèle, les messages les plus anciens sont remplacés par un « Résumé automatique », visible dans la conversation. On peut le lire et le corriger avec « Afficher et modifier », le refaire avec « Actualiser », le retirer avec « Supprimer ».
 
-L'« État du contexte », en bas de l'onglet « Modèle », montre la part de mémoire occupée.
+L'« État du contexte », en bas de l'onglet « Modèle », montre la part de mémoire occupée. Dans la liste des appels, « Voir le prompt envoyé » montre les messages exacts envoyés au modèle pour une réponse, avec « Tout copier » ; les 20 derniers appels de chaque conversation sont conservés, sur cet ordinateur seulement.
 
 ## Store
 

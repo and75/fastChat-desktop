@@ -1,7 +1,7 @@
 // Monitor del contesto: registra ogni chiamata a Ollama di una conversazione (stima per voce + conteggi reali)
 // e avvisa il renderer.
 import { estimateTokens } from '@shared/prompt'
-import type { ContextCall, ContextCallInput, ContextCallKind, ContextOrder, ContextPart, SystemSlot } from '@shared/types'
+import type { ContextCall, ContextCallInput, ContextCallKind, ContextOrder, ContextPart, ContextRequest, SystemSlot } from '@shared/types'
 import type { Db } from './db/client'
 import { addContextCall } from './db/repo'
 import type { ChatResult } from './ollama'
@@ -24,6 +24,8 @@ export interface CallStart {
   reminder?: boolean | null
   systemSlot?: SystemSlot | null
   cpt?: number
+  /** I messaggi inviati, da conservare per poterli rileggere. */
+  request?: ContextRequest | null
 }
 
 /** Unisce l'inizio della chiamata con il risultato di Ollama (o l'errore). */
@@ -49,6 +51,7 @@ export function callInput(start: CallStart, result: Partial<ChatResult> | null, 
     firstTokenMs: result?.firstTokenMs ?? null,
     thinkingTokens: result?.thinking ? estimateTokens(result.thinking, start.cpt) : start.contextOrder && result ? 0 : null,
     systemSlot: start.systemSlot ?? null,
+    request: start.request ?? null,
     error: error == null ? null : error instanceof Error ? error.message : String(error)
   }
 }

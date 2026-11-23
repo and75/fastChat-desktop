@@ -43,9 +43,11 @@ describe('calibrazione', () => {
     expect((await suggestFor({ ...deps(16), embeddingModel: () => 'manca' }, 'otto'))?.numCtx).toBe(32768)
     expect((await suggestFor({ ...deps(16), embeddingModel: () => 'otto' }, 'otto'))?.numCtx).toBe(32768)
     // solo CPU: tutta la RAM. 16 − 5 − 1,5 = 9,5 GB → 77k → 65.536
-    expect((await suggestFor({ ...deps(16), modelSetting: async () => ({ numGpu: 0, failedNumCtx: null }) }, 'otto'))?.numCtx).toBe(65536)
+    expect((await suggestFor({ ...deps(16), modelSetting: async () => ({ numGpu: 0, failedNumCtx: null, ctxLimit: null }) }, 'otto'))?.numCtx).toBe(65536)
+    // il test sul modello ha misurato un tetto di 8.192: non lo si supera
+    expect((await suggestFor({ ...deps(16), modelSetting: async () => ({ numGpu: null, failedNumCtx: null, ctxLimit: 8192 }) }, 'otto'))?.numCtx).toBe(8192)
     // con 32.768 il caricamento è già fallito: si suggerisce la metà
-    expect((await suggestFor({ ...deps(16), modelSetting: async () => ({ numGpu: null, failedNumCtx: 32768 }) }, 'otto'))?.numCtx).toBe(16384)
+    expect((await suggestFor({ ...deps(16), modelSetting: async () => ({ numGpu: null, failedNumCtx: 32768, ctxLimit: null }) }, 'otto'))?.numCtx).toBe(16384)
   })
 
   it('suggestFor: null se il modello non esiste o Ollama non risponde', async () => {

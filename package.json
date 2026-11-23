@@ -21,6 +21,7 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "packs:build": "node scripts/build-packs.mjs",
+    "bench": "tsx --tsconfig tsconfig.node.json bench/cli.ts",
     "dist": "electron-builder",
     "test:e2e": "npm run build && node e2e/run.mjs",
     "dist:mac": "electron-builder --mac",
@@ -39,6 +40,7 @@
     "remark-math": "6.0.0"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@tailwindcss/vite": "4.3.4",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
@@ -56,9 +58,11 @@
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "4.0.1",
     "tailwindcss": "4.3.4",
+    "tsx": "^4.23.15",
     "typescript": "5.9.3",
     "vite": "8.3.5",
     "vitest": "5.1.0",
+    "zod": "^4.6.7",
     "zustand": "5.0.16"
   },
   "homepage": "https://github.com/and75/fastChat-desktop",

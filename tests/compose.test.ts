@@ -1,8 +1,12 @@
-// Composizione del contesto. La prima parte è la «fotografia» dei messaggi inviati oggi a Ollama: deve restare
-// identica finché l'ordine è A (tutto nel system prompt), qualunque cosa cambi sotto.
+// Composizione del contesto: l'ordine dei blocchi è uno solo (ruolo, situazione, riassunto, memoria, tecniche,
+// esempi, documenti, regole scelte, stile, piano, promemoria, domanda), ogni blocco ha il suo titolo, e i tre
+// ordini (A, B, C) scelgono soltanto quanti blocchi stanno nel messaggio di sistema.
 import { describe, expect, it } from 'vitest'
 import { composeChat } from '../src/main/chat'
-import { buildExecutePrompt, buildPlanPrompt, buildSystemPrompt } from '../src/shared/prompt'
+import { buildStyleSection, demoteHeadings, executeSection, planSection, situationSection } from '../src/shared/prompt'
+import { GENERALIST_ROLE, rolePrompt, roleReminderText, type Role } from '../src/shared/roles'
+import { buildBehaviorSection, buildExamplesSection, buildKnowledgeSection } from '../src/shared/knowledge'
+import { buildMemorySection } from '../src/shared/memory'
 import type { Conversation, Message } from '../src/shared/types'
 
 const conv = {
@@ -23,18 +27,23 @@ const conv = {
 const msg = (id: string, role: 'user' | 'assistant', content: string): Message => ({ id, role, content }) as Message
 const history = [msg('m1', 'user', 'ciao'), msg('m2', 'assistant', 'salve'), msg('m3', 'user', 'cos\'è 1/2?'), msg('m4', 'assistant', 'La metà.'), msg('m5', 'user', 'e 3/4?')]
 
-const MEMORY = '# Dalla conversazione\n[1] numeratore sopra'
+const MEMORY = '# Messaggi precedenti\n[1] numeratore sopra'
 const KNOWLEDGE = '# Base di conoscenza\n[manuale, p. 2] Tre quarti sono 0,75.'
-const BASE = '# Ruolo\nSei un tutor\n\n# Contesto\nLezione di matematica\n\n# Obiettivi\nFar capire le frazioni\n\n# Vincoli\nSolo italiano\n\n# Stile della risposta\n'
+// Il Generalista con un Brief non convertito: i quattro campi sono la situazione, con i titoli scesi di un livello.
+const BASE = '# Situazione\n## Ruolo\nSei un tutor\n\n## Contesto\nLezione di matematica\n\n## Obiettivi\nFar capire le frazioni\n\n## Vincoli\nSolo italiano'
 const SUMMARY = '# Riassunto della conversazione finora\nAbbiamo parlato di numeratore e denominatore.'
+const STYLE = buildStyleSection('concise')
+/** L'apertura del prompt di una conversazione: ruolo (qui assente) e situazione. Lo stile non ne fa parte. */
+const head = (c: Conversation): string => rolePrompt(GENERALIST_ROLE, c).system
 
-describe('fotografia della composizione attuale (ordine A)', () => {
-  it('brief, stile, riassunto, memoria e documenti nel system prompt; poi i messaggi non riassunti', () => {
-    const base = buildSystemPrompt(conv, conv.style)
-    expect(base.startsWith(BASE)).toBe(true)
+describe('composizione con l\'ordine A: tutti i blocchi nel messaggio di sistema', () => {
+  it('situazione, riassunto, memoria, documenti e stile nel system prompt, in quest\'ordine; poi i messaggi non riassunti', () => {
+    const base = head(conv)
+    expect(base).toBe(BASE)
+    expect(STYLE.startsWith('# Stile della risposta\n')).toBe(true)
     const { messages, parts, dropped } = composeChat(conv, history, base, null, { memory: MEMORY, memoryCount: 1, knowledge: KNOWLEDGE, knowledgeCount: 1 })
     expect(messages).toEqual([
-      { role: 'system', content: [base, SUMMARY, MEMORY, KNOWLEDGE].join('\n\n') },
+      { role: 'system', content: [base, SUMMARY, MEMORY, KNOWLEDGE, STYLE].join('\n\n') },
       { role: 'user', content: 'cos\'è 1/2?' },
       { role: 'assistant', content: 'La metà.' },
       { role: 'user', content: 'e 3/4?' }
@@ -51,26 +60,31 @@ describe('fotografia della composizione attuale (ordine A)', () => {
     ])
   })
 
-  it('senza estratti: system = brief + riassunto; riassunto non allineato: tutto lo storico, senza riassunto', () => {
-    const base = buildSystemPrompt(conv, conv.style)
-    expect(composeChat(conv, history, base).messages[0]).toEqual({ role: 'system', content: [base, SUMMARY].join('\n\n') })
+  it('senza estratti: system = situazione + riassunto + stile; riassunto non allineato: tutto lo storico, senza riassunto', () => {
+    const base = head(conv)
+    expect(composeChat(conv, history, base).messages[0]).toEqual({ role: 'system', content: [base, SUMMARY, STYLE].join('\n\n') })
     const stale = composeChat({ ...conv, summaryUpTo: 'eliminato' }, history, base)
-    expect(stale.messages[0]).toEqual({ role: 'system', content: base })
+    expect(stale.messages[0]).toEqual({ role: 'system', content: [base, STYLE].join('\n\n') })
     expect(stale.messages).toHaveLength(6)
   })
 
-  it('senza brief né estratti non c\'è messaggio system; con i soli documenti il system è la loro sezione', () => {
+  it('senza situazione, stile né estratti non c\'è messaggio system; con i soli documenti il system è la loro sezione', () => {
     const empty = { ...conv, role: '', context: '', goals: '', constraints: '', style: 'normal', summary: null, summaryUpTo: null } as Conversation
-    expect(composeChat(empty, history, buildSystemPrompt(empty, empty.style)).messages[0]).toEqual({ role: 'user', content: 'ciao' })
+    expect(head(empty)).toBe('')
+    expect(composeChat(empty, history, head(empty)).messages[0]).toEqual({ role: 'user', content: 'ciao' })
     expect(composeChat(empty, history, '', null, { knowledge: KNOWLEDGE }).messages[0]).toEqual({ role: 'system', content: KNOWLEDGE })
   })
 
-  it('piano ed esecuzione: le istruzioni del piano seguono il brief, prima del riassunto e degli estratti', () => {
-    const plan = buildPlanPrompt(conv, conv.style)
-    expect(composeChat(conv, history, plan, null, { knowledge: KNOWLEDGE }).messages[0].content).toBe([plan, SUMMARY, KNOWLEDGE].join('\n\n'))
-    const exec = buildExecutePrompt(conv, [{ title: 'Definisci', detail: '' }], conv.style)
+  it('piano ed esecuzione: il blocco del piano è l\'ultimo, dopo riassunto, estratti e stile', () => {
+    const base = head(conv)
+    const plan = planSection()
+    expect(plan.startsWith('# Modalità piano\n')).toBe(true)
+    expect(plan).toContain('- Il piano deve rispettare tutto ciò che precede.')
+    expect(composeChat(conv, history, base, null, { knowledge: KNOWLEDGE }, { order: 'A', reminder: false, plan }).messages[0].content).toBe([base, SUMMARY, KNOWLEDGE, STYLE, plan].join('\n\n'))
+    const exec = executeSection([{ title: 'Definisci', detail: '' }])
+    expect(exec.startsWith('# Piano approvato\n')).toBe(true)
     expect(exec).toContain('1. Definisci')
-    expect(composeChat(conv, history, exec).messages[0].content).toBe([exec, SUMMARY].join('\n\n'))
+    expect(composeChat(conv, history, base, null, {}, { order: 'A', reminder: false, plan: exec }).messages[0].content).toBe([base, SUMMARY, STYLE, exec].join('\n\n'))
   })
 })
 
@@ -79,59 +93,70 @@ import { composeMessages, normalizeContextSettings, resolveContext, roleReminder
 import { DEFAULT_CONTEXT_SETTINGS } from '../src/shared/types'
 
 describe('ordini del contesto', () => {
-  const base = buildSystemPrompt(conv, conv.style)
+  const base = head(conv)
   const extras = { memory: MEMORY, memoryCount: 1, knowledge: KNOWLEDGE, knowledgeCount: 1 }
-  const instructions = buildSystemPrompt({ ...conv, context: '' }, conv.style)
-  const situation = '# Contesto\nLezione di matematica'
-  const REMINDER = '[Promemoria del ruolo: Sei un tutor]'
+  const REMINDER = '# Promemoria\nSei un tutor'
 
-  it('B: il system prompt è fisso (brief + riassunto); memoria e documenti viaggiano con la domanda, in un solo messaggio', () => {
+  it('B: il system prompt è fisso (situazione + riassunto); memoria, documenti e stile viaggiano con la domanda, in un solo messaggio', () => {
     const { messages, parts } = composeChat(conv, history, base, null, extras, { order: 'B', reminder: false })
     expect(messages).toEqual([
       { role: 'system', content: [base, SUMMARY].join('\n\n') },
       { role: 'user', content: 'cos\'è 1/2?' },
       { role: 'assistant', content: 'La metà.' },
-      { role: 'user', content: [MEMORY, KNOWLEDGE, '# Domanda\ne 3/4?'].join('\n\n') }
+      { role: 'user', content: [MEMORY, KNOWLEDGE, STYLE, '# Domanda\ne 3/4?'].join('\n\n') }
     ])
     // le voci del monitor sono le stesse dell'ordine A: la posizione non cambia i token
     expect(parts).toEqual(composeChat(conv, history, base, null, extras).parts)
   })
 
-  it('C: nel system prompt restano situazione e riassunto; le istruzioni vanno con la domanda, prima degli estratti', () => {
-    const { messages } = composeChat(conv, history, base, null, extras, { order: 'C', reminder: false, instructions, situation })
-    expect(messages[0]).toEqual({ role: 'system', content: [situation, SUMMARY].join('\n\n') })
-    expect(messages.at(-1)).toEqual({ role: 'user', content: [instructions, MEMORY, KNOWLEDGE, '# Domanda\ne 3/4?'].join('\n\n') })
-    expect(instructions).not.toContain('Lezione di matematica')
+  it('C: nessun messaggio di sistema; tutti i blocchi, nella stessa sequenza, viaggiano con la domanda', () => {
+    const { messages, parts } = composeChat(conv, history, base, null, extras, { order: 'C', reminder: false })
+    expect(messages).toEqual([
+      { role: 'user', content: 'cos\'è 1/2?' },
+      { role: 'assistant', content: 'La metà.' },
+      { role: 'user', content: [base, SUMMARY, MEMORY, KNOWLEDGE, STYLE, '# Domanda\ne 3/4?'].join('\n\n') }
+    ])
+    expect(parts).toEqual(composeChat(conv, history, base, null, extras).parts)
   })
 
-  it('stesso contenuto nei tre ordini; mai due messaggi utente di seguito', () => {
+  it('stesso contenuto nei tre ordini; mai due messaggi utente di seguito; il promemoria con C non si applica', () => {
     for (const order of ['A', 'B', 'C'] as const) {
-      const { messages } = composeChat(conv, history, base, null, extras, { order, reminder: true, instructions, situation })
+      // come fa la chat: l'impostazione «promemoria acceso» passa da resolveContext, che con C lo spegne
+      const { reminder } = resolveContext({ ...DEFAULT_CONTEXT_SETTINGS, order, reminder: 'on' })
+      const { messages } = composeChat(conv, history, base, null, extras, { order, reminder })
       const all = messages.map((m) => m.content).join('\n')
-      for (const piece of ['Sei un tutor', 'Lezione di matematica', 'Far capire le frazioni', 'Solo italiano', SUMMARY, MEMORY, KNOWLEDGE, REMINDER, 'e 3/4?']) expect(all).toContain(piece)
+      for (const piece of ['Sei un tutor', 'Lezione di matematica', 'Far capire le frazioni', 'Solo italiano', SUMMARY, MEMORY, KNOWLEDGE, STYLE, 'e 3/4?']) expect(all).toContain(piece)
+      expect(all.includes(REMINDER)).toBe(order !== 'C')
       messages.forEach((m, i) => expect(i > 0 && m.role === 'user' && messages[i - 1].role === 'user').toBe(false))
-      expect(messages.filter((m) => m.role === 'system')).toHaveLength(1)
+      expect(messages.filter((m) => m.role === 'system')).toHaveLength(order === 'C' ? 0 : 1)
     }
   })
 
-  it('promemoria: una riga dal ruolo, accanto alla domanda in ogni ordine; assente se il ruolo è vuoto; ha la sua voce nel monitor', () => {
+  it('promemoria: una riga dal ruolo sotto il suo titolo, accanto alla domanda; assente se il ruolo è vuoto; ha la sua voce nel monitor', () => {
     expect(roleReminder('Sei un tutor\nseconda riga')).toBe(REMINDER)
     expect(roleReminder('')).toBe('')
     expect(roleReminder('x '.repeat(300)).length).toBeLessThan(280)
     const a = composeChat(conv, history, base, null, extras, { order: 'A', reminder: true })
-    expect(a.messages[0].content).toBe([base, SUMMARY, MEMORY, KNOWLEDGE].join('\n\n'))
+    expect(a.messages[0].content).toBe([base, SUMMARY, MEMORY, KNOWLEDGE, STYLE].join('\n\n'))
     expect(a.messages.at(-1)!.content).toBe(`${REMINDER}\n\n# Domanda\ne 3/4?`)
     expect(a.parts.map((p) => p.key)).toEqual(['instructions', 'style', 'summary', 'memory', 'knowledge', 'reminder', 'history', 'question'])
     const b = composeChat(conv, history, base, null, extras, { order: 'B', reminder: true })
-    expect(b.messages.at(-1)!.content).toBe([MEMORY, KNOWLEDGE, REMINDER, '# Domanda\ne 3/4?'].join('\n\n'))
+    expect(b.messages.at(-1)!.content).toBe([MEMORY, KNOWLEDGE, STYLE, REMINDER, '# Domanda\ne 3/4?'].join('\n\n'))
+    // ruolo vuoto: nessun promemoria; con la domanda resta solo lo stile
     const none = composeChat({ ...conv, role: '' } as Conversation, history, base, null, {}, { order: 'B', reminder: true })
-    expect(none.messages.at(-1)!.content).toBe('e 3/4?')
+    expect(none.messages.at(-1)!.content).toBe(`${STYLE}\n\n# Domanda\ne 3/4?`)
   })
 
-  it('senza nulla da accompagnare la domanda resta com\'è; senza domanda il materiale torna nel system prompt', () => {
-    expect(composeChat(conv, history, base, null, {}, { order: 'B', reminder: false }).messages.at(-1)).toEqual({ role: 'user', content: 'e 3/4?' })
-    const only = composeMessages({ order: 'B', base: 'BASE', blocks: [{ key: 'knowledge', text: KNOWLEDGE }], history: [{ role: 'assistant', content: 'x' }], limits: { maxMessages: 10, maxTokens: 4096, reserveTokens: 1024 } })
+  it('senza nulla da accompagnare la domanda resta com\'è, senza titolo; senza domanda il materiale torna nel system prompt', () => {
+    const plain = { ...conv, style: 'normal' } as Conversation
+    expect(composeChat(plain, history, base, null, {}, { order: 'B', reminder: false }).messages.at(-1)).toEqual({ role: 'user', content: 'e 3/4?' })
+    // ordine A senza promemoria: la domanda è sola nel suo messaggio, il confine del messaggio la delimita già
+    expect(composeChat(conv, history, base, null, extras, { order: 'A', reminder: false }).messages.at(-1)).toEqual({ role: 'user', content: 'e 3/4?' })
+    const limits = { maxMessages: 10, maxTokens: 4096, reserveTokens: 1024 }
+    const only = composeMessages({ order: 'B', base: 'BASE', blocks: [{ key: 'knowledge', text: KNOWLEDGE }], history: [{ role: 'assistant', content: 'x' }], limits })
     expect(only.messages).toEqual([{ role: 'system', content: `BASE\n\n${KNOWLEDGE}` }, { role: 'assistant', content: 'x' }])
+    const onlyC = composeMessages({ order: 'C', base: 'BASE', summary: 'già detto', blocks: [{ key: 'knowledge', text: KNOWLEDGE }], history: [{ role: 'assistant', content: 'x' }], limits })
+    expect(onlyC.messages).toEqual([{ role: 'system', content: `BASE\n\n# Riassunto della conversazione finora\ngià detto\n\n${KNOWLEDGE}` }, { role: 'assistant', content: 'x' }])
   })
 
   it('riuso: con B, tra due domande il prefisso resta identico fino alla domanda precedente esclusa; con A cambia dal system prompt', () => {
@@ -215,17 +240,110 @@ describe('posto «sistema» del modello, dal template di Ollama', () => {
   })
 })
 
+// ------------------------------------------------------------------ l'ordine fisso dei blocchi
+import { BLOCK_SEQUENCE } from '../src/shared/compose'
+
+describe('ordine fisso dei blocchi: stessa sequenza e stessi titoli in ogni ordine del contesto', () => {
+  const role: Role = {
+    instructions: 'Sei un tutor di matematica.',
+    reminder: 'Resta un tutor paziente.',
+    parameters: [
+      { id: 'tono', section: 'style', label: 'Tono', type: 'single', default: 'breve', options: [{ id: 'breve', label: 'Breve', instruction: 'Rispondi in breve.' }] },
+      { id: 'tecniche', section: 'rules', label: 'Tecniche', type: 'multi', default: ['passi'], options: [{ id: 'passi', label: 'Passi', instruction: 'Procedi per passi.' }] }
+    ]
+  }
+  // la situazione dell'utente ha titoli suoi; un esempio contiene titoli dentro un blocco di codice
+  const withRole = { ...conv, role: '', context: '', goals: '', constraints: '', situation: '# Chi sono\nUno studente.\n\n## Cosa studio\nLe frazioni.', style: 'extended' } as Conversation
+  const extras = {
+    memory: buildMemorySection([{ text: 'Utente: numeratore sopra', role: 'user', position: 1 }], 4),
+    behavior: buildBehaviorSection([{ title: 'Tecniche', locator: 'Tecniche › Spiegare', text: 'Parti da un esempio concreto.', documentId: 'd1' }]),
+    examples: buildExamplesSection([{ title: 'Esempi', locator: 'Esempi › Una frazione', text: 'Richiesta: cos\'è 1/2?\n\nRisposta:\n```\n# Identità\nLa metà.\n```', documentId: 'd2' }]),
+    knowledge: buildKnowledgeSection([{ title: 'manuale', locator: 'p. 2', text: 'Tre quarti sono 0,75.', documentId: 'd3', whole: true }])
+  }
+  /** I titoli di primo livello (fuori dai blocchi di codice) di ciò che è partito, saltando lo storico. */
+  const titles = (messages: Array<{ role: string; content: string }>): string[] => {
+    const sent = [...messages.filter((m) => m.role === 'system'), messages.at(-1)!]
+    let fenced = false
+    return sent
+      .flatMap((m) => m.content.split('\n'))
+      .filter((line) => {
+        if (/^\s*```/.test(line)) fenced = !fenced
+        return !fenced && /^# /.test(line)
+      })
+  }
+  const ALL = [
+    '# Ruolo',
+    '# Situazione',
+    '# Riassunto della conversazione finora',
+    '# Messaggi precedenti',
+    '# Come lavorare',
+    '# Esempi',
+    '# Base di conoscenza',
+    '# Regole di questa conversazione',
+    '# Stile della risposta',
+    '# Modalità piano',
+    '# Promemoria',
+    '# Domanda'
+  ]
+
+  it('dodici blocchi, un titolo ciascuno, sempre nello stesso ordine', () => {
+    expect(BLOCK_SEQUENCE).toEqual(['instructions', 'situation', 'summary', 'memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan', 'reminder', 'question'])
+    expect(ALL).toHaveLength(BLOCK_SEQUENCE.length)
+    const { system, rules } = rolePrompt(role, withRole)
+    expect(system).toBe('# Ruolo\nSei un tutor di matematica.\n\n# Situazione\n## Chi sono\nUno studente.\n\n### Cosa studio\nLe frazioni.')
+    expect(rules).toBe("# Regole di questa conversazione\nLe ha scelte l'utente per questa conversazione: applicale sempre.\n- Tono: Rispondi in breve.\n- Tecniche: Procedi per passi.")
+    // ogni esempio ha sopra il suo titolo, come le tecniche
+    expect(extras.examples).toContain('\n\n## Una frazione\n\n<esempio>\n')
+    expect(extras.behavior).toContain('\n\n## Spiegare\n\n')
+    for (const order of ['A', 'B', 'C'] as const) {
+      const { reminder } = resolveContext({ ...DEFAULT_CONTEXT_SETTINGS, order, reminder: 'on' })
+      const { messages } = composeChat(withRole, history, system, null, extras, { order, reminder, rules, plan: planSection(), reminderText: roleReminderText(role) })
+      // con C il promemoria non si applica: tutto è già accanto alla domanda
+      expect(titles(messages), order).toEqual(order === 'C' ? ALL.filter((t) => t !== '# Promemoria') : ALL)
+      // dove viaggiano: A tutto nel sistema fino al piano; B ruolo, situazione e riassunto; C niente
+      const inSystem = titles(messages.filter((m) => m.role === 'system').concat({ role: 'user', content: '' }))
+      expect(inSystem, order).toEqual(order === 'A' ? ALL.slice(0, 10) : order === 'B' ? ALL.slice(0, 3) : [])
+    }
+  })
+
+  it('piano approvato: stesso posto della richiesta di piano', () => {
+    const { system, rules } = rolePrompt(role, withRole)
+    const { messages } = composeChat(withRole, history, system, null, extras, { order: 'B', reminder: false, rules, plan: executeSection([{ title: 'Definisci', detail: '' }]) })
+    expect(titles(messages)).toEqual(ALL.filter((t) => t !== '# Promemoria').map((t) => (t === '# Modalità piano' ? '# Piano approvato' : t)))
+  })
+
+  it('i titoli scritti dall\'utente scendono di un livello, fuori dai blocchi di codice', () => {
+    expect(demoteHeadings('# Uno\ntesto\n## Due\n##### Cinque\n###### Sei\n#senza spazio')).toBe('## Uno\ntesto\n### Due\n###### Cinque\n###### Sei\n#senza spazio')
+    expect(demoteHeadings('prima\n```md\n# dentro il codice\n```\n# fuori')).toBe('prima\n```md\n# dentro il codice\n```\n## fuori')
+    expect(demoteHeadings('~~~\n# dentro\n~~~\n# fuori')).toBe('~~~\n# dentro\n~~~\n## fuori')
+    // la situazione ha sempre il suo titolo, anche senza ruolo; vuota non lascia un titolo da solo
+    expect(situationSection('  # Contesto\nLezione  ')).toBe('# Situazione\n## Contesto\nLezione')
+    expect(situationSection('Testo semplice')).toBe('# Situazione\nTesto semplice')
+    expect(situationSection('   ')).toBe('')
+    expect(situationSection(null)).toBe('')
+  })
+})
+
 // ------------------------------------------------------------------ disegno dell'ordine
 import { orderLayout, reminderApplies } from '../src/shared/compose'
 
 describe('disegno dell\'ordine e promemoria', () => {
   it('lo schema corrisponde a ciò che il compositore produce', () => {
-    expect(orderLayout('A', false)).toEqual({ system: ['instructions', 'summary', 'memory', 'behavior', 'examples', 'knowledge'], conversation: ['history'], user: ['question'], reuse: 'none' })
-    expect(orderLayout('B', true)).toEqual({ system: ['instructions', 'summary'], conversation: ['history'], user: ['memory', 'behavior', 'examples', 'knowledge', 'reminder', 'question'], reuse: 'previous' })
-    expect(orderLayout('C', true)).toEqual({ system: ['situation', 'summary'], conversation: ['history'], user: ['instructions', 'memory', 'behavior', 'examples', 'knowledge', 'question'], reuse: 'previous' })
+    const opening = ['instructions', 'situation', 'summary']
+    const rest = ['memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan']
+    expect(orderLayout('A', false)).toEqual({ system: [...opening, ...rest], conversation: ['history'], user: ['question'], reuse: 'none' })
+    expect(orderLayout('A', true)).toEqual({ system: [...opening, ...rest], conversation: ['history'], user: ['reminder', 'question'], reuse: 'none' })
+    expect(orderLayout('B', true)).toEqual({ system: opening, conversation: ['history'], user: [...rest, 'reminder', 'question'], reuse: 'previous' })
+    // C: nessun blocco nel sistema, e nessun promemoria
+    expect(orderLayout('C', true)).toEqual({ system: [], conversation: ['history'], user: [...opening, ...rest, 'question'], reuse: 'previous' })
+    // in ogni ordine i blocchi, letti in fila, sono la sequenza fissa
+    for (const order of ['A', 'B', 'C'] as const) {
+      const l = orderLayout(order, true)
+      expect([...l.system, ...l.user], order).toEqual(BLOCK_SEQUENCE.filter((b) => order !== 'C' || b !== 'reminder'))
+    }
   })
 
-  it('con l\'ordine C il promemoria non si applica: le istruzioni sono già accanto alla domanda', () => {
+  it('con l\'ordine C il promemoria non si applica: tutti i blocchi sono già accanto alla domanda', () => {
     expect(reminderApplies('A')).toBe(true)
     expect(reminderApplies('C')).toBe(false)
     expect(resolveContext({ ...DEFAULT_CONTEXT_SETTINGS, order: 'C', reminder: 'on' })).toMatchObject({ order: 'C', reminder: false })

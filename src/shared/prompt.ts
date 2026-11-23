@@ -42,10 +42,28 @@ export function buildSystemPrompt(brief: Brief, style?: ResponseStyle | null): s
 export const briefToSituation = (brief: Partial<Brief>): string =>
   buildSystemPrompt({ role: brief.role ?? '', context: brief.context ?? '', goals: brief.goals ?? '', constraints: brief.constraints ?? '' })
 
-/** La situazione nel prompt. Con il titolo quando segue le istruzioni di un ruolo, così le due voci restano distinte. */
-export function situationSection(situation: string | null | undefined, titled: boolean): string {
+/**
+ * Abbassa di un livello i titoli Markdown di un testo scritto dall'utente (fuori dai blocchi di codice): nel
+ * prompt il primo livello (`#`) è riservato ai blocchi dell'app.
+ */
+export function demoteHeadings(text: string): string {
+  let fenced = false
+  return text
+    .split('\n')
+    .map((line) => {
+      if (/^\s*(```|~~~)/.test(line)) fenced = !fenced
+      return !fenced && /^#{1,5} /.test(line) ? `#${line}` : line
+    })
+    .join('\n')
+}
+
+/**
+ * La situazione nel prompt: sempre sotto il suo titolo, per ogni ruolo e per il Generalista. I titoli che
+ * l'utente ha scritto nel testo (anche quelli del vecchio Brief: Ruolo, Contesto…) scendono di un livello.
+ */
+export function situationSection(situation: string | null | undefined): string {
   const text = situation?.trim() ?? ''
-  return text && titled ? `# ${t('prompt.situationHeading')}\n${text}` : text
+  return text ? `# ${t('prompt.situationHeading')}\n${demoteHeadings(text)}` : ''
 }
 
 export interface RolePromptInput {
@@ -56,18 +74,24 @@ export interface RolePromptInput {
 }
 
 /**
- * System prompt di una conversazione: istruzioni del ruolo, situazione, stile. Per il Generalista la situazione
- * entra senza titolo: una conversazione nata con il Brief riceve lo stesso prompt di prima.
+ * Ciò che una conversazione scrive di fisso nel prompt, in un testo solo: istruzioni del ruolo, situazione,
+ * stile. Serve alle stime dello spazio; nel prompt vero i blocchi seguono l'ordine fisso (vedi compose.ts).
  */
 export function buildRolePrompt({ instructions = '', situation, style }: RolePromptInput): string {
-  return joinSections(instructions.trim(), situationSection(situation, !!instructions.trim()), buildStyleSection(style))
+  return joinSections(instructions.trim(), situationSection(situation), buildStyleSection(style))
 }
 
+/** Blocco «Modalità piano»: chiede un piano al posto della risposta. */
+export const planSection = (): string => t('prompt.plan')
+
+/** Blocco «Piano approvato»: il piano che l'utente ha approvato, da eseguire. */
+export const executeSection = (steps: PlanStep[]): string => t('prompt.execute', { plan: formatPlan(steps) })
+
 /** System prompt per la fase di pianificazione, a partire da quello della conversazione. */
-export const planPrompt = (system: string): string => joinSections(system, t('prompt.plan'))
+export const planPrompt = (system: string): string => joinSections(system, planSection())
 
 /** System prompt per l'esecuzione: quello della conversazione più il piano approvato dall'utente. */
-export const executePrompt = (system: string, steps: PlanStep[]): string => joinSections(system, t('prompt.execute', { plan: formatPlan(steps) }))
+export const executePrompt = (system: string, steps: PlanStep[]): string => joinSections(system, executeSection(steps))
 
 export interface HistoryMessage {
   /** Id del messaggio (serve per sapere quali sono coperti dal riassunto). */
@@ -449,7 +473,7 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage {
   const estimateAll = systemTokens + historyTokens
   // Voci: il system prompt diviso tra istruzioni, stile e riassunto; poi lo storico non riassunto.
   const instructions = role ? role.instructions.trim() : buildSystemPrompt(input.brief, null)
-  const situation = role ? situationSection(role.situation, !!instructions) : ''
+  const situation = role ? situationSection(role.situation) : ''
   const style = buildStyleSection(input.style)
   const summaryText = aligned ? withSummary('', input.summary) : ''
   const [ti, ts, tsum, tsit] = splitTokens(systemTokens, [instructions, style, summaryText, situation])

@@ -77,7 +77,12 @@ export interface SuggestNumCtxInput {
   cpuOnly?: boolean
   /** Memoria con cui il caricamento di questo modello è già fallito per memoria insufficiente, se è successo. */
   failedNumCtx?: number | null
+  /** Tetto misurato dal test sul modello (un gradino sotto l'ultima memoria che non rallenta); assente = nessuno. */
+  ctxLimit?: number | null
 }
+
+/** Il valore entro il tetto del test, se c'è (mai sotto il minimo utilizzabile). */
+const withinLimit = (numCtx: number, ctxLimit: number | null | undefined): number => (ctxLimit ? Math.min(numCtx, Math.max(ctxLimit, MIN_NUM_CTX)) : numCtx)
 
 /** Potenza di 2 minore o uguale a n (n ≥ 1). */
 export const floorPow2 = (n: number): number => 2 ** Math.floor(Math.log2(n))
@@ -117,16 +122,20 @@ export function ramNumCtx(input: SuggestNumCtxInput): number | null {
 }
 
 /**
- * Memoria della conversazione suggerita per questa macchina e questo modello, in token: ciò che sta in memoria,
- * tra il minimo consigliato (minNumCtx) e il massimo del modello. Se un caricamento è già fallito per memoria
- * insufficiente, il suggerimento resta sotto quel valore (la metà). null se mancano RAM o modello.
+ * Memoria della conversazione suggerita per questa macchina e questo modello, in token. Tre limiti, vale il più
+ * basso:
+ * 1. ciò che sta in memoria (il calcolo), tra il minimo consigliato (minNumCtx) e il massimo del modello;
+ * 2. il tetto misurato dal test sul modello, se è stato fatto: oltre, la risposta rallenta;
+ * 3. se un caricamento è già fallito per memoria insufficiente, la metà di quel valore.
+ * null se mancano RAM o modello.
  */
 export function suggestNumCtx(input: SuggestNumCtxInput): number | null {
   const tokens = ramNumCtx(input)
   if (tokens == null) return null
   const fits = Math.max(MIN_NUM_CTX, minNumCtx(input.caps), Math.min(tokens, maxNumCtx(input.caps)))
+  const measured = withinLimit(fits, input.ctxLimit)
   const safe = input.failedNumCtx ? (reducedNumCtx(input.failedNumCtx) ?? MIN_NUM_CTX) : null
-  return safe != null ? Math.min(fits, safe) : fits
+  return safe != null ? Math.min(measured, safe) : measured
 }
 
 /** Vero se il suggerimento è stato abbassato perché un caricamento è già fallito per memoria insufficiente. */
@@ -134,6 +143,13 @@ export function suggestionLowered(input: SuggestNumCtxInput): boolean {
   const withoutFailure = suggestNumCtx({ ...input, failedNumCtx: null })
   const actual = suggestNumCtx(input)
   return withoutFailure != null && actual != null && actual < withoutFailure
+}
+
+/** Vero se il suggerimento è stato abbassato dal tetto del test sul modello: il calcolo da solo darebbe di più. */
+export function suggestionLimited(input: SuggestNumCtxInput): boolean {
+  const free = suggestNumCtx({ ...input, ctxLimit: null, failedNumCtx: null })
+  const limited = suggestNumCtx({ ...input, failedNumCtx: null })
+  return free != null && limited != null && limited < free
 }
 
 /** Gigabyte con al massimo un decimale, nella lingua attiva («1,5 GB»). */
@@ -152,7 +168,10 @@ export function describeSuggestion(input: SuggestNumCtxInput): string {
     margin: gb(MEMORY_MARGIN_BYTES),
     kv: input.system.kvCacheType === 'f16' ? '.' : t('suggest.kv', { type: input.system.kvCacheType })
   })
-  return suggestionLowered(input) ? computed + t('suggest.failed', { tokens: fmtInt(input.failedNumCtx!) }) : computed
+  // Se il test sul modello o un caricamento fallito hanno abbassato il valore, lo si dice: il calcolo darebbe di più.
+  const limited = suggestionLimited(input) ? t('suggest.limited', { limit: fmtInt(suggestNumCtx({ ...input, failedNumCtx: null })!) }) : ''
+  const failed = suggestionLowered(input) ? t('suggest.failed', { tokens: fmtInt(input.failedNumCtx!) }) : ''
+  return computed + limited + failed
 }
 
 /**
@@ -189,7 +208,7 @@ export interface SuggestedSettings {
  */
 export function suggestSettings(input: SuggestNumCtxInput): SuggestedSettings {
   const { caps } = input
-  const numCtx = suggestNumCtx(input) ?? Math.min(caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx, maxNumCtx(caps))
+  const numCtx = suggestNumCtx(input) ?? withinLimit(Math.min(caps?.defaults.numCtx ?? OLLAMA_DEFAULTS.numCtx, maxNumCtx(caps)), input.ctxLimit)
   return {
     temperature: caps?.defaults.temperature ?? OLLAMA_DEFAULTS.temperature,
     topP: caps?.defaults.topP ?? OLLAMA_DEFAULTS.topP,

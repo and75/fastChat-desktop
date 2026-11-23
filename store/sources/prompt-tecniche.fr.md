@@ -1,60 +1,83 @@
 # Techniques de prompt
 
-## Les parties d'un bon prompt
+## À quoi ressemble un bon prompt
 
-Un prompt complet répond à cinq questions, dans cet ordre : qui le modèle doit être, ce qu'il sait de la situation, ce qu'il doit faire, sous quelle forme il doit répondre, ce qu'il ne doit pas faire.
+Un bon prompt se lit comme la consigne que tu donnerais à un collègue compétent mais qui vient d'arriver : il ne connaît ni le projet, ni le public, ni ce que tu entends par « bien fait ». Si un collègue devait te poser des questions en le lisant, le modèle restera lui aussi dans le doute.
 
-Elles ne sont pas toujours toutes nécessaires. Une tâche simple ne demande que la tâche et le format. Plus la tâche est délicate, plus il faut de parties.
+Écris en phrases complètes et naturelles, en paragraphes courts : un par sujet. Un prompt n'est pas un formulaire à remplir : n'utilise pas d'étiquettes comme « Rôle : » ou « Tâche : » devant chaque ligne. N'utilise des titres ou des sections que lorsque le prompt est long et comporte des parties vraiment différentes.
 
-## Rôle
+## Dire l'objectif et le contexte
 
-Une ligne qui dit qui est le modèle et pour qui il écrit : « Tu es un relecteur technique. Tu écris pour des développeurs expérimentés. » Le rôle fixe le vocabulaire et le niveau de détail mieux qu'une liste d'adjectifs.
+Dis ce que tu veux obtenir et à quoi servira le résultat : qui le lira, où il sera utilisé, ce qui est déjà décidé. Le modèle n'a pas ces informations si tu ne les lui donnes pas, et sans elles il donne une réponse générique.
 
-## Contexte
+Demande l'action, pas un avis : « Réécris cet e-mail sur un ton plus cordial » obtient l'e-mail réécrit ; « Pourrais-tu suggérer comment l'améliorer ? » obtient des suggestions.
 
-Seulement les faits qui changent la réponse : les données de départ, ce qui est déjà décidé, qui lira. Trois phrases pertinentes valent mieux qu'une page générale.
+## Expliquer le pourquoi des règles
 
-Le texte à traiter se sépare des instructions par un délimiteur clair, par exemple trois guillemets ou un titre.
+Une règle accompagnée de sa raison fonctionne mieux qu'un ordre sec, parce que le modèle comprend le but et l'applique aussi aux cas que tu n'as pas prévus. « N'utilise pas de points de suspension » est un ordre. « Le texte sera lu à voix haute par une synthèse vocale, qui ne sait pas prononcer les points de suspension : évite-les » est une règle que le modèle sait étendre.
 
-## Tâche
+Évite les majuscules et les tons péremptoires (« IMPORTANT », « TU DOIS ABSOLUMENT ») : ils ne rendent pas la règle plus claire et poussent le modèle à l'appliquer même là où elle ne sert pas.
 
-Un verbe précis et un objet : résume, compare, corrige, extrais, classe. « Qu'en penses-tu ? » n'est pas une tâche.
+## Donner un rôle
 
-Une tâche par prompt. S'il y en a deux, elles vont dans deux étapes numérotées ou dans deux prompts.
+Une phrase au début, qui dit qui est le modèle et pour qui il écrit, oriente le vocabulaire et le niveau de détail : « Tu es un relecteur technique et tu écris pour des développeurs expérimentés ». Une phrase suffit : le rôle donne le ton, il ne remplace pas les instructions.
 
-## Format
+## Décrire la forme de la réponse
 
-Dire la forme exacte : liste, tableau, JSON avec le nom des champs, nombre de phrases, langue. Si la réponse est lue par un programme, le format est la partie la plus importante du prompt.
+Dis à quoi ressemble la réponse que tu attends : une liste, un tableau, un seul paragraphe, combien de phrases, dans quelle langue. Décris ce que tu veux plutôt que ce que tu ne veux pas : « Réponds en paragraphes de prose continue » fonctionne mieux que « N'utilise pas de listes ».
 
-Un exemple de la réponse attendue fixe le format mieux qu'une description. Un ou deux suffisent : avec trop d'exemples, le modèle copie aussi les détails sans importance.
+Si le modèle a tendance à faire des réponses longues ou courtes, dis-le : « réponds en trois phrases », « explique en détail chaque étape ».
 
-## Contraintes
+## Utiliser des exemples
 
-Écrire ce qu'il faut faire plutôt que ce qu'il faut éviter : « Réponds seulement par le nom de la catégorie » fonctionne mieux que « N'ajoute pas d'explications ».
+Les exemples servent quand la réponse doit avoir un format précis : un ou plusieurs exemples le fixent alors mieux qu'une description. Dans une tâche créative, comme un récit, un exemple pousse le modèle à le recopier : mieux vaut décrire le ton et le style avec des mots. Trois à cinq exemples suffisent presque toujours. Ils doivent être différents les uns des autres : s'ils se ressemblent trop, le modèle copie aussi les détails sans rapport. Ils doivent aussi avoir tous la même structure, parce que c'est elle que le modèle imite. Un exemple montre une réponse réussie : les cas limites, comme un texte trop court ou une donnée absente, se traitent par une règle, pas par un exemple de réponse ratée.
 
-Dire quoi faire quand l'information manque : « Si le texte ne le dit pas, écris "non indiqué" ». Sans cette ligne, le modèle invente.
+Garde les exemples séparés des instructions, par exemple chacun entre `<exemple>` et `</exemple>`.
 
-## Pour les petits modèles
+## Séparer les données des instructions
 
-Une instruction par ligne, à l'impératif. Pas de préambule, pas de formules de politesse, pas d'instruction répétée.
+Quand le prompt contient un texte sur lequel travailler (un document, un e-mail, un avis), sépare-le des instructions par un délimiteur clair : des balises comme `<document>` et `</document>`, ou bien un titre. Choisis un seul type de délimiteur et utilise-le toujours de la même façon.
 
-Peu d'instructions : au-delà de huit ou neuf, les dernières pèsent plus que les premières et celles du milieu se perdent.
+Le délimiteur ne sert que s'il y a un texte à traiter. Un prompt qui demande d'écrire quelque chose à partir de rien, comme un récit ou un e-mail, n'en a pas besoin.
 
-L'instruction la plus importante se place à la fin, près du texte à traiter.
+Si le texte est long, place-le d'abord et la question ensuite, introduite par une phrase de liaison : « D'après le document ci-dessus, … ».
 
-Des mots simples, et toujours les mêmes : si une chose s'appelle « catégorie », elle ne devient pas « classe » deux lignes plus loin.
+## Dire quoi faire quand l'information manque
 
-## Pour les grands modèles
+Sans indication, le modèle a tendance à inventer. Écris ce qu'il doit faire si la donnée n'est pas là : « Si le texte ne le dit pas, écris "non indiqué" ».
 
-Ils supportent des instructions développées. Il est utile d'expliquer la raison d'une contrainte et de donner des critères de qualité : « la réponse est bonne si un client la comprend sans connaître le produit ».
+## Diviser les tâches complexes
+
+Un prompt qui demande beaucoup de choses à la fois donne de moins bons résultats que plusieurs prompts simples. Si le travail comporte plusieurs phases (par exemple extraire les données puis écrire un résumé), mieux vaut un prompt par phase, en utilisant la réponse du premier comme entrée du second.
+
+## Écrire pour un petit modèle
+
+Un petit modèle, ou un modèle utilisé sans raisonnement, travaille comme un collaborateur débutant : il a besoin d'instructions explicites et d'une seule tâche par prompt. Les règles les plus importantes (rôle, contraintes, format) vont au début.
+
+## Écrire pour un grand modèle
+
+Un grand modèle, ou un modèle avec le raisonnement activé, travaille comme un collègue expérimenté : on peut lui donner l'objectif et les critères de qualité, en lui laissant les détails. Inutile de lui demander de « raisonner étape par étape » dans la réponse : il le fait déjà de lui-même.
+
+## Améliorer un prompt qui ne fonctionne pas
+
+Un prompt se met au point par essais. Lis la réponse, repère ce qui ne va pas et change une chose à la fois :
+
+- reformule la demande avec d'autres mots ;
+- ajoute le contexte ou l'exemple qui manquait ;
+- change l'ordre des parties (exemples, contexte, question) ;
+- transforme la tâche en une tâche équivalente plus simple, par exemple un choix entre des options au lieu d'une question ouverte.
 
 ## Comment reconnaître un prompt faible
 
-Par ordre de gravité :
+Pour trouver les problèmes d'un prompt, pose-toi ces questions dans l'ordre, de la plus importante à la moins importante. Ce sont des questions pour toi : dans la réponse, ne les recopie pas, mais cite les mots du prompt qui créent le problème et dis quel effet ils ont.
 
-1. La tâche manque, ou il y en a plusieurs.
-2. Le format de la réponse manque.
-3. Il manque ce qu'il faut faire quand l'information est absente.
-4. Le contexte est absent, ou bien long et général.
-5. Les instructions se contredisent ou se répètent.
-6. Le texte à traiter est mêlé aux instructions.
+1. Comprend-on ce que le modèle doit produire ? Est-ce une seule tâche ?
+2. Sait-on à quoi sert le résultat et qui le lira ?
+3. La forme de la réponse est-elle indiquée ?
+4. Si le prompt travaille sur un texte ou des données : est-il dit quoi faire quand une information manque ?
+5. Les règles ont-elles une raison ? Se contredisent-elles ?
+6. Le texte à traiter est-il séparé des instructions ?
+
+## Sources
+
+Synthèse des guides officiels de prompt engineering d'Anthropic (« Prompting best practices »), de Google (« Prompt design strategies » et la documentation de Gemma) et d'OpenAI (« Prompt engineering »).

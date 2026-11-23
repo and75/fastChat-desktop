@@ -126,7 +126,7 @@ Une base liée à une conversation a un **usage** (`conversation_bases.purpose`)
 |---|---|---|---|
 | `documents` (par défaut) | Les contenus à partir desquels répondre | Seulement quand l'interrupteur ou le bouton livre est activé, comme toujours | Oui |
 | `behavior` | Techniques et règles du rôle | Toujours | Non |
-| `examples` | Réponses bien faites à imiter, chacune entre `<exemple>…</exemple>` | Toujours | Non |
+| `examples` | Réponses bien faites à imiter, chacune entre `<exemple>…</exemple>` | Toujours : les deux exemples les plus proches de la question | Non |
 
 - Les documents ajoutés à la conversation sont toujours `documents`.
 - Les bases d'un rôle arrivent avec leur usage, déclaré par le rôle. Dans l'onglet « Connaissances », elles sont à
@@ -224,9 +224,12 @@ budget = min( part × num_ctx ,
 
 ## 6. Dans le prompt
 
-- Section `# Base de connaissances`, dans le prompt système après les instructions du rôle, la situation, le
-  style, le résumé et la mémoire de la conversation. Avant elle viennent, s'il y en a, les techniques
-  (`# Comment travailler`) et les exemples (`# Exemples`) du rôle.
+- Section `# Base de connaissances`, à sa place dans l'ordre fixe des blocs : rôle, situation, résumé, mémoire
+  (`# Messages précédents`), techniques (`# Comment travailler`, chaque section avec son titre `## …`),
+  exemples (`# Exemples`, chacun avec son titre), **base de connaissances**, règles choisies
+  (`# Règles de cette conversation`), style de la réponse, plan, rappel, question. Le rôle peut déclarer, pour chaque base, les sections qui dépendent des
+  choix (`sections` dans `role.json`) : une technique ou un exemple qui contredit les choix n'entre pas dans
+  le prompt.
 - Introduction pour « documents complets » ou pour « extraits » (et une phrase de liaison quand il y a les deux) ;
   puis chaque entrée sous la forme `[Titre, p. N]` suivie du texte.
 - Instructions au modèle : répondre à partir des documents quand ils concernent la question, citer la source

@@ -17,6 +17,8 @@ import type {
   ResponseStyle,
   BasePurpose,
   ContextOrder,
+  ContextRequest,
+  ContextRun,
   SystemSlot,
   RoleOrigin,
   RoleMeta
@@ -157,6 +159,8 @@ export const modelSettings = sqliteTable('model_settings', {
   digest: text('digest'),
   numGpu: integer('num_gpu'),
   benchmark: text('benchmark', { mode: 'json' }).$type<BenchmarkRun[]>(),
+  contextRuns: text('context_runs', { mode: 'json' }).$type<ContextRun[]>(),
+  ctxLimit: integer('ctx_limit'),
   benchmarkedAt: integer('benchmarked_at'),
   gpuAvailable: integer('gpu_available', { mode: 'boolean' }),
   dismissed: integer('dismissed', { mode: 'boolean' }).notNull().default(false),
@@ -326,6 +330,8 @@ export const contextCalls = sqliteTable(
     aborted: integer('aborted', { mode: 'boolean' }).notNull().default(false),
     error: text('error'),
     contextOrder: text('context_order').$type<ContextOrder>(),
+    /** I messaggi inviati (solo chiamate di chat recenti): per vedere il prompt esatto partito verso il modello. */
+    request: text('request', { mode: 'json' }).$type<ContextRequest>(),
     reminder: integer('reminder', { mode: 'boolean' }),
     firstTokenMs: integer('first_token_ms'),
     thinkingTokens: integer('thinking_tokens'),

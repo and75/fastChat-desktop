@@ -71,6 +71,7 @@ const api: Api = {
   context: {
     calls: (id) => invoke(IPC.contextCalls, id),
     exportCsv: (id) => invoke(IPC.contextExport, id),
+    request: (callId) => invoke(IPC.contextRequest, callId),
     onCall: (cb) => subscribe<ContextCall>(IPC.contextCallAdded, cb)
   },
   ollamaEnv: {

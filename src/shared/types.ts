@@ -383,6 +383,13 @@ export interface ContextPart {
   count?: number
 }
 
+/** Ciò che è partito davvero verso il modello in una chiamata di chat: i messaggi, così come sono stati inviati. */
+export interface ContextRequest {
+  messages: Array<{ role: string; content: string }>
+  options?: Record<string, unknown>
+  think?: boolean | null
+}
+
 /** Una chiamata a Ollama: cosa è partito (stima per voce) e cosa ha contato Ollama. */
 export interface ContextCall {
   id: string
@@ -414,10 +421,12 @@ export interface ContextCall {
   thinkingTokens: number | null
   /** Come il modello tratta il messaggio di sistema. */
   systemSlot: SystemSlot | null
+  /** Il testo inviato è conservato (solo chiamate di chat recenti): si legge con `context.request`. */
+  hasRequest: boolean
   createdAt: number
 }
 
-export type ContextCallInput = Omit<ContextCall, 'id' | 'createdAt'>
+export type ContextCallInput = Omit<ContextCall, 'id' | 'createdAt' | 'hasRequest'> & { request?: ContextRequest | null }
 
 export interface MemoryStatus {
   /** Pezzi indicizzati con il modello di embedding attuale. */
@@ -512,6 +521,19 @@ export interface BenchmarkRun {
   error?: string
 }
 
+/** Una prova del test con una data memoria (num_ctx), nella configurazione CPU/GPU scelta. */
+export interface ContextRun {
+  numCtx: number
+  promptTps: number | null
+  evalTps: number | null
+  loadMs: number | null
+  /** Quota del modello finita davvero in GPU (da /api/ps), 0–1. */
+  vramShare: number | null
+  /** La velocità regge e il modello resta dov'era: la memoria è utilizzabile senza penalità. */
+  ok: boolean
+  error?: string
+}
+
 /** Configurazione di esecuzione di un modello, salvata nel database. */
 export interface ModelSetting {
   model: string
@@ -520,6 +542,10 @@ export interface ModelSetting {
   /** Layer sulla GPU inviati come num_gpu; null = automatico (decide Ollama). */
   numGpu: number | null
   benchmark: BenchmarkRun[] | null
+  /** Seconda fase del test: la stessa prova con memorie crescenti, fino alla prima che rallenta. */
+  contextRuns: ContextRun[] | null
+  /** Tetto della memoria suggerita, dal test: un gradino sotto l'ultima memoria che regge. null = nessun tetto. */
+  ctxLimit: number | null
   benchmarkedAt: number | null
   /** Ollama vede una GPU utilizzabile per questo modello (dal test); null = non si sa. */
   gpuAvailable: boolean | null
@@ -775,6 +801,7 @@ export const IPC = {
   knowledgeProgress: 'knowledge:progress',
   contextCalls: 'context:calls',
   contextExport: 'context:export',
+  contextRequest: 'context:request',
   /** Evento main → renderer: nuova chiamata registrata. */
   contextCallAdded: 'context:call-added',
   modelSettingsList: 'model-settings:list',

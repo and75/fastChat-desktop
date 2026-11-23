@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { createChatService } from '../src/main/chat'
 import { callInput, createContextLog } from '../src/main/contextLog'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { addContextCall, addMessage, CONTEXT_CALLS_KEPT, createConversation, listContextCalls, listMessages, updateConversation } from '../src/main/db/repo'
+import { addContextCall, addMessage, CONTEXT_CALLS_KEPT, CONTEXT_REQUESTS_KEPT, createConversation, getContextRequest, listContextCalls, listMessages, updateConversation } from '../src/main/db/repo'
 import { createMemory } from '../src/main/memory'
 import { createOllamaClient } from '../src/main/ollama'
 import { createSummarizer } from '../src/main/summary'
@@ -148,6 +148,27 @@ describe('monitor del contesto: registro', () => {
     const calls = await listContextCalls(h.db, conv.id)
     expect(calls).toHaveLength(CONTEXT_CALLS_KEPT)
     expect(calls[0].note).toBe(String(CONTEXT_CALLS_KEPT + 4))
+  })
+
+  it('prompt inviato: il testo si conserva per le ultime chiamate e si rilegge; l\'elenco porta solo le misure', async () => {
+    const conv = await createConversation(h.db, { model: 'chat' })
+    const start = { conversationId: conv.id, kind: 'chat' as const, model: 'chat', numCtx: 2048, parts: [] }
+    const sent = (i: number) => ({ messages: [{ role: 'system', content: `Sei un esperto ${i}` }, { role: 'user', content: 'ciao' }], options: { temperature: 0.6 }, think: true })
+    // una chiamata senza testo (titolo, embedding) resta com'era
+    const plain = await addContextCall(h.db, callInput(start, null))
+    expect(plain.hasRequest).toBe(false)
+    expect(await getContextRequest(h.db, plain.id)).toBeNull()
+    const ids: string[] = []
+    for (let i = 0; i < CONTEXT_REQUESTS_KEPT + 3; i++) ids.push((await addContextCall(h.db, callInput({ ...start, request: sent(i) }, null))).id)
+    // l'ultima si rilegge così com'è partita
+    expect(await getContextRequest(h.db, ids.at(-1)!)).toEqual(sent(CONTEXT_REQUESTS_KEPT + 2))
+    // delle più vecchie restano le misure, non il testo
+    expect(await getContextRequest(h.db, ids[0])).toBeNull()
+    const calls = await listContextCalls(h.db, conv.id)
+    expect(calls.filter((c) => c.hasRequest)).toHaveLength(CONTEXT_REQUESTS_KEPT)
+    expect(calls.find((c) => c.id === ids[0])?.hasRequest).toBe(false)
+    expect(calls.every((c) => !('request' in c))).toBe(true)
+    expect(await getContextRequest(h.db, 'nope')).toBeNull()
   })
 
   it('chat con riassunto e memoria: risposta, ricerca e indicizzazione registrate con voci e conteggi di Ollama', async () => {

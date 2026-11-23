@@ -14,7 +14,7 @@ import { SourceError, type KnowledgeSource } from '../src/main/knowledge/source'
 import { BUILTIN_SOURCES } from '../src/main/knowledge/sources'
 import { textSource } from '../src/main/knowledge/sources/text'
 import { createOllamaClient } from '../src/main/ollama'
-import { buildDocumentChunks, buildKnowledgeSection, splitKnowledgeBudget, ftsQuery, hybridScores, knowledgeBudget, normalizeText, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs, wholeDocuments } from '../src/shared/knowledge'
+import { buildBehaviorSection, buildDocumentChunks, buildExamplesSection, buildKnowledgeSection, splitKnowledgeBudget, ftsQuery, hybridScores, knowledgeBudget, normalizeText, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs, wholeDocuments } from '../src/shared/knowledge'
 import { fromBuffer } from '../src/shared/memory'
 import type { Conversation, KnowledgeProgress, StreamEvent } from '../src/shared/types'
 import { fakeEmbedding, startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
@@ -123,6 +123,30 @@ describe('base di conoscenza: funzioni pure', () => {
     expect(s.indexOf('[Manuale, Uso]')).toBeLessThan(s.indexOf('[Manuale]\nPrimo.'))
     expect(s.indexOf('[Manuale]\nPrimo.')).toBeLessThan(s.indexOf('[Rapporto, p. 3]'))
     expect(buildKnowledgeSection([])).toBe('')
+    // tecniche del ruolo: ogni sezione con il suo titolo (l'ultimo della catena), scritto una volta sola
+    const technique = (part: number, locator: string | null, text: string) => ({ title: 'Tecniche', locator, text, documentId: 'd', part })
+    expect(
+      buildBehaviorSection([
+        technique(0, 'Tecniche di prompt › Dare un ruolo', 'Una frase che dice chi è il modello.'),
+        technique(1, 'Tecniche di prompt › Prompt deboli', 'Dal più grave al meno grave:'),
+        technique(2, 'Tecniche di prompt › Prompt deboli', '1. Manca il compito.'),
+        technique(3, null, 'Testo senza titolo.')
+      ])
+    ).toBe(
+      '# Come lavorare\n\nConoscenze del tuo mestiere. Usale per lavorare; non citarle e non presentarle come fonti.\n\n' +
+        '## Dare un ruolo\n\nUna frase che dice chi è il modello.\n\n## Prompt deboli\n\nDal più grave al meno grave:\n\n1. Manca il compito.\n\nTesto senza titolo.'
+    )
+    // esempi del ruolo: ognuno sotto il suo titolo (l'ultimo della catena), poi tra i tag; senza locatore, solo i tag
+    expect(
+      buildExamplesSection([
+        { title: 'Esempi', locator: 'Prompt deboli e migliorati › Quando l\'obiettivo non è chiaro', text: 'Richiesta: aiutami.\n\nRisposta: per chi è?', documentId: 'e', part: 0 },
+        { title: 'Esempi', locator: null, text: 'Richiesta: ciao.\n\nRisposta: ciao.', documentId: 'e', part: 1 }
+      ])
+    ).toBe(
+      '# Esempi\n\nEsempi di risposte ben fatte, ciascuno tra i tag <esempio>. Imitane struttura e stile; non copiarne il contenuto e non citarli.\n\n' +
+        '## Quando l\'obiettivo non è chiaro\n\n<esempio>\nRichiesta: aiutami.\n\nRisposta: per chi è?\n</esempio>\n\n<esempio>\nRichiesta: ciao.\n\nRisposta: ciao.\n</esempio>'
+    )
+    expect(buildExamplesSection([])).toBe('')
     expect(toKnowledgeRefs([], picked).map((r) => [r.documentId, r.score, r.locator])).toEqual([
       ['d2', 0.9, 'p. 3'],
       ['d1', 0.7, 'Uso'],
@@ -134,7 +158,10 @@ describe('base di conoscenza: funzioni pure', () => {
       { documentId: 'w', title: 'Fattura 1', locator: 'p. 2', part: 1, text: 'Seconda pagina.', whole: true }
     ]
     const mixed = buildKnowledgeSection([...picked, ...whole])
-    expect(mixed).toMatch(/^# Base di conoscenza\n\nDocumenti forniti dall'utente, riportati per intero \(1 in tutto\)/)
+    // l'introduzione non dice di chi sono i documenti: possono venire dall'utente o dal ruolo
+    expect(mixed).toMatch(/^# Base di conoscenza\n\nDocumenti di questa conversazione, riportati per intero \(1 in tutto\)/)
+    expect(s).toMatch(/^# Base di conoscenza\n\nEstratti dei documenti di questa conversazione, scelti/)
+    expect(mixed + s).not.toContain("forniti dall'utente")
     expect(mixed.indexOf('[Fattura 1, p. 2]')).toBeLessThan(mixed.indexOf('Seguono estratti di altri documenti'))
     expect(mixed.indexOf('Seguono estratti')).toBeLessThan(mixed.indexOf('[Manuale, Uso]'))
     expect(toKnowledgeRefs(whole, picked).slice(0, 2)).toMatchObject([{ documentId: 'w', whole: true, score: 1, locator: null }, { documentId: 'd2' }])
@@ -492,8 +519,8 @@ describe('base di conoscenza: nella chat', () => {
     // indicizzazione della memoria (1) + domanda (1): la domanda non viene ricalcolata per i documenti
     expect(embeds.filter((q) => ((q.body as { input: string[] }).input ?? []).some((x) => x.includes('budget in euro'))).length).toBe(1)
     const system = chatBodyFor('Il budget in euro per persona del viaggio basta per le quattordici persone assunte a Torino?').messages[0].content
-    expect(system.indexOf('# Riassunto della conversazione finora')).toBeLessThan(system.indexOf('# Dalla conversazione precedente'))
-    expect(system.indexOf('# Dalla conversazione precedente')).toBeLessThan(system.indexOf('# Base di conoscenza'))
+    expect(system.indexOf('# Riassunto della conversazione finora')).toBeLessThan(system.indexOf('# Messaggi precedenti'))
+    expect(system.indexOf('# Messaggi precedenti')).toBeLessThan(system.indexOf('# Base di conoscenza'))
     const answer = (await listMessages(h.db, conv.id)).at(-1)!
     expect(answer.knowledgeRefs?.length).toBeGreaterThan(0)
     expect(answer.memoryRefs?.length).toBeGreaterThan(0)
@@ -949,7 +976,7 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
 
     const q = { text: 'come si usa?', vector: async () => fakeEmbedding('come si usa?') }
     const all = await k.recallAll(conv, q, { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: true }, 4)
-    expect(all.behavior).toEqual({ section: '# Come lavorare\n\nTecniche e regole del tuo ruolo. Applicale nella risposta; non citarle e non presentarle come fonti.\n\nRispondi con passi numerati e nomi esatti dei pulsanti.', count: 1 })
+    expect(all.behavior).toEqual({ section: '# Come lavorare\n\nConoscenze del tuo mestiere. Usale per lavorare; non citarle e non presentarle come fonti.\n\nRispondi con passi numerati e nomi esatti dei pulsanti.', count: 1 })
     expect(all.examples.section).toBe('# Esempi\n\nEsempi di risposte ben fatte, ciascuno tra i tag <esempio>. Imitane struttura e stile; non copiarne il contenuto e non citarli.\n\n<esempio>\nDomanda: come creo una base?\nRisposta: 1. Apri Impostazioni. 2. Scegli Conoscenza.\n</esempio>')
     expect(all.documents.section).toMatch(/^# Base di conoscenza/)
     // le fonti sono solo quelle dei documenti
@@ -962,6 +989,39 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
     expect(off.examples.count).toBe(1)
     // recall (solo documenti) non vede le basi del ruolo
     expect((await k.recall(conv, q, 2000, 4)).section).toBe(all.documents.section)
+
+    // con molti esempi partono solo i due più vicini alla domanda, non tutti: la base può crescere
+    writeFileSync(
+      join(dir, 'altri.md'),
+      ['## Racconto', 'Domanda: scrivi un racconto sul calcio.\nRisposta: un racconto breve sul calcio per ragazzi.', '## Fattura', 'Domanda: estrai importo e fornitore dalla fattura.\nRisposta: importo e fornitore della fattura in JSON.', '## Recensione', 'Domanda: classifica la recensione del prodotto.\nRisposta: positiva, negativa o neutra.'].join('\n\n')
+    )
+    await k.addFiles(examples, [join(dir, 'altri.md')])
+    await k.wait(examples.id)
+    const about = (text: string) => ({ text, vector: async () => fakeEmbedding(text) })
+    const story = await k.recallAll(conv, about('mi serve un racconto sul calcio'), { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false }, 4)
+    expect(story.examples.count).toBe(2)
+    expect(story.examples.section).toContain('un racconto breve sul calcio')
+    // ogni esempio porta il titolo della sua sezione
+    expect(story.examples.section).toContain('\n\n## Racconto\n\n<esempio>\nDomanda: scrivi un racconto sul calcio.')
+    expect(story.examples.section).not.toContain('classifica la recensione')
+    const invoice = await k.recallAll(conv, about('estrai i dati della fattura del fornitore'), { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false }, 4)
+    expect(invoice.examples.count).toBe(2)
+    expect(invoice.examples.section).toContain('importo e fornitore della fattura')
+    // le tecniche non si scelgono: restano intere
+    expect(story.behavior.count).toBe(1)
+    // se la domanda non si può confrontare (manca il modello di embedding) partono tutti, come prima
+    const blind = await k.recallAll(conv, { text: 'racconto', vector: async () => { throw new Error('nessun modello') } }, { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false }, 4)
+    expect(blind.examples.count).toBe(4)
+    // regole di sezione del ruolo (per id del pacchetto della base): un esempio escluso dalle scelte non parte anche
+    // se è il più vicino alla domanda; uno fissato parte comunque, e prende uno dei due posti
+    h.raw.prepare('update knowledge_bases set package_id = ? where id = ?').run('kb.es', examples.id)
+    const ruled = await k.recallAll(conv, about('mi serve un racconto sul calcio'), { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false, sections: { 'kb.es': { skip: ['racconto'], pin: ['recensione'] } } }, 4)
+    expect(ruled.examples.count).toBe(2)
+    expect(ruled.examples.section).not.toContain('un racconto breve sul calcio')
+    expect(ruled.examples.section).toContain('classifica la recensione')
+    // le regole di un'altra base non toccano questa
+    const other = await k.recallAll(conv, about('mi serve un racconto sul calcio'), { total: 2000, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, documents: false, sections: { 'kb.altra': { skip: ['racconto'], pin: [] } } }, 4)
+    expect(other.examples.section).toContain('un racconto breve sul calcio')
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -978,7 +1038,7 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
     const { streamId } = await chat.send({}, conv.id, 'come creo una base?')
     await chat.wait(streamId)
     const body = fake.requests.filter((r) => r.path === '/api/chat').at(-2)!.body as { messages: Array<{ role: string; content: string }> }
-    expect(body.messages[0]).toEqual({ role: 'system', content: '# Come lavorare\n\nTecniche e regole del tuo ruolo. Applicale nella risposta; non citarle e non presentarle come fonti.\n\nRispondi con passi numerati.' })
+    expect(body.messages[0]).toEqual({ role: 'system', content: '# Come lavorare\n\nConoscenze del tuo mestiere. Usale per lavorare; non citarle e non presentarle come fonti.\n\nRispondi con passi numerati.' })
     const answer = (await listMessages(h.db, conv.id)).at(-1)!
     expect(answer.knowledgeRefs ?? []).toEqual([])
     const call = (await listContextCalls(h.db, conv.id)).find((c) => c.kind === 'chat')!
@@ -994,7 +1054,8 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
   it('basi del ruolo: si collegano alla conversazione con il loro tipo; quelle che mancano sono segnalate; nel prompt nei tre ordini', async () => {
     const { knowledge: k } = services()
     const dir = mkdtempSync(join(tmpdir(), 'fastchat-role-'))
-    writeFileSync(join(dir, 'tecniche.md'), 'Rispondi con passi numerati.')
+    // due sezioni: la seconda il ruolo non la vuole nel prompt
+    writeFileSync(join(dir, 'tecniche.md'), '## Passi\n\nRispondi con passi numerati.\n\n## Fonti\n\nManuale del tutor, edizione 2020.')
     const behavior = await k.createBase('Tecniche')
     await k.addFiles(behavior, [join(dir, 'tecniche.md')])
     await k.wait(behavior.id)
@@ -1011,13 +1072,16 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
       origin: 'package',
       definition: {
         instructions: 'Sei un tutor.',
+        parameters: [{ id: 'tono', section: 'style', label: 'Tono', type: 'single', default: 'breve', options: [{ id: 'breve', label: 'Breve', instruction: 'Rispondi in breve.' }] }],
         bases: [
-          { id: 'kb.tecniche', purpose: 'behavior' },
+          { id: 'kb.tecniche', purpose: 'behavior', sections: [{ title: 'Fonti', skip: true }] },
           { id: 'kb.esempi', purpose: 'examples' }
         ]
       }
     })
-    const section = '# Come lavorare\n\nTecniche e regole del tuo ruolo. Applicale nella risposta; non citarle e non presentarle come fonti.\n\nRispondi con passi numerati.'
+    const section = '# Come lavorare\n\nConoscenze del tuo mestiere. Usale per lavorare; non citarle e non presentarle come fonti.\n\n## Passi\n\nRispondi con passi numerati.'
+    // le regole scelte dall'utente: dopo il materiale, ogni voce con il nome del suo parametro
+    const rules = '# Regole di questa conversazione\nLe ha scelte l\'utente per questa conversazione: applicale sempre.\n- Tono: Rispondi in breve.'
     const sent = async (order: 'A' | 'B' | 'C'): Promise<Array<{ role: string; content: string }>> => {
       const conv = await createConversation(h.db, { model: 'chat', roleId: 'tutor', situation: 'Lezione di matematica', knowledge: false })
       expect(await k.linkRole(conv)).toEqual(['kb.esempi'])
@@ -1038,17 +1102,15 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
       return (fake.requests.filter((r) => r.path === '/api/chat').at(-2)!.body as { messages: Array<{ role: string; content: string }> }).messages
     }
     expect(await sent('A')).toEqual([
-      { role: 'system', content: `Sei un tutor.\n\n# Situazione\nLezione di matematica\n\n${section}` },
+      { role: 'system', content: `# Ruolo\nSei un tutor.\n\n# Situazione\nLezione di matematica\n\n${section}\n\n${rules}` },
       { role: 'user', content: 'come sommo due frazioni?' }
     ])
     expect(await sent('B')).toEqual([
-      { role: 'system', content: 'Sei un tutor.\n\n# Situazione\nLezione di matematica' },
-      { role: 'user', content: `${section}\n\n# Domanda\ncome sommo due frazioni?` }
+      { role: 'system', content: '# Ruolo\nSei un tutor.\n\n# Situazione\nLezione di matematica' },
+      { role: 'user', content: `${section}\n\n${rules}\n\n# Domanda\ncome sommo due frazioni?` }
     ])
-    expect(await sent('C')).toEqual([
-      { role: 'system', content: '# Situazione\nLezione di matematica' },
-      { role: 'user', content: `Sei un tutor.\n\n${section}\n\n# Domanda\ncome sommo due frazioni?` }
-    ])
+    // C: nessun messaggio di sistema; la stessa sequenza, tutta con la domanda
+    expect(await sent('C')).toEqual([{ role: 'user', content: `# Ruolo\nSei un tutor.\n\n# Situazione\nLezione di matematica\n\n${section}\n\n${rules}\n\n# Domanda\ncome sommo due frazioni?` }])
     // Il Generalista non ha basi sue.
     expect(await k.linkRole(await createConversation(h.db, { model: 'chat' }))).toEqual([])
     rmSync(dir, { recursive: true, force: true })

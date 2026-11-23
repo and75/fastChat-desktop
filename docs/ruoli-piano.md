@@ -341,7 +341,7 @@ installare ruoli dallo Store nella propria lingua.
 | 2.5 Interfaccia dei ruoli | Fatto · Controllo 3 superato | «Parla con un…», parametri, Situazione, cambio di ruolo, basi del ruolo; due ruoli in bozza in `packs/` |
 | 2.6 Store | Fatto | Ruoli installabili e rimovibili dallo Store; varianti per lingua, ricerca in tutte le lingue, filtro; migrazione 0017 |
 | 2.7 Contenuti | Fatto | Testi dei ruoli e basi in italiano e francese, Guida in tre lingue; pacchetti definitivi; `forRole` nel catalogo |
-| 2.8 Chiusura | Fatto | Verifica completa, app impacchettata, documentazione; ⏸ Controllo 5 |
+| 2.8 Chiusura | Fatto | Verifica completa, app impacchettata, documentazione; rilasciata nella 0.2.0 |
 
 Scelte fatte nel passo 2.1:
 
@@ -494,7 +494,7 @@ Passo 2.7, fatto (Controllo 4 superato: testi riletti e approvati dall'utente):
 - Rispetto a `ruoli.md` §7: le opzioni di «Prima di rispondere» non impostano più il ragionamento (già acceso
   nella mente di partenza); le frasi di «Stile del prompt» dicono «nei prompt che scrivi».
 
-Passo 2.8, fatto (⏸ Controllo 5: l'utente guarda il risultato; nessuna release senza la sua conferma):
+Passo 2.8, fatto (Controllo 5 superato; release 0.2.0 chiesta dall'utente):
 
 - **Verifica**: typecheck, 358 test unitari, end-to-end (59 passi), anteprime rigenerate, installer Linux con
   `npm run test:packaged` (ora controlla anche i ruoli inclusi, le loro basi e il catalogo dello Store).
@@ -573,6 +573,10 @@ Nato da tre problemi segnalati dall'utente: ricerca nei documenti lentissima con
 messaggi di stato sbagliati durante l'attesa, Ollama che non risponde senza errori né log. Più un errore di
 memoria insufficiente con un modello da 12B.
 
+Il branch contiene anche i 24 commit di `claude/contesto-parametri-effettivi` successivi alla 0.2.0 (Esperto di
+prompt engineering, ordine fisso dei blocchi del prompt, banco di prova dei ruoli, test sul modello con il tetto
+della memoria, registro del prompt inviato): erano rimasti fuori da `main` e sono stati uniti qui il 23 novembre.
+
 **Fatto** (test unitari ed end-to-end verdi con l'Ollama finto; **mai provato con un Ollama vero**):
 
 - **Registro diagnostico** (`src/main/log.ts`): `userData/logs/fastchat.log`, a rotazione. Ogni chiamata a Ollama,
@@ -591,9 +595,10 @@ memoria insufficiente con un modello da 12B.
 - **Memoria della conversazione suggerita** (`src/shared/settings.ts`): non più «tutta la RAM meno i pesi», che
   con un modello dal contesto dichiarato di un milione di token suggeriva 131.072 token e faceva fallire il
   caricamento in GPU. Ora: memoria utilizzabile (metà della RAM sui PC, due terzi con memoria unificata, tutta se
-  solo CPU) − modello − modello di embedding − 1,5 GB di margine, ÷ costo per token. Il modello ricorda con quale
-  memoria il caricamento è fallito (`model_settings.failed_num_ctx`, migrazione 0018) e da lì si suggerisce la
-  metà. Sull'errore: «Riprova con memoria a N token».
+  solo CPU) − modello − modello di embedding − 1,5 GB di margine, ÷ costo per token. Sul calcolo valgono altri due
+  limiti, e conta il più basso: il tetto misurato dal test sul modello (`ctx_limit`, dall'altro branch) e la memoria
+  con cui il caricamento è già fallito (`model_settings.failed_num_ctx`, migrazione 0020: da lì si suggerisce la
+  metà). Sull'errore: «Riprova con memoria a N token».
 - **Documentazione** nelle tre lingue e Guida rigenerata. I testi inglesi e francesi nuovi **non sono stati
   riletti** dall'utente.
 
@@ -616,6 +621,107 @@ memoria insufficiente con un modello da 12B.
 
 ## Cosa resta aperto dopo la seconda consegna
 
+- **Contratto del prompt** (dopo la 0.2.0, non rilasciato; regola chiesta dall'utente, valida per ogni ruolo):
+  ordine fisso dei blocchi, un titolo per blocco, una competenza per blocco (`docs/ruoli.md` §5.1,
+  `BLOCK_SEQUENCE` in `src/shared/compose.ts`). Stile e piano ora seguono le regole scelte; la situazione ha
+  sempre il titolo e i titoli dell'utente scendono di un livello; promemoria con titolo; ogni regola porta il
+  nome del parametro; ogni esempio il suo titolo. Gli ordini A/B/C hanno la stessa sequenza (C: tutto con la
+  domanda, nessun messaggio di sistema). Testi fissi dell'app riscritti perché ciascuno resti nella sua
+  competenza. **La validazione dei ruoli prima dello Store non si fa qui: sarà un'altra app** (decisione
+  dell'utente); restano quindi possibili opzioni incompatibili scelte insieme (es. nell'Assistente «Primo
+  utilizzo» con «Risposta breve»).
+- **Struttura del prompt** (dopo la 0.2.0, non rilasciato; chiesta dall'utente leggendo un prompt inviato): il
+  primo blocco non aveva titoli e tecniche ed esempi contraddicevano le scelte. Ora: `# Ruolo` in apertura,
+  `# Regole di questa conversazione` (le opzioni scelte, con la frase di precedenza) come ultimo blocco prima
+  della domanda, sezioni delle basi condizionate dalle scelte (`sections` in `role.json`: `when`, `unless`,
+  `skip`, `pin`), «Fonti» mai inviata. Testi cambiati: «regola di questa conversazione» al posto di «qui
+  sotto», sezione piccoli/grandi divisa in due, opzione «passi» resa condizionale. Limiti noti: gli esempi
+  spiegano sempre «in tre punti con parole semplici» anche con spiegazione «nessuna» o «tecnica»; due opzioni
+  incompatibili restano selezionabili. Non ancora misurato sul banco.
+- **Prime prove vere del banco** (gemma4:e4b, giudice Opus): voto 3,9–4,3 su 5, circa 100 s per caso a 11
+  token/s con il modello tutto in GPU (la memoria grande non è la causa della lentezza; il ragionamento è il
+  60–70% dei token). Ciclo di correzione, 2 giri: nessuna variante tenuta, guadagni (+2, +4 punti) dentro il
+  rumore (4 punti con 5 casi e una ripetizione): usare `--reps 3`. Applicate a mano, approvate dall'utente, tre
+  correzioni ai documenti segnalate dal correttore: l'elenco «prompt debole» è ora in forma di domande (il
+  modello lo ricopiava come diagnosi), l'esempio del prompt di sistema non ha più il segnaposto dell'articolo,
+  l'esempio «Agisci come…» non ha più «senza una morale finale». Non ancora misurate. Prossimo: confronto
+  `--models gemma4:e4b,qwen3:4b`.
+- **Banco di prova, chiave Anthropic rifiutata** (segnalato dall'utente, due volte): il banco ora legge solo
+  `ANTHROPIC_API_KEY` (ripulita da virgolette e spazi, ignorando `ANTHROPIC_AUTH_TOKEN` e
+  `ANTHROPIC_BASE_URL`), mostra un'impronta della chiave e la risposta esatta di Anthropic, e prova la chiave
+  prima di far lavorare Ollama. `npm run bench -- --check-key` fa solo questa prova. Causa reale ancora da
+  accertare sull'output dell'utente.
+- **Test sul modello, seconda fase: la memoria** (dopo la 0.2.0, non rilasciato). Scelta CPU/GPU a 2.048 token
+  come prima; poi la configurazione scelta si riprova con memorie crescenti (4.096, 8.192… fino a quella che
+  l'app consiglierebbe dalla RAM) e ci si ferma alla prima che rallenta la scrittura di oltre il 15% o toglie
+  più di 5 punti di GPU. Il tetto (`ctxLimit`) sta un gradino sotto l'ultima memoria che regge, mai sotto il
+  minimo del modello; limita la memoria consigliata (`suggestNumCtx`) e compare in Impostazioni → Modelli e
+  come avviso sul cursore. Codice in `src/main/benchmark.ts`, dati in `model_settings` (migrazione 0019).
+  Verificato solo con l'Ollama finto: le soglie (15%, 5 punti) vanno confermate sulla macchina dell'utente.
+  I modelli già testati vanno ritestati per avere il tetto.
+- **Esperto di prompt engineering, testi in revisione** (dopo la 0.2.0): alla prima prova con Gemma 4 i prompt
+  prodotti erano rigidi (etichette, ordini secchi, delimitatori inutili). Causa: tecniche ed esempi scritti a
+  tavolino. Riscritti in italiano partendo dalle guide ufficiali di Anthropic, Google (Gemini e Gemma) e OpenAI:
+  `store/sources/prompt-tecniche.it.md`, `store/sources/prompt-esempi.it.md`, frasi di cinque opzioni e
+  istruzione fissa in `roles/prompt.it.json`. Gli esempi partono da prompt veri (guida di OpenAI,
+  `f/awesome-chatgpt-prompts`, `danielmiessler/fabric`): provenienza e licenze in `store/sources/FONTI.md`. Riletti e approvati dall'utente; francese allineato, pacchetti ricostruiti, end-to-end
+  e `ruoli.md` §7.3 aggiornati. **Non ancora rilasciato**: l'utente deve provarlo con Gemma 4.
+- **Esperto di prompt engineering, parametri rivisti** (deciso dall'utente, sulla base delle fonti): da sette a
+  cinque. Tolto «Intervento» (lo dice già la richiesta; ora è una frase fissa del ruolo); «Chi userà il prompt»
+  e «Risultato» fusi in «Spiegazione» (Nessuna / Semplice / Tecnica); «Stile del prompt» sostituito da «Tipo di
+  prompt» (Messaggio da incollare in chat / Prompt di sistema da riusare); in «Tecniche da usare» entra «Cosa
+  fare se manca un dato»; nessun parametro tocca più la temperatura (0,6 fissa nel ruolo). Fatto in
+  `roles/prompt.{it,fr}.json`, con pacchetti, end-to-end, anteprime e `ruoli.md` §7.3.
+- **Esperto di prompt engineering, ritocchi dopo le prove con Gemma 4** (fatti, da riprovare). Prove dell'utente
+  sulla build di prova: prompt buoni, ma ragionamento da quattro a dodici minuti, ipotesi mai dichiarate, regole
+  applicate anche dove non c'entrano. Correzioni:
+  - **Solo gli esempi pertinenti** (deciso dall'utente, che non vuole ridurre la base): a ogni domanda partono i
+    due esempi più vicini (`KNOWLEDGE.examplesMax` in `src/shared/knowledge.ts`, `nearestExamples` in
+    `src/main/knowledge/index.ts`). Senza modello di embedding partono tutti, come prima. Fondamento: Liu e altri
+    2021 (esempi scelti per somiglianza), Levy e altri 2024 (il ragionamento cala con l'ingresso lungo), Liu e
+    altri 2023 («Lost in the Middle»). La stessa scelta per le tecniche è rimandata.
+  - **«Se non sai, chiedi»**: «Fa domande di chiarimento» è il predefinito; «Risponde subito» elenca le ipotesi.
+  - Frasi condizionali per il dato mancante e per l'esempio del formato; due frasi in più nelle tecniche (gli
+    esempi mostrano risposte riuscite; paragrafi brevi).
+  - Prova sulla terza build (gemma4:e4b, ragionamento acceso): tre domande in 80 secondi, poi il prompt in due
+    minuti e mezzo (prima sei e più). Difetto segnalato dall'utente: **esempi nel prompt anche senza la tecnica
+    selezionata**. Corretto: tolto l'esempio dalla frase di «Modello locale piccolo» e dalle tecniche; regola
+    fissa «niente esempi a meno che una regola lo chieda»; nelle tecniche, gli esempi servono per i formati
+    precisi, non per i compiti creativi. Resta: regola sul dato mancante ancora applicata a sproposito.
+  - **Misure dal CSV dell'utente** (gemma4:e4b, due chiamate): generazione a circa 10 token/s, cioè il collo di
+    bottiglia (118 s su 143, oltre metà di ragionamento); prompt di circa 2.400 token riletto per intero a ogni
+    domanda in 24–28 s (nessun riuso della cache: chiamata del titolo in mezzo, oppure esempi che cambiano dentro
+    il messaggio di sistema); `num_ctx` a 131.072, forse troppo per la macchina. **Prossime misure chieste
+    all'utente**: memoria a 16.384; ragionamento spento; terza domanda nella stessa conversazione. Poi decidere:
+    `mind.numCtx` nel ruolo, esempi accanto alla domanda (`src/shared/compose.ts`), `mind.think: false`.
+  - **Da verificare con l'utente**: tempi di risposta; la stessa richiesta con il ragionamento spento (se regge,
+    il ruolo può partire senza); prove rimaste: migliorare «Traduci in inglese», diagnosi, richiesta vaga, prompt
+    di sistema senza spiegazione, prompt con esempi.
+- **Titoli delle tecniche e registro del prompt inviato** (fatti, chiesti dall'utente): le tecniche di un ruolo
+  arrivano al modello con il titolo di ogni sezione (`buildBehaviorSection`; prima partivano solo i paragrafi).
+  Il monitor del contesto conserva i messaggi esatti delle ultime 20 chiamate di chat per conversazione
+  (colonna `request`, migrazione 0018; `CONTEXT_REQUESTS_KEPT`): «Vedi il prompt inviato» li mostra e li copia.
+- **Frasi delle opzioni più sintetiche** (proposto, non fatto): l'utente trova verbose le frasi generate dalle
+  scelte. Da decidere sui dati, ora che il prompt inviato si può leggere.
+- **Banco di prova dei ruoli** (deciso dall'utente, per uscire dal giro build → installazione → prova a mano):
+  comando `npm run bench` nel repository, cartella `bench/`. Usa il codice dell'app senza Electron
+  (`bench/harness.ts`), legge i testi dai sorgenti, esegue i casi di `bench/cases/<ruolo>.json` su uno o più
+  modelli, misura, applica controlli a regole fisse (`bench/checks.ts`) e scrive `bench/runs/<data>/report.md`.
+  Istruzioni in `bench/README.md`. Si esegue sul computer dell'utente. Fatti i tre passi: esecuzione, misure e controlli;
+  giudice con Claude (`bench/judge.ts`, chiave in `ANTHROPIC_API_KEY`); ciclo «valuta, corregge e riprova»
+  (`bench/improve.ts`, `bench/loop.ts`, opzione `--rounds`), che corregge leggendo i soli casi di lavoro e tiene
+  una variante solo se migliora sui casi di controllo oltre il rumore. Il correttore cambia istruzione fissa e
+  frasi delle opzioni e può solo **aggiungere** esempi; tecniche ed esempi esistenti non si toccano (deciso
+  dall'utente): ciò che vi trova di dannoso lo segnala nel rapporto. Consulta le stesse
+  fonti di tecniche ed esempi (deciso dall'utente): elenco in `bench/sources.json`, scaricate in
+  `bench/sources-cache/` (non nel repository), allegate a ogni richiesta di correzione; `--apply` porta la migliore nei sorgenti.
+  Opzione `--gpu off` per bloccare la GPU (risposte e indicizzazione su CPU); il rapporto riporta dove ha girato
+  il modello, letto da Ollama.
+  **Verificato solo con Ollama finto e Claude simulato** (`tests/bench.test.ts`): la prima esecuzione vera, con
+  Ollama e con la chiave, è dell'utente. Predefinito `--rounds 0`, per non avviare ore di lavoro e spesa senza
+  che sia chiesto.
+- **Ragionamento dell'Esperto**: chiarito, nessun difetto. Nella conversazione di prova l'aveva spento l'utente,
+  che aveva anche cambiato tre scelte. Con il ragionamento acceso il ruolo lavora meglio.
 - **Profili per modello** (`profiles` nel ruolo): i ruoli escono senza. Servono i risultati della prova con
   Ollama qui sopra. I valori della mente (temperatura 0,2 / 0,3 / 0,6) sono ipotesi non provate su Gemma 4.
 - **Ragionamento e risposte brevi**: con il ragionamento acceso il modello può pensare a lungo anche con
@@ -646,7 +752,7 @@ memoria insufficiente con un modello da 12B.
 | Cosa | Comando |
 |---|---|
 | Typecheck | `npm run typecheck` |
-| Test unitari (376) | `npx vitest run` |
+| Test unitari (401) | `npx vitest run` |
 | End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
 | Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
 | Pacchetti e catalogo dello Store | `npm run packs:build` |

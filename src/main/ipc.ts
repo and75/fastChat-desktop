@@ -22,7 +22,7 @@ import {
 } from '@shared/types'
 import { normalizeSteps } from '@shared/prompt'
 import { LANGUAGE_SETTINGS, resolveLocale, setLocale, t } from '@shared/i18n'
-import type { SystemInfo } from '@shared/settings'
+import { maxNumCtx, minNumCtx, suggestNumCtx, type SystemInfo } from '@shared/settings'
 import { calibrationPatch, type CalibrateDeps } from './calibrate'
 import { createChatService } from './chat'
 import { createRoleSession } from './roleSession'
@@ -37,9 +37,10 @@ import {
   getSettings,
   listConversations,
   listContextCalls,
+  getModelSetting,
+  getContextRequest,
   listModelSettings,
   removeModelSetting,
-  getModelSetting,
   saveModelSetting,
   listMessages,
   listPlans,
@@ -221,13 +222,25 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl, log = null
   handle(IPC.modelsBenchmark, async (e, name: string) => {
     const model = requireId(name)
     const caps = await ollama.showModel(model).catch(() => null)
-    const digest = (await ollama.listModels().catch(() => [])).find((m) => m.name === model)?.digest ?? null
-    const result = await runBenchmark(ollama, model, caps, (step, steps, label) => {
-      if (!e.sender.isDestroyed()) e.sender.send(IPC.benchmarkProgress, { model, step, steps, label } satisfies BenchmarkProgress)
-    })
+    const info = (await ollama.listModels().catch(() => [])).find((m) => m.name === model)
+    const digest = info?.digest ?? null
+    // La memoria si prova fin dove l'app la suggerirebbe senza il test: dal calcolo sulla RAM, o il massimo del modello.
+    const maxCtx = suggestNumCtx({ system: await system(), modelBytes: info?.size ?? null, caps }) ?? maxNumCtx(caps)
+    const result = await runBenchmark(
+      ollama,
+      model,
+      caps,
+      (step, steps, label) => {
+        if (!e.sender.isDestroyed()) e.sender.send(IPC.benchmarkProgress, { model, step, steps, label } satisfies BenchmarkProgress)
+      },
+      undefined,
+      { maxCtx, minCtx: minNumCtx(caps) }
+    )
     return saveModelSetting(db, model, {
       numGpu: result.best,
       benchmark: result.runs,
+      contextRuns: result.contextRuns,
+      ctxLimit: result.ctxLimit,
       benchmarkedAt: Date.now(),
       gpuAvailable: result.gpuAvailable,
       digest,
@@ -398,6 +411,7 @@ export function registerIpc({ db, ollama, getOllamaUrl, setOllamaUrl, log = null
     e.returnValue = systemLocale()
   })
   handle(IPC.contextCalls, (_e, id: string) => listContextCalls(db, requireId(id)))
+  handle(IPC.contextRequest, (_e, id: string) => getContextRequest(db, requireId(id)))
   /** Le chiamate della conversazione come CSV, per confrontare ordini del contesto e modelli. */
   handle(IPC.contextExport, async (e, id: string) => {
     const calls = await listContextCalls(db, requireId(id))

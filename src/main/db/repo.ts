@@ -2,7 +2,7 @@ import { normalizeContextSettings } from '@shared/compose'
 import { briefToSituation } from '@shared/prompt'
 import { GENERALIST_ROLE, type Role, type RoleChoices } from '@shared/roles'
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 import {
   DEFAULT_SETTINGS,
   GENERALIST_ROLE_ID,
@@ -11,6 +11,7 @@ import {
   type BriefTemplate,
   type ContextCall,
   type ContextCallInput,
+  type ContextRequest,
   type Conversation,
   type ConversationListQuery,
   type ConversationPatch,
@@ -482,12 +483,12 @@ export async function ensureRoles(db: Db): Promise<void> {
 // ---------------------------------------------------------------- configurazione per modello
 
 export async function listModelSettings(db: Db): Promise<ModelSetting[]> {
-  return (await db.select().from(modelSettings)).map((r) => ({ ...r, benchmark: r.benchmark ?? null }))
+  return (await db.select().from(modelSettings)).map((r) => ({ ...r, benchmark: r.benchmark ?? null, contextRuns: r.contextRuns ?? null }))
 }
 
 export async function getModelSetting(db: Db, model: string): Promise<ModelSetting | null> {
   const [row] = await db.select().from(modelSettings).where(eq(modelSettings.model, model))
-  return row ? { ...row, benchmark: row.benchmark ?? null } : null
+  return row ? { ...row, benchmark: row.benchmark ?? null, contextRuns: row.contextRuns ?? null } : null
 }
 
 /** Crea o aggiorna la configurazione di un modello (solo i campi indicati). */
@@ -841,10 +842,23 @@ export async function removeConnection(db: Db, id: string): Promise<void> {
 
 /** Chiamate tenute per conversazione: le più vecchie vengono cancellate. */
 export const CONTEXT_CALLS_KEPT = 50
+/** Di quante chiamate per conversazione si conserva anche il testo inviato (il resto tiene solo le misure). */
+export const CONTEXT_REQUESTS_KEPT = 20
 
 export async function addContextCall(db: Db, input: ContextCallInput): Promise<ContextCall> {
-  const row = { ...input, id: randomUUID(), createdAt: Date.now() }
-  await db.insert(contextCalls).values(row)
+  const { request = null, ...measures } = input
+  const row = { ...measures, id: randomUUID(), createdAt: Date.now() }
+  await db.insert(contextCalls).values({ ...row, request })
+  if (request) {
+    const stale = await db
+      .select({ id: contextCalls.id })
+      .from(contextCalls)
+      .where(and(eq(contextCalls.conversationId, input.conversationId), isNotNull(contextCalls.request)))
+      .orderBy(desc(contextCalls.createdAt), desc(sql`rowid`))
+      .limit(1_000_000)
+      .offset(CONTEXT_REQUESTS_KEPT)
+    if (stale.length) await db.update(contextCalls).set({ request: null }).where(inArray(contextCalls.id, stale.map((r) => r.id)))
+  }
   const old = await db
     .select({ id: contextCalls.id })
     .from(contextCalls)
@@ -853,7 +867,13 @@ export async function addContextCall(db: Db, input: ContextCallInput): Promise<C
     .limit(1_000_000)
     .offset(CONTEXT_CALLS_KEPT)
   if (old.length) await db.delete(contextCalls).where(inArray(contextCalls.id, old.map((r) => r.id)))
-  return row
+  return { ...row, hasRequest: !!request }
+}
+
+/** Il testo inviato in una chiamata, se è ancora conservato. */
+export async function getContextRequest(db: Db, callId: string): Promise<ContextRequest | null> {
+  const [row] = await db.select({ request: contextCalls.request }).from(contextCalls).where(eq(contextCalls.id, callId)).limit(1)
+  return row?.request ?? null
 }
 
 /** Ultime chiamate della conversazione, dalla più recente. */
@@ -864,5 +884,5 @@ export async function listContextCalls(db: Db, conversationId: string): Promise<
     .where(eq(contextCalls.conversationId, conversationId))
     .orderBy(desc(contextCalls.createdAt), desc(sql`rowid`))
     .limit(CONTEXT_CALLS_KEPT)
-  return rows.map((r) => ({ ...r, parts: r.parts ?? [] }))
+  return rows.map(({ request, ...r }) => ({ ...r, parts: r.parts ?? [], hasRequest: request != null }))
 }

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f4176cd4-12fc-42e7-897a-7300eb57b158",
+  "id": "4ea50b9f-2f8c-4231-8113-9ed1f6630111",
   "prevId": "6d53f76c-8f87-4e53-be7c-b21feec15fb8",
   "tables": {
     "brief_templates": {
@@ -261,6 +261,13 @@
         },
         "context_order": {
           "name": "context_order",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "request": {
+          "name": "request",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -1392,13 +1399,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
-        },
-        "failed_num_ctx": {
-          "name": "failed_num_ctx",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         }
       },
       "indexes": {},

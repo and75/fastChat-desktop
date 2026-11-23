@@ -33,6 +33,8 @@ const fake = await startFakeOllama([
     delayMs: 60,
     chunks: [
       { content: 'Ecco **il codice**:\n\n```ts\nconst x = 1\n```\n\n' },
+      // un blocco senza linguaggio: testo da copiare (un prompt), con una riga molto lunga
+      { content: '```\n' + 'Sei un analista esperto e scrivi per chi non ha letto il testo. '.repeat(8).trim() + '\n```\n\n' },
       ...Array.from({ length: 60 }, (_, i) => ({ content: `parola${i} ` }))
     ]
   }
@@ -203,7 +205,8 @@ try {
     assert.match(await panel.getByTestId('situation-count').textContent(), /^68 di 1\.638 caratteri$/)
     assert.equal(
       await panel.getByTestId('system-preview').textContent(),
-      '# Ruolo\nSei un tutor paziente.\n\n# Vincoli\nRispondi solo in italiano.'
+      // la situazione sta sempre sotto il suo titolo; i titoli scritti dall'utente scendono di un livello
+      '# Situazione\n## Ruolo\nSei un tutor paziente.\n\n## Vincoli\nRispondi solo in italiano.'
     )
   })
 
@@ -220,7 +223,7 @@ try {
     const body = lastChat()
     assert.equal(body.model, 'llama3.2:3b')
     assert.deepEqual(body.messages, [
-      { role: 'system', content: '# Ruolo\nSei un tutor paziente.\n\n# Vincoli\nRispondi solo in italiano.' },
+      { role: 'system', content: '# Situazione\n## Ruolo\nSei un tutor paziente.\n\n## Vincoli\nRispondi solo in italiano.' },
       { role: 'user', content: 'Ciao!' }
     ])
     assert.equal('think' in body, false)
@@ -271,10 +274,15 @@ try {
     const saved = page.getByTestId('message-assistant').last()
 
     // blocco di codice: pulsante che compare al passaggio del mouse, copia solo il codice
-    await saved.locator('pre').hover()
-    await saved.getByRole('button', { name: 'Copia il codice' }).click()
+    await saved.locator('pre').first().hover()
+    await saved.getByRole('button', { name: 'Copia il codice' }).first().click()
     await saved.getByRole('button', { name: 'Codice copiato' }).waitFor()
     assert.equal(await readClipboard(), 'const x = 1')
+    // un blocco senza linguaggio è testo (un prompt): le righe lunghe vanno a capo, niente scorrimento orizzontale;
+    // il codice vero conserva le sue righe
+    const blocks = await saved.locator('pre').evaluateAll((els) => els.map((el) => ({ wrap: el.hasAttribute('data-wrap'), overflow: el.scrollWidth > el.clientWidth + 1, lines: Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)) })))
+    assert.deepEqual(blocks.map((b) => [b.wrap, b.overflow]), [[false, false], [true, false]])
+    assert.ok(blocks[1].lines > 2, 'la riga lunga occupa più righe')
 
     // risposta intera: testo Markdown originale, non quello reso
     await saved.getByRole('button', { name: 'Copia la risposta' }).click()
@@ -665,7 +673,7 @@ try {
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
     // estratti nel system prompt, dopo il riassunto, con l'avvertenza sulle correzioni
     const system = lastChat().messages[0].content
-    assert.ok(system.indexOf('# Riassunto della conversazione finora') < system.indexOf('# Dalla conversazione precedente'), 'estratti dopo il riassunto')
+    assert.ok(system.indexOf('# Riassunto della conversazione finora') < system.indexOf('# Messaggi precedenti'), 'estratti dopo il riassunto')
     assert.match(system, /valgono il riassunto e i messaggi recenti/)
     const embeds = fake.requests.filter((r) => r.path === '/api/embed')
     assert.ok(embeds.length >= 2, 'indicizzazione + domanda')
@@ -683,7 +691,7 @@ try {
     await box.press('Enter')
     await page.getByTestId('message-assistant').last().filter({ hasText: 'risposta0' }).waitFor()
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
-    assert.doesNotMatch(lastChat().messages[0].content, /# Dalla conversazione precedente/)
+    assert.doesNotMatch(lastChat().messages[0].content, /# Messaggi precedenti/)
     await setSwitch(page.getByTestId('model-settings'), 'Memoria a lungo termine', true)
   })
 
@@ -905,8 +913,8 @@ try {
     await composer.press('Enter')
     await waitUntil(() => chatRequests().length > before)
     const system = chatRequests()[before].body.messages[0].content
-    assert.match(system, /# Come lavorare\n\nTecniche e regole del tuo ruolo/)
-    assert.doesNotMatch(system, /forniti dall'utente/)
+    assert.match(system, /# Come lavorare\n\nConoscenze del tuo mestiere/)
+    assert.doesNotMatch(system, /Estratti dei documenti di questa conversazione|riportati per intero \(/)
     await page.getByTestId('message-streaming').waitFor({ state: 'detached', timeout: 30000 }).catch(() => undefined)
     // si torna a «Documenti» e si scollega, per non toccare i passi successivi
     await linked.getByTestId('knowledge-purpose').selectOption('documents')
@@ -940,13 +948,14 @@ try {
     assert.equal(await form.getByTestId('context-order-B').isDisabled(), true)
     // il disegno: con A gli estratti sono nel sistema, con B accanto alla domanda
     const blocks = (order, slot) => form.getByTestId(`context-order-${order}`).locator(`[data-slot="${slot}"] [data-block]`).evaluateAll((els) => els.map((e) => e.dataset.block))
-    assert.deepEqual(await blocks('A', 'system'), ['instructions', 'summary', 'memory', 'behavior', 'examples', 'knowledge'])
-    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'question'])
+    assert.deepEqual(await blocks('A', 'system'), ['instructions', 'situation', 'summary', 'memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan'])
+    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan', 'question'])
     // «Scelgo io» + promemoria acceso: il blocco compare accanto alla domanda in A e B; con C non serve
     await form.getByTestId('context-mode-manual').click()
     await form.getByTestId('context-reminder-on').click()
-    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'reminder', 'question'])
-    assert.deepEqual(await blocks('C', 'user'), ['instructions', 'memory', 'behavior', 'examples', 'knowledge', 'question'])
+    assert.deepEqual(await blocks('B', 'user'), ['memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan', 'reminder', 'question'])
+    assert.deepEqual(await blocks('C', 'user'), ['instructions', 'situation', 'summary', 'memory', 'behavior', 'examples', 'knowledge', 'rules', 'style', 'plan', 'question'])
+    assert.deepEqual(await blocks('C', 'system'), [])
     await form.getByTestId('context-order-C').click()
     assert.equal(await form.getByTestId('context-reminder-on').isDisabled(), true)
     // barra della memoria: i bordi si spostano con le frecce, a passi; la somma resta 100
@@ -980,7 +989,7 @@ try {
     // Il Generalista non ha un ruolo da ricordare: nessun promemoria accanto
     // alla domanda (con un ruolo vero c'è: lo verificano i test unitari, in attesa della scelta del ruolo).
     assert.deepEqual(sent, [
-      { role: 'system', content: '# Ruolo\nSei un tutor' },
+      { role: 'system', content: '# Situazione\n## Ruolo\nSei un tutor' },
       { role: 'user', content: 'ciao' }
     ])
     // nella chat si vede il testo scritto dall'utente, non il promemoria
@@ -1106,7 +1115,7 @@ try {
     assert.equal(planRequests().length, before + 1)
     const req = planRequests().at(-1).body
     assert.deepEqual(req.format.required, ['steps'])
-    assert.match(req.messages[0].content, /^# Vincoli\nUsa esempi con la pizza\.\n\n# Modalità piano/)
+    assert.match(req.messages[0].content, /^# Situazione\n## Vincoli\nUsa esempi con la pizza\.\n\n# Modalità piano/)
     assert.equal(await checklist.getByTestId('plan-step').count(), 3)
     // nessuna risposta dell'assistente finché il piano non è approvato
     assert.equal(await page.getByTestId('message-assistant').count(), 0)
@@ -1136,7 +1145,7 @@ try {
     const body = lastChat()
     assert.equal(body.format, undefined)
     const system = body.messages[0].content
-    assert.match(system, /^# Vincoli\nUsa esempi con la pizza\.\n\n# Piano approvato\n/)
+    assert.match(system, /^# Situazione\n## Vincoli\nUsa esempi con la pizza\.\n\n# Piano approvato\n/)
     assert.match(
       system,
       /1\. Cos'è una frazione — Riassumere cosa chiede l'utente\.\n2\. Scrivere la risposta — Rispondere in modo ordinato\.\n3\. Esempio con la pizza — Una pizza in otto fette\.$/
@@ -1248,10 +1257,10 @@ try {
     await menu.getByTestId('role-option').filter({ hasText: 'Esperto di prompt engineering' }).click()
     await openTab('Modello')
     await panel.getByTestId('role-name').filter({ hasText: 'Esperto di prompt engineering' }).waitFor()
-    // la mente del ruolo: temperatura 0,3 (opzione «Asciutto»), ragionamento acceso, documenti spenti in partenza
+    // la mente del ruolo: temperatura 0,6, ragionamento acceso, documenti spenti in partenza
     let conv = await latestConversation()
     assert.equal(conv.roleId, 'app.fastchat.ruolo.prompt.it')
-    assert.deepEqual([conv.temperature, conv.think, conv.style, conv.knowledge], [0.3, true, 'normal', false])
+    assert.deepEqual([conv.temperature, conv.think, conv.style, conv.knowledge], [0.6, true, 'normal', false])
     // il modello consigliato (gemma4:e4b) non è installato: resta il predefinito, con l'avviso
     await panel.getByTestId('role-unverified').filter({ hasText: /Ruolo non verificato con .+\. Consigliato: gemma4:e4b\./ }).waitFor()
     // nella barra laterale, sotto il titolo, con chi si parla
@@ -1260,22 +1269,19 @@ try {
     assert.deepEqual(await panel.getByTestId('role-section').evaluateAll((els) => els.map((e) => e.dataset.section)), ['identity', 'style', 'rules', 'method'])
     // al primo arrivo sono chiuse: ciascuna mostra in una riga le scelte in vigore
     assert.equal(await panel.locator('[data-testid="role-section"] details[open]').count(), 0)
-    assert.equal(await panel.getByTestId('group-role-style-summary').textContent(), 'Principiante · Risultato con spiegazione · Asciutto')
-    assert.equal(await panel.getByTestId('group-role-rules-summary').textContent(), 'Tecniche da usare: Ruolo esplicito, Formato di uscita')
+    assert.equal(await panel.getByTestId('group-role-style-summary').textContent(), 'Semplice · Messaggio da incollare in chat')
+    assert.equal(await panel.getByTestId('group-role-rules-summary').textContent(), 'Tecniche da usare: Ruolo esplicito, Formato di uscita, Cosa fare se manca un dato')
     await panel.locator('[data-testid="role-section"][data-section="rules"] summary').filter({ hasText: /^.?Regole/ }).waitFor()
     // niente menu a tendina: pulsanti affiancati per la scelta singola, interruttori per quella multipla
     await page.evaluate(() => document.querySelectorAll('[data-testid="role-panel"] details[data-group]').forEach((d) => (d.open = true)))
     assert.equal(await panel.getByTestId('role-panel').getByRole('combobox').count(), 0)
 
     // scelta singola: l'opzione dichiara il suo effetto sulla mente, e lo applica
-    const style = panel.locator('[data-parameter="stile"]')
-    await style.getByTestId('role-effect').filter({ hasText: 'imposta la temperatura a 0,3' }).waitFor()
-    await style.getByRole('radio', { name: 'Dettagliato' }).click()
-    await style.getByTestId('role-effect').filter({ hasText: 'imposta la temperatura a 0,6' }).waitFor()
-    await waitUntil(async () => (await latestConversation()).temperature === 0.6)
-    // la lunghezza della risposta non tocca la temperatura
-    await panel.locator('[data-parameter="risultato"]').getByRole('radio', { name: 'Solo il risultato' }).click()
+    const explanation = panel.locator('[data-parameter="spiegazione"]')
+    await explanation.getByTestId('role-effect').filter({ hasText: 'imposta lo stile a' }).first().waitFor()
+    await explanation.getByRole('radio', { name: 'Nessuna' }).click()
     await waitUntil(async () => (await latestConversation()).style === 'concise')
+    // nessuna scelta del ruolo tocca la temperatura
     assert.equal((await latestConversation()).temperature, 0.6)
     // scelta multipla
     await setSwitch(panel.locator('[data-parameter="tecniche"]'), 'Passi numerati', true)
@@ -1283,16 +1289,17 @@ try {
     // un ritocco a mano resta finché non cambia l'opzione che governa quel valore
     await page.getByTestId('composer-style').selectOption('extended')
     await waitUntil(async () => (await latestConversation()).style === 'extended')
-    await panel.locator('[data-parameter="destinatario"]').getByRole('radio', { name: 'Esperto' }).click()
-    await waitUntil(async () => (await latestConversation()).roleParams?.destinatario === 'esperto')
+    await panel.locator('[data-parameter="tipo"]').getByRole('radio', { name: 'Prompt di sistema da riusare' }).click()
+    await waitUntil(async () => (await latestConversation()).roleParams?.tipo === 'sistema')
     assert.equal((await latestConversation()).style, 'extended')
-    await panel.locator('[data-parameter="risultato"]').getByRole('radio', { name: 'Risultato con spiegazione' }).click()
+    await explanation.getByRole('radio', { name: 'Semplice' }).click()
     await waitUntil(async () => (await latestConversation()).style === 'normal')
 
     // situazione e anteprima: le istruzioni del ruolo, poi la situazione con il suo titolo
     await writeSituation('Classifico email di assistenza')
     const preview = await page.getByTestId('system-preview').textContent()
-    assert.match(preview, /^Sei un esperto di prompt engineering[\s\S]*Nei prompt che scrivi motiva ogni istruzione in una riga\.[\s\S]*\n\n# Situazione\nClassifico email di assistenza$/)
+    // il ruolo apre il prompt, poi la situazione; le regole scelte chiudono, con la frase che dice che prevalgono
+    assert.match(preview, /^# Ruolo\nSei un esperto di prompt engineering[\s\S]*\n\n# Situazione\nClassifico email di assistenza\n\n# Regole di questa conversazione\nLe ha scelte l'utente[\s\S]*\n- Tipo di prompt: Scrivi il prompt come prompt di sistema da riusare/)
 
     // ciò che parte verso il modello è ciò che l'anteprima mostra
     const before = chatRequests().length
@@ -1303,8 +1310,31 @@ try {
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
     const sent = chatRequests()[before].body
     // (se la base di comportamento del ruolo è installata, le sue tecniche seguono la situazione)
-    assert.ok(sent.messages[0].content.startsWith(preview), sent.messages[0].content.slice(0, 400))
+    // l'anteprima è ciò che parte: ruolo e situazione in apertura, le regole scelte in chiusura (in mezzo tecniche ed esempi)
+    const [opening, closing] = preview.split('\n\n# Regole di questa conversazione\n')
+    assert.ok(sent.messages[0].content.startsWith(opening), sent.messages[0].content.slice(0, 400))
+    assert.ok(sent.messages[0].content.endsWith(`# Regole di questa conversazione\n${closing}`), sent.messages[0].content.slice(-400))
     assert.equal(sent.options.temperature, 0.6)
+    // gli esempi nel prompt dipendono solo dalla tecnica scelta: senza, il ruolo dice di non metterli
+    assert.ok(sent.messages[0].content.includes('Non inserire esempi di risposta nel prompt, a meno che una regola di questa conversazione lo chieda.'))
+    assert.ok(!sent.messages[0].content.includes('un esempio di quel formato') && !sent.messages[0].content.includes('formato della risposta in un esempio'))
+
+    // registro: dal monitor si rilegge il prompt esatto partito verso il modello, con i titoli delle tecniche
+    await openTab('Modello')
+    const monitor = page.locator('#panel-model').getByTestId('context-monitor')
+    if (!(await monitor.getByTestId('context-calls').evaluate((d) => d.open))) await monitor.getByTestId('context-calls').locator('summary').click()
+    await monitor.getByTestId('context-call-select').selectOption({ index: await monitor.getByTestId('context-call-select').locator('option').evaluateAll((os) => os.findIndex((o) => /chat|Risposta/i.test(o.textContent ?? ''))) })
+    await monitor.getByTestId('context-request-open').click()
+    const sentDialog = page.getByTestId('context-request-dialog')
+    const systemText = await sentDialog.locator('[data-testid="context-request-message"][data-role="system"] pre').first().textContent()
+    assert.equal(systemText, sent.messages[0].content)
+    assert.match(systemText, /\n\n# Come lavorare\n\n[\s\S]*\n\n## Dare un ruolo\n\n/)
+    assert.equal(await sentDialog.locator('[data-testid="context-request-message"][data-role="user"] pre').last().textContent(), 'Guarda questo prompt')
+    await sentDialog.getByTestId('context-request-copy').click()
+    await sentDialog.getByTestId('context-request-copy').filter({ hasText: 'Copiato' }).waitFor()
+    assert.ok((await app.evaluate(({ clipboard }) => clipboard.readText())).startsWith('### Sistema\n\n# Ruolo\nSei un esperto di prompt engineering'))
+    await sentDialog.getByTestId('dialog-close').click()
+    await sentDialog.waitFor({ state: 'detached' })
 
     // scheda Conoscenza: le basi del ruolo (tecniche ed esempi) stanno a parte, in sola lettura
     await openTab('Conoscenza')
@@ -1392,7 +1422,7 @@ try {
     assert.equal(conv.roleId, 'app.fastchat.ruolo.prompt.fr')
     // le sezioni restano nella lingua dell'interfaccia, le scelte del ruolo sono nella sua
     await page.evaluate(() => document.querySelectorAll('[data-testid="role-panel"] details[data-group]').forEach((d) => (d.open = true)))
-    await panel.locator('[data-parameter="stile"]').getByRole('radio').first().waitFor()
+    await panel.locator('[data-parameter="tipo"]').getByRole('radio').first().waitFor()
     await openTab('Conoscenza')
     await panel.getByTestId('role-bases').getByTestId('role-base').filter({ hasText: /Techniques de prompt|Tecniche di prompt/ }).waitFor()
     await panel.getByTestId('role-bases').getByTestId('role-base').filter({ hasText: /Prompts faibles et améliorés|Prompt deboli e migliorati/ }).waitFor()
@@ -1404,9 +1434,9 @@ try {
     await page.getByTestId('message-assistant').first().waitFor()
     await page.getByTestId('message-streaming').waitFor({ state: 'detached' })
     const system = chatRequests()[before].body.messages[0].content
-    assert.ok(system.startsWith('Tu es un expert en prompt engineering'), system.slice(0, 200))
-    for (const expected of ['# Comment travailler', '# Exemples', '<exemple>']) assert.ok(system.includes(expected), `manca «${expected}»`)
-    assert.ok(!system.includes('# Come lavorare') && !system.includes('<esempio>'), 'nessun titolo in italiano nel prompt di un ruolo francese')
+    assert.ok(system.startsWith('# Rôle\nTu es un expert en prompt engineering'), system.slice(0, 200))
+    for (const expected of ['# Comment travailler', '# Exemples', '<exemple>', '# Règles de cette conversation\n']) assert.ok(system.includes(expected), `manca «${expected}»`)
+    assert.ok(!system.includes('# Come lavorare') && !system.includes('<esempio>') && !system.includes('# Regole di questa') && !system.includes('# Ruolo'), 'nessun titolo in italiano nel prompt di un ruolo francese')
 
     // rimozione dallo Store: se ne vanno il ruolo e le basi arrivate con lui; i ruoli dell'app restano
     await page.getByTestId('role-menu-open').click()
@@ -1470,6 +1500,10 @@ try {
     assert.equal(saved.numGpu, 0)
     assert.equal(saved.gpuAvailable, false)
     assert.deepEqual(saved.benchmark.map((r) => r.numGpu), [0, 999])
+    // seconda fase: la stessa configurazione con memorie crescenti; qui nessuna rallenta, il tetto è la più grande provata
+    assert.ok(saved.contextRuns.length >= 1 && saved.contextRuns.every((r) => r.ok))
+    assert.equal(saved.contextRuns[0].numCtx, 4096)
+    assert.equal(saved.ctxLimit, saved.contextRuns.at(-1).numCtx)
     // le richieste successive del modello portano num_gpu
     const box = page.getByRole('textbox', { name: 'Messaggio' })
     await box.fill('Ciao')
@@ -1488,6 +1522,8 @@ try {
     assert.equal(await manager.getByTestId('model-row').count(), 7) // + embeddinggemma, scaricato per la memoria
     const llama = manager.getByTestId('model-row').filter({ hasText: 'llama3.2:3b' })
     assert.equal(await llama.getByTestId('benchmark-table').locator('tbody tr').count(), 2)
+    await llama.getByTestId('benchmark-ctx-limit').filter({ hasText: 'Memoria consigliata: fino a' }).waitFor()
+    assert.ok((await llama.getByTestId('benchmark-context-table').locator('tbody tr').count()) >= 1)
     await page.screenshot({ path: join(root, 'test-results', 'e2e-models.png') })
     // esecuzione scelta a mano per un altro modello
     await manager.getByTestId('model-row').filter({ hasText: 'qwen3:4b' }).getByTestId('num-gpu-select').selectOption('gpu')
@@ -1868,7 +1904,7 @@ try {
     await composer.press('Enter')
     await page.getByTestId('message-assistant').first().waitFor()
     const req = chatRequests()[before].body
-    assert.match(req.messages[0].content, /^# Role\nTutor/)
+    assert.match(req.messages[0].content, /^# Situation\n## Role\nTutor/)
     // store e basi installate: i titoli seguono la lingua dell'interfaccia
     await page.getByTestId('store-open').filter({ hasText: 'Store' }).click()
     const store = page.getByTestId('store-dialog')

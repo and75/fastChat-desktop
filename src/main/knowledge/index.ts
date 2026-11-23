@@ -25,6 +25,7 @@ import {
   type StoredDocumentChunk
 } from '@shared/knowledge'
 import { fromBuffer, toBuffer } from '@shared/memory'
+import { sectionKey, type SectionRules } from '@shared/roles'
 import { BASE_PURPOSES, GENERALIST_ROLE_ID, type BasePurpose, type RoleRecord } from '@shared/types'
 import type {
   Conversation,
@@ -526,16 +527,46 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
   }
 
   /**
+   * Gli esempi più vicini alla domanda, al massimo `KNOWLEDGE.examplesMax`, entro `maxChars`. Restituisce null
+   * quando non c'è nulla da scegliere (gli esempi sono già pochi) o quando la domanda non si può confrontare
+   * (manca il modello di embedding): in quel caso vale la regola generale, cioè tutti quelli che stanno.
+   */
+  async function nearestExamples(groups: Map<string, StoredDocumentChunk[]>, question: Question, maxChars: number, pinned: (c: StoredDocumentChunk) => boolean = () => false): Promise<SectionItem[] | null> {
+    const chunks = [...groups.values()].flat()
+    if (chunks.length <= KNOWLEDGE.examplesMax) return null
+    const scores = new Map<string, number>()
+    const fts = ftsQuery(question.text)
+    for (const [model, group] of groups) {
+      const vector = await question.vector(model).catch(() => null)
+      if (!vector) return null
+      const bm25 = await searchKnowledgeChunks(db, [...new Set(group.map((c) => c.documentId))], model, fts).catch(() => new Map<string, number>())
+      for (const [id, score] of hybridScores(vector, group, bm25)) scores.set(id, score)
+    }
+    // Prima gli esempi che il ruolo fissa per le scelte in vigore, poi i più simili alla domanda.
+    const ranked = [...chunks].sort((a, b) => Number(pinned(b)) - Number(pinned(a)) || (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0))
+    const out: SectionItem[] = []
+    let used = 0
+    for (const chunk of ranked) {
+      if (out.length >= KNOWLEDGE.examplesMax) break
+      if (used + chunk.text.length > maxChars) continue
+      out.push(chunk)
+      used += chunk.text.length
+    }
+    return out.length ? out : null
+  }
+
+  /**
    * Ciò che le basi della conversazione danno alla risposta, entro `total` token divisi in quote per tipo:
    * - `documents`: i contenuti su cui rispondere, con le fonti; solo se `documents` è vero (pill e bottone libro);
-   * - `behavior` ed `examples`: tecniche ed esempi del ruolo, sempre, senza fonti.
+   * - `behavior` ed `examples`: tecniche ed esempi del ruolo, sempre, senza fonti; degli esempi solo i più vicini
+   *   alla domanda (`nearestExamples`).
    * Lo spazio che un tipo non usa passa agli altri. `question.vector(model)` dà l'embedding della domanda con il
    * modello indicato: le basi possono avere modelli diversi e i vettori non si mescolano.
    */
   async function recallAll(
     conv: Conversation,
     question: Question,
-    budget: { total: number; shares?: Record<BasePurpose, number>; documents?: boolean },
+    budget: { total: number; shares?: Record<BasePurpose, number>; documents?: boolean; sections?: Record<string, SectionRules> },
     cpt: number
   ): Promise<RoleRecall> {
     const out: RoleRecall = { documents: { section: '', refs: [] }, behavior: { section: '', count: 0 }, examples: { section: '', count: 0 } }
@@ -544,13 +575,23 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     const of = (purpose: BasePurpose): KnowledgeDocument[] => (purpose === 'documents' && budget.documents === false ? [] : all.filter((d) => purposeOf(d) === purpose))
     const docs = { documents: of('documents'), behavior: of('behavior'), examples: of('examples') }
     if (all.length === 0 || BASE_PURPOSES.every((k) => docs[k].length === 0)) return out
-    const groups = { documents: await loadChunks(docs.documents, modelOf), behavior: await loadChunks(docs.behavior, modelOf), examples: await loadChunks(docs.examples, modelOf) }
+    // Regole di sezione del ruolo (per id del pacchetto della base): una tecnica o un esempio che contraddice le
+    // scelte dell'utente non entra; un esempio fissato entra comunque.
+    const packageOf = new Map(linked.map((b) => [b.id, b.packageId]))
+    const rulesOf = new Map(all.map((d) => [d.id, budget.sections?.[packageOf.get(d.baseId) ?? '']]))
+    const titleOf = (c: StoredDocumentChunk): string => sectionKey(c.locator?.split(' › ').at(-1) ?? '')
+    const skipped = (c: StoredDocumentChunk): boolean => rulesOf.get(c.documentId)?.skip.includes(titleOf(c)) ?? false
+    const pinned = (c: StoredDocumentChunk): boolean => rulesOf.get(c.documentId)?.pin.includes(titleOf(c)) ?? false
+    const kept = async (list: KnowledgeDocument[]): Promise<Map<string, StoredDocumentChunk[]>> =>
+      new Map([...(await loadChunks(list, modelOf))].map(([model, chunks]) => [model, chunks.filter((c) => !skipped(c))] as const))
+    const groups = { documents: await loadChunks(docs.documents, modelOf), behavior: await kept(docs.behavior), examples: await kept(docs.examples) }
     const need = (k: BasePurpose): number => Math.ceil(totalChars([...groups[k].values()].flat()) / cpt)
     const tokens = splitKnowledgeBudget(budget.total, budget.shares ?? { documents: 1, behavior: 0, examples: 0 }, { documents: need('documents'), behavior: need('behavior'), examples: need('examples') })
 
     for (const k of ['behavior', 'examples'] as const) {
       if (docs[k].length === 0 || tokens[k] <= 0) continue
-      const { whole, picked } = await choose(docs[k], groups[k], question, tokens[k] * cpt)
+      const nearest = k === 'examples' ? await nearestExamples(groups[k], question, tokens[k] * cpt, pinned) : null
+      const { whole, picked } = nearest ? { whole: nearest, picked: [] } : await choose(docs[k], groups[k], question, tokens[k] * cpt)
       const items = [...whole, ...picked]
       out[k] = { section: k === 'behavior' ? buildBehaviorSection(items) : buildExamplesSection(items), count: items.length }
     }
