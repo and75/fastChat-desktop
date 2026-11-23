@@ -1,7 +1,10 @@
 # Ruoli — decisioni e piano di esecuzione
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
-1.7), che va eseguita sul computer dell'utente. **Seconda consegna completa sul branch** (passi 2.1–2.8), **non rilasciata**: si attende il Controllo 5 dell'utente; la release parte solo con la sua conferma esplicita.
+1.7), che va eseguita sul computer dell'utente. **Seconda consegna completa e su `main`** (passi 2.1–2.8); da questo
+repository non risulta se sia stata rilasciata: la release parte solo con la conferma esplicita dell'utente.
+**Dopo la seconda consegna**: lavoro di diagnostica e affidabilità sul branch `claude/vibrant-hopper-v149tl`, non
+ancora su `main` (vedi la Parte 3).
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -547,9 +550,10 @@ Scoperte durante il lavoro:
 ## Dove siamo
 
 - **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8).
-- **Seconda consegna** (ruoli): **completa sul branch** `claude/contesto-parametri-effettivi` (passi 2.1–2.8),
-  **non ancora rilasciata** e non ancora su `main`. Manca solo il **Controllo 5**: l'utente guarda il risultato
-  e decide se rilasciare.
+- **Seconda consegna** (ruoli): **completa e su `main`** (passi 2.1–2.8). Da questo repository non risulta se sia
+  stata rilasciata: resta il **Controllo 5**, l'utente guarda il risultato e decide.
+- **Diagnostica e affidabilità** (dopo la seconda consegna): sul branch `claude/vibrant-hopper-v149tl`, **non su
+  `main`**, senza pull request e senza release. Vedi «Diagnostica e affidabilità» qui sotto.
 - Cosa c'è: ruoli scelti da «Parla con un…» e regolati nella scheda «Modello»; scheda «Situazione» al posto del
   Brief; due ruoli italiani inclusi nell'app con le loro basi; ruoli francesi, Guida francese e Guida inglese
   nello Store; testi riletti e approvati dall'utente.
@@ -562,6 +566,53 @@ Scoperte durante il lavoro:
 - **Trascinamento dei bordi** della barra della memoria: verificato solo da tastiera nei test automatici.
 - **Test instabile** «finestra piccola» dell'end-to-end: fallisce circa una volta su dieci (topbar a −48 px dopo
   la rotella). Non dipende dai ruoli; potrebbe essere un vero difetto di impaginazione. Da indagare a parte.
+
+## Diagnostica e affidabilità (branch `claude/vibrant-hopper-v149tl`)
+
+Nato da tre problemi segnalati dall'utente: ricerca nei documenti lentissima con l'Esperto di prompt engineering,
+messaggi di stato sbagliati durante l'attesa, Ollama che non risponde senza errori né log. Più un errore di
+memoria insufficiente con un modello da 12B.
+
+**Fatto** (test unitari ed end-to-end verdi con l'Ollama finto; **mai provato con un Ollama vero**):
+
+- **Registro diagnostico** (`src/main/log.ts`): `userData/logs/fastchat.log`, a rotazione. Ogni chiamata a Ollama,
+  i tempi per stadio di ogni risposta (riga `chat risposta`), gli errori prima ignorati in silenzio. Mai il testo
+  dei messaggi. Si apre da Impostazioni → Generale.
+- **Stadi veri dell'attesa**: evento `waiting` con lo stato di Ollama letto da `/api/ps` (in attesa, carica il
+  modello, modello in memoria che legge il contesto, non risponde). «Cerco nei documenti» vale solo per la ricerca:
+  prima restava a schermo anche durante il caricamento del modello e la lettura del prompt, ed era questa la
+  «ricerca lentissima».
+- **Errori visibili**: tempo massimo sulle chiamate rapide (15 s; 5 s per `/api/ps`); messaggi distinti per non
+  raggiungibile, senza risposta, connessione caduta, memoria insufficiente; avviso dopo 30 s senza nuovo testo;
+  avviso sotto la risposta se è arrivata senza un passo non riuscito.
+- **Velocità**: l'elenco dei modelli (`/api/tags`) era chiesto decine di volte in un secondo, ora è condiviso per
+  2 s; le basi si leggono una volta prima della risposta; la ricarica inattesa del modello (scambio con il
+  modello di embedding) è riconosciuta e segnalata.
+- **Memoria della conversazione suggerita** (`src/shared/settings.ts`): non più «tutta la RAM meno i pesi», che
+  con un modello dal contesto dichiarato di un milione di token suggeriva 131.072 token e faceva fallire il
+  caricamento in GPU. Ora: memoria utilizzabile (metà della RAM sui PC, due terzi con memoria unificata, tutta se
+  solo CPU) − modello − modello di embedding − 1,5 GB di margine, ÷ costo per token. Il modello ricorda con quale
+  memoria il caricamento è fallito (`model_settings.failed_num_ctx`, migrazione 0018) e da lì si suggerisce la
+  metà. Sull'errore: «Riprova con memoria a N token».
+- **Documentazione** nelle tre lingue e Guida rigenerata. I testi inglesi e francesi nuovi **non sono stati
+  riletti** dall'utente.
+
+**Aperto**:
+
+- **Numeri veri**: l'utente deve usare l'Esperto di prompt con questa versione e riportare le righe `chat risposta`
+  del registro. Da lì si decide il resto: `loadMs` alto con `reloaded=true` → scambio di modelli (embedding in
+  CPU, o `keep_alive`); `promptEvalMs` alto → lettura del prompt (ordine del contesto); `searchMs` alto → ricerca.
+- **Non fatto di proposito**, perché cambia un comportamento: `keep_alive` esplicito (scavalcherebbe l'impostazione
+  del server), precaricamento del modello all'apertura (andrebbe spento di default), embedding in CPU.
+- **Taglio a 5 minuti**: il motore di rete chiude una richiesta rimasta 5 minuti senza dati. Ora ha un messaggio
+  chiaro, ma una risposta che impiega più di 5 minuti a partire viene ancora chiusa. Toglierlo richiede di
+  cambiare il motore di rete: da decidere con l'utente.
+- **Quota del 50%** per la memoria condivisa: è una stima, l'app non legge il limite del driver. La misura reale da
+  `/api/ps` (quanto occupa un modello caricato) è stata proposta e non fatta.
+- **Non visti a schermo**, solo nei test unitari: avviso giallo sotto la risposta, «Ollama non risponde», pulsante
+  «Riprova con memoria a N token», suggerimento ridotto dopo un errore.
+- Se la connessione cade a metà risposta il testo parziale si perde (comportamento precedente, non toccato).
+- Un modello installato da terminale compare nell'app con al massimo 2 secondi di ritardo.
 
 ## Cosa resta aperto dopo la seconda consegna
 
@@ -595,7 +646,7 @@ Scoperte durante il lavoro:
 | Cosa | Comando |
 |---|---|
 | Typecheck | `npm run typecheck` |
-| Test unitari (358) | `npx vitest run` |
+| Test unitari (376) | `npx vitest run` |
 | End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
 | Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
 | Pacchetti e catalogo dello Store | `npm run packs:build` |
@@ -622,10 +673,12 @@ Scoperte durante il lavoro:
 | `src/main/roleSession.ts` | Quando il ruolo riscrive la mente; cambio di ruolo; riassunto portato |
 | `src/renderer/src/components/ContextSettingsPanel.tsx` | Scheda Impostazioni → Contesto |
 | `tests/compose.test.ts` | Fotografie dei messaggi: devono restare verdi |
+| `src/main/log.ts`, `src/main/ollama.ts` | Registro diagnostico; client Ollama con tempi massimi, tipi di errore, elenco dei modelli condiviso |
+| `src/shared/settings.ts` | Memoria della conversazione suggerita: tabella delle quote, margine, conti |
 
 ## Messaggio di apertura suggerito per la nuova sessione
 
-> Riprendiamo il progetto dei ruoli di FastChat. Leggi `docs/ruoli.md` e `docs/ruoli-piano.md` (soprattutto la
-> Parte 3). La seconda consegna è completa sul branch `claude/contesto-parametri-effettivi`, non rilasciata.
-> Ti dico io da dove ripartire: rilascio, profili per modello dopo la prova con Ollama, o altro. Prima di
-> scrivere codice dimmi in breve cosa farai e aspetta il mio ok.
+> Riprendiamo FastChat. Leggi `docs/ruoli.md` e `docs/ruoli-piano.md` (soprattutto la Parte 3). La seconda
+> consegna è su `main`; il lavoro di diagnostica e affidabilità è sul branch `claude/vibrant-hopper-v149tl`, non su
+> `main`. Ti dico io da dove ripartire: i numeri del registro diagnostico, il rilascio, i profili per modello dopo
+> la prova con Ollama, o altro. Prima di scrivere codice dimmi in breve cosa farai e aspetta il mio ok.

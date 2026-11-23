@@ -2,7 +2,7 @@
   "name": "fastchat-desktop",
   "productName": "FastChat",
   "version": "0.1.0",
-  "description": "App desktop per chattare con modelli locali Ollama, con brief per conversazione e plan mode",
+  "description": "App desktop per chattare con modelli locali Ollama, con ruoli, situazione per conversazione e plan mode",
   "main": "./out/main/index.js",
   "author": {
     "name": "Andrea Porcella",
