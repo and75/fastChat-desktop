@@ -4,7 +4,8 @@ import { sourceLabel } from '@shared/knowledge'
 import type { KnowledgeRef, MemoryRef, Message } from '@shared/types'
 import { BookOpenIcon } from './icons'
 import { Markdown } from './Markdown'
-import { WaitingIndicator } from './Loader'
+import { useElapsed, WaitingIndicator } from './Loader'
+import { STALL_SECONDS } from '../store/useChat'
 import { ThinkingBlock } from './ThinkingBlock'
 
 interface Props {
@@ -16,6 +17,8 @@ interface Props {
   streaming?: boolean
   /** Durante lo streaming, prima del primo token: cosa sta succedendo (riassunto, ricerca, caricamento del modello…). */
   stage?: string
+  /** Durante lo streaming: quando è arrivato l'ultimo frammento, per avvisare se il testo smette di arrivare. */
+  lastDeltaAt?: number | null
   /** Estratti della conversazione forniti al modello per questa risposta. */
   memoryRefs?: MemoryRef[] | null
   /** Estratti dei documenti (fonti) forniti al modello per questa risposta. */
@@ -31,6 +34,17 @@ interface Props {
   truncated?: boolean
   /** Identificativo per la cronologia (attributo `data-message-id`). */
   anchorId?: string
+}
+
+/** A risposta iniziata: avvisa quando da troppo tempo non arriva nuovo testo (Ollama fermo o molto lento). */
+function StallNote({ since }: { since: number | null }): React.JSX.Element | null {
+  const idle = useElapsed(since ?? undefined)
+  if (since == null || idle < STALL_SECONDS * 1000) return null
+  return (
+    <p role="status" className="text-xs text-amber-700 dark:text-amber-400" data-testid="stall-note">
+      {t('message.stalled', { seconds: Math.floor(idle / 1000) })}
+    </p>
+  )
 }
 
 function formatMeta(meta: NonNullable<Props['meta']>): string {
@@ -49,6 +63,7 @@ export function MessageBubble({
   meta,
   streaming,
   stage,
+  lastDeltaAt = null,
   memoryRefs = null,
   knowledgeRefs = null,
   knowledge = null,
@@ -107,6 +122,7 @@ export function MessageBubble({
         ) : null}
         {streaming && content && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-zinc-400 align-middle" />}
       </div>
+      {streaming && (content || thinking) && <StallNote since={lastDeltaAt} />}
       {!streaming && knowledgeRefs && knowledgeRefs.length > 0 && <KnowledgeRefs refs={knowledgeRefs} />}
       {!streaming && memoryRefs && memoryRefs.length > 0 && <MemoryRefs refs={memoryRefs} />}
       {!streaming && (

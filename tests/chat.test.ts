@@ -12,7 +12,7 @@ import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/clien
 import { createConversation, getConversation, getPlan, listContextCalls, listMessages, listPlans, removeMessage, saveRole, updateConversation, updatePlan } from '../src/main/db/repo'
 import { createContextLog } from '../src/main/contextLog'
 import { parseRole } from '../src/shared/roles'
-import { createOllamaClient } from '../src/main/ollama'
+import { createOllamaClient, OllamaError } from '../src/main/ollama'
 import type { Logger } from '../src/main/log'
 import type { Conversation, StreamEvent } from '../src/shared/types'
 import { startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
@@ -676,6 +676,26 @@ describe('attesa del primo token: cosa fa Ollama', () => {
     expect(waitingOf(second.streamId).map((e) => e.modelState)).toEqual(['unknown'])
   })
 
+  it('Ollama non risponde alla domanda sui modelli in memoria: «Ollama non risponde», finché non arriva la risposta', async () => {
+    const slow = await startFakeOllama([{ name: 'lento', capabilities: ['completion'], startDelayMs: 250, chunks: [{ content: 'Fatto.' }] }])
+    try {
+      const client = createOllamaClient(() => slow.url)
+      const chat = createChatService({
+        db: h.db,
+        ollama: { ...client, loadedModels: async () => Promise.reject(new OllamaError('timeout', 'muto')) },
+        emit: (_t, e) => events.push(e)
+      })
+      const conv = await createConversation(h.db, { model: 'lento', title: 'Già col titolo' })
+      const { streamId } = await chat.send(target, conv.id, 'ciao')
+      await chat.wait(streamId)
+      expect(waitingOf(streamId).map((e) => e.modelState)).toEqual(['unknown', 'silent'])
+      // la risposta è arrivata comunque
+      expect(events.some((e) => e.streamId === streamId && e.type === 'done' && e.message?.content === 'Fatto.')).toBe(true)
+    } finally {
+      await slow.close()
+    }
+  })
+
   it('un passo facoltativo che fallisce non ferma la risposta, ma lascia il motivo nel registro', async () => {
     const { log, lines } = memoryLog()
     const client = createOllamaClient(() => fake.url)
@@ -689,7 +709,10 @@ describe('attesa del primo token: cosa fa Ollama', () => {
     const conv = await createConversation(h.db, { model: 'llama3.2', title: 'Già col titolo' })
     const { streamId } = await chat.send(target, conv.id, 'ciao')
     await chat.wait(streamId)
-    expect(events.some((e) => e.streamId === streamId && e.type === 'done' && e.message)).toBe(true)
+    // la risposta arriva, e l'evento finale dice cosa è mancato
+    const done = events.find((e) => e.streamId === streamId && e.type === 'done')
+    expect(done?.message).toBeTruthy()
+    expect(done?.skipped).toEqual(['summary'])
     const warn = lines.find((l) => l.level === 'warn' && l.message.startsWith('riassunto prima della risposta'))
     expect(warn?.data).toMatchObject({ conversation: conv.id, error: 'riassunto rotto' })
   })

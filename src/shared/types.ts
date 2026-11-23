@@ -617,9 +617,17 @@ export type StreamEventType = 'summarizing' | 'searching' | 'remembering' | 'wai
 /**
  * Cosa fa Ollama mentre si aspetta il primo token, letto da /api/ps:
  * 'loading' il modello non è in memoria e Ollama lo sta caricando; 'loaded' è in memoria e legge il contesto;
- * 'unknown' Ollama non ha ancora detto quali modelli ha in memoria.
+ * 'unknown' Ollama non ha ancora detto quali modelli ha in memoria; 'silent' Ollama non risponde più alla
+ * domanda sui modelli in memoria (irraggiungibile o bloccato) mentre si aspetta la risposta.
  */
-export type ModelState = 'loading' | 'loaded' | 'unknown'
+export type ModelState = 'loading' | 'loaded' | 'unknown' | 'silent'
+
+/**
+ * Passi facoltativi prima della risposta che non sono riusciti: la risposta è arrivata senza.
+ * 'summary' riassunto dei messaggi vecchi; 'embedding' embedding della domanda (niente ricerca per significato);
+ * 'documents' ricerca nei documenti; 'memory' ricerca nei messaggi riassunti.
+ */
+export type SkippedStep = 'summary' | 'embedding' | 'documents' | 'memory'
 
 /** 'chat': risposta normale o esecuzione di un piano; 'plan': proposta di un piano (content è JSON). */
 export type StreamKind = 'chat' | 'plan'
@@ -635,6 +643,8 @@ export interface StreamEvent {
   modelState?: ModelState
   model?: string
   promptTokens?: number
+  /** Sull'evento 'done': passi facoltativi non riusciti, se ce ne sono. */
+  skipped?: SkippedStep[]
   /** Sull'evento 'done': il messaggio dell'assistente salvato (assente se interrotto senza testo). */
   message?: Message
   /** Sull'evento 'done': true se la generazione è stata interrotta dall'utente. */

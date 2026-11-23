@@ -60,11 +60,56 @@ describe('client Ollama: ogni esito va nel registro', () => {
     expect(lines[0].data?.error).toContain('ECONNREFUSED')
   })
 
+  it('chiamata rapida senza risposta: errore «timeout» dopo il limite, diverso da «non raggiungibile»', async () => {
+    const { log, lines } = memoryLog()
+    // fetch che non risponde mai, ma rispetta il segnale di interruzione
+    const hang: typeof fetch = (_url, init) => new Promise((_res, rej) => init?.signal?.addEventListener('abort', () => rej(init.signal!.reason)))
+    const client = createOllamaClient(() => 'http://x', hang, log)
+    const realTimeout = AbortSignal.timeout
+    AbortSignal.timeout = () => realTimeout.call(AbortSignal, 30)
+    try {
+      const err = await client.listModels().catch((e: unknown) => e)
+      expect(err).toMatchObject({ code: 'timeout' })
+      expect((err as Error).message).toContain('non ha risposto entro 15 secondi')
+      expect(lines[0]).toMatchObject({ level: 'error', message: 'GET /api/tags senza risposta entro il limite' })
+    } finally {
+      AbortSignal.timeout = realTimeout
+    }
+    // la chat non ha limite dell'app: un'interruzione dell'utente resta un'interruzione
+    const controller = new AbortController()
+    const pending = client.chatStream({ model: 'm', messages: [] }, {}, controller.signal)
+    controller.abort()
+    expect((await pending).aborted).toBe(true)
+  })
+
+  it('richiesta chiusa da fetch dopo 5 minuti di silenzio, o connessione caduta durante la risposta: messaggi propri', async () => {
+    const cause = Object.assign(new Error('Headers Timeout Error'), { code: 'UND_ERR_HEADERS_TIMEOUT' })
+    const silent = createOllamaClient(() => 'http://x', async () => Promise.reject(new TypeError('fetch failed', { cause })))
+    await expect(silent.chatStream({ model: 'm', messages: [] }, {})).rejects.toMatchObject({ code: 'timeout', message: expect.stringContaining('5 minuti') })
+
+    // lo stream comincia e poi si rompe
+    const broken: typeof fetch = async () =>
+      new Response(
+        new ReadableStream({
+          start(c) {
+            c.enqueue(new TextEncoder().encode('{"message":{"content":"Ini"}}\n'))
+            c.error(new TypeError('terminated'))
+          }
+        }),
+        { status: 200 }
+      )
+    const dropped = createOllamaClient(() => 'http://x', broken)
+    await expect(dropped.chatStream({ model: 'm', messages: [] }, {})).rejects.toMatchObject({ code: 'interrupted', message: 'La connessione con Ollama si è interrotta durante la risposta.' })
+  })
+
   it("errore HTTP: stato e testo di Ollama nel registro, con il modello; lo stato dei modelli (ripetuto) solo se fallisce", async () => {
     const { log, lines } = memoryLog()
     const reply = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
     const failing = createOllamaClient(() => 'http://x', reply(500, { error: 'llama-server reported out-of-memory during startup' }), log)
-    await expect(failing.chatStream({ model: 'grande', messages: [] }, {})).rejects.toThrow('Ollama 500')
+    // memoria insufficiente: messaggio che dice cosa fare, con la memoria richiesta e il testo di Ollama in coda
+    const oom = await failing.chatStream({ model: 'grande', messages: [], options: { num_ctx: 131072 } }, {}).catch((e: unknown) => e)
+    expect(oom).toMatchObject({ code: 'memory', status: 500 })
+    expect((oom as Error).message).toMatch(/^Memoria insufficiente per caricare il modello grande con una memoria di 131072 token\..*out-of-memory during startup$/)
     expect(lines).toHaveLength(1)
     expect(lines[0]).toMatchObject({ level: 'error', message: 'POST /api/chat errore', data: { model: 'grande', status: 500 } })
     expect(lines[0].data?.error).toContain('out-of-memory')

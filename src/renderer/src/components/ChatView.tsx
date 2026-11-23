@@ -174,7 +174,7 @@ function Composer({ disabled, streaming }: { disabled: boolean; streaming: boole
 export const continuePrompt = (): string => t('chat.continuePrompt')
 
 export function ChatView(): React.JSX.Element {
-  const { conversation, messages, plans, streams, error, regenerate, retry, clearError, send } = useChat()
+  const { conversation, messages, plans, streams, error, warning, regenerate, retry, clearError, clearWarning, send } = useChat()
   const create = useConversations((s) => s.create)
   const live = conversation ? streams[conversation.id] : undefined
   const scroller = useRef<HTMLDivElement>(null)
@@ -313,9 +313,22 @@ export function ChatView(): React.JSX.Element {
                 content={live.content}
                 thinking={live.thinking}
                 stage={stageLabel(live)}
+                lastDeltaAt={live.lastDeltaAt}
                 streaming
                 startedAt={live.startedAt}
               />
+            )}
+            {warning && !live && (
+              <div
+                role="status"
+                data-testid="chat-warning"
+                className="flex items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+              >
+                <span className="flex-1">{warning}</span>
+                <button type="button" aria-label={t('common.close')} onClick={clearWarning}>
+                  ✕
+                </button>
+              </div>
             )}
             {error && (
               <div

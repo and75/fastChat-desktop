@@ -3,7 +3,27 @@ import type { DoneReason, ModelCapabilities, ModelDefaults, OllamaModel } from '
 import { t } from '@shared/i18n'
 import { errorDetail, nullLogger, type Logger } from './log'
 
-export type OllamaErrorCode = 'unreachable' | 'http' | 'model' | 'parse'
+/**
+ * 'unreachable': Ollama non accetta la connessione; 'timeout': non ha risposto in tempo; 'interrupted': la
+ * connessione è caduta a risposta iniziata; 'memory': memoria insufficiente per caricare il modello;
+ * 'model': modello sconosciuto (404); 'http': altro errore di Ollama; 'parse': risposta non leggibile.
+ */
+export type OllamaErrorCode = 'unreachable' | 'timeout' | 'interrupted' | 'memory' | 'http' | 'model' | 'parse'
+
+/** Tempo massimo delle chiamate che Ollama serve subito (elenco e dettagli dei modelli, modelli in memoria). */
+export const QUICK_TIMEOUT_MS = 15_000
+/** Tempo massimo per sapere quali modelli sono in memoria: oltre, Ollama è considerato muto. */
+export const PS_TIMEOUT_MS = 5_000
+
+/** Ollama ha rifiutato di caricare il modello per mancanza di memoria (RAM o memoria video)? */
+export const isOutOfMemory = (detail: string): boolean => /out[- ]of[- ]memory|failed to allocate|requires more system memory|insufficient memory/i.test(detail)
+
+/** Codici con cui fetch (undici) chiude una richiesta rimasta 5 minuti senza dati. */
+const SILENCE_CODES = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT'])
+const causeCode = (err: unknown): string | null => {
+  const code = ((err as { cause?: unknown } | null)?.cause as { code?: unknown } | undefined)?.code
+  return typeof code === 'string' ? code : null
+}
 
 export class OllamaError extends Error {
   constructor(
@@ -171,6 +191,17 @@ export function kvBytesPerToken(info: Record<string, unknown>): number | null {
 const isAbort = (err: unknown): boolean =>
   err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
 
+/** Dati di una richiesta per il registro, il timeout e i messaggi d'errore. */
+interface RequestMeta {
+  model?: string
+  /** Memoria della conversazione richiesta (per il messaggio di memoria insufficiente). */
+  numCtx?: number
+  /** Chiamate ripetute (stato dei modelli durante l'attesa): nel registro solo gli errori. */
+  quiet?: boolean
+  /** Tempo massimo, per le chiamate che Ollama serve subito. Assente: nessun limite dell'app. */
+  timeoutMs?: number
+}
+
 export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLike = fetch, log: Logger = nullLogger): OllamaClient {
   const capsCache = new Map<string, ModelCapabilities>()
 
@@ -180,22 +211,33 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
    * Richiesta a Ollama. Ogni esito va nel registro diagnostico: per /api/chat con stream «ok» vuol dire che
    * Ollama ha cominciato a rispondere (il seguito lo registra chatStream).
    */
-  async function request(path: string, init: RequestInit = {}, model?: string, quiet = false): Promise<Response> {
+  async function request(path: string, init: RequestInit = {}, meta: RequestMeta = {}): Promise<Response> {
+    const { model, quiet = false, timeoutMs } = meta
     const started = Date.now()
     const method = init.method ?? 'GET'
     const took = (): number => Date.now() - started
+    const limit = timeoutMs ? AbortSignal.timeout(timeoutMs) : null
+    const signal = limit && init.signal ? AbortSignal.any([init.signal, limit]) : (limit ?? init.signal)
     let res: Response
     try {
       res = await fetchImpl(url(path), {
         ...init,
+        ...(signal ? { signal } : {}),
         headers: { 'content-type': 'application/json', ...init.headers }
       })
     } catch (err) {
+      // Il limite dell'app è scaduto: non è un'interruzione dell'utente.
+      if (limit?.aborted && !init.signal?.aborted) {
+        log.error('ollama', `${method} ${path} senza risposta entro il limite`, { model, ms: took(), url: getBaseUrl() })
+        throw new OllamaError('timeout', t('err.timeout', { seconds: Math.round(timeoutMs! / 1000), url: getBaseUrl() }))
+      }
       if (isAbort(err)) {
         log.info('ollama', `${method} ${path} interrotta`, { model, ms: took() })
         throw err
       }
       log.error('ollama', `${method} ${path} senza risposta`, { model, ms: took(), url: getBaseUrl(), error: errorDetail(err) })
+      // fetch chiude da sé una richiesta rimasta 5 minuti senza dati: Ollama c'è, ma non ha risposto.
+      if (SILENCE_CODES.has(causeCode(err) ?? '')) throw new OllamaError('timeout', t('err.timeout.long'))
       throw new OllamaError('unreachable', t('err.unreachable', { url: getBaseUrl() }))
     }
     if (!res.ok) {
@@ -206,17 +248,23 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       } catch {
         /* corpo non JSON: resta lo statusText */
       }
-      log.error('ollama', `${method} ${path} errore`, { model, ms: took(), status: res.status, error: detail })
+      log.error('ollama', `${method} ${path} errore`, { model, numCtx: meta.numCtx, ms: took(), status: res.status, error: detail })
+      if (isOutOfMemory(detail)) throw new OllamaError('memory', outOfMemoryMessage(detail, meta), res.status)
       const code: OllamaErrorCode = res.status === 404 ? 'model' : 'http'
       throw new OllamaError(code, `Ollama ${res.status}: ${detail}`, res.status)
     }
-    // `quiet`: chiamate ripetute (stato dei modelli durante l'attesa), di cui si registrano solo gli errori.
     if (!quiet) log.info('ollama', `${method} ${path} ok`, { model, ms: took() })
     return res
   }
 
+  /** Memoria insufficiente: cosa è successo e cosa si può fare, con il testo di Ollama in coda. */
+  function outOfMemoryMessage(detail: string, meta: RequestMeta): string {
+    const ctx = meta.numCtx ? t('err.memory.ctx', { numCtx: meta.numCtx }) : ''
+    return t('err.memory', { model: meta.model ?? '', ctx, detail })
+  }
+
   async function listModels(): Promise<OllamaModel[]> {
-    const res = await request('/api/tags')
+    const res = await request('/api/tags', {}, { timeoutMs: QUICK_TIMEOUT_MS })
     const body = (await res.json()) as {
       models?: Array<{
         name: string
@@ -244,7 +292,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     const cached = capsCache.get(key)
     if (cached) return cached
 
-    const res = await request('/api/show', { method: 'POST', body: JSON.stringify({ model: name }) }, name)
+    const res = await request('/api/show', { method: 'POST', body: JSON.stringify({ model: name }) }, { model: name, timeoutMs: QUICK_TIMEOUT_MS })
     const body = (await res.json()) as {
       capabilities?: string[]
       model_info?: Record<string, unknown>
@@ -298,7 +346,10 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       } catch {
         throw new OllamaError('parse', t('err.badNdjson', { line: line.slice(0, 120) }))
       }
-      if (chunk.error) throw new OllamaError('http', chunk.error)
+      if (chunk.error) {
+        if (isOutOfMemory(chunk.error)) throw new OllamaError('memory', outOfMemoryMessage(chunk.error, { model: req.model, numCtx: req.options?.num_ctx }))
+        throw new OllamaError('http', chunk.error)
+      }
       const thinking = chunk.message?.thinking
       if (thinking) {
         first()
@@ -328,7 +379,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
         method: 'POST',
         body: JSON.stringify({ ...req, stream: true }),
         signal
-      }, req.model)
+      }, { model: req.model, numCtx: req.options?.num_ctx })
       streaming = true
       if (!res.body) throw new OllamaError('parse', t('err.noBody'))
 
@@ -356,6 +407,10 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
       // precedenti li ha già registrati `request`.
       if (streaming) {
         log.error('ollama', 'chat fallita durante la risposta', { model: req.model, ms: Date.now() - started, firstTokenMs: result.firstTokenMs, error: errorDetail(err) })
+        // La connessione è caduta mentre si leggeva la risposta: un messaggio chiaro al posto di «terminated».
+        if (!(err instanceof OllamaError)) {
+          throw SILENCE_CODES.has(causeCode(err) ?? '') ? new OllamaError('timeout', t('err.timeout.long')) : new OllamaError('interrupted', t('err.interrupted'))
+        }
       }
       throw err
     }
@@ -375,7 +430,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
   }
 
   async function loadedModels(): Promise<LoadedModel[]> {
-    const res = await request('/api/ps', {}, undefined, true)
+    const res = await request('/api/ps', {}, { quiet: true, timeoutMs: PS_TIMEOUT_MS })
     const body = (await res.json()) as { models?: Array<{ name: string; size?: number; size_vram?: number; context_length?: number }> }
     return (body.models ?? []).map((m) => ({
       name: m.name,
@@ -390,7 +445,7 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
     onProgress: (p: { status: string; completed: number | null; total: number | null }) => void,
     signal?: AbortSignal
   ): Promise<void> {
-    const res = await request('/api/pull', { method: 'POST', body: JSON.stringify({ model: name, stream: true }), signal }, name)
+    const res = await request('/api/pull', { method: 'POST', body: JSON.stringify({ model: name, stream: true }), signal }, { model: name })
     if (!res.body) throw new OllamaError('parse', t('err.noBody'))
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
@@ -416,12 +471,12 @@ export function createOllamaClient(getBaseUrl: () => string, fetchImpl: FetchLik
   }
 
   async function deleteModel(name: string): Promise<void> {
-    await request('/api/delete', { method: 'DELETE', body: JSON.stringify({ model: name }) }, name)
+    await request('/api/delete', { method: 'DELETE', body: JSON.stringify({ model: name }) }, { model: name, timeoutMs: QUICK_TIMEOUT_MS })
     capsCache.clear()
   }
 
   async function embed(model: string, input: string[], options?: { num_gpu?: number }, onStats?: (stats: EmbedStats) => void): Promise<number[][]> {
-    const res = await request('/api/embed', { method: 'POST', body: JSON.stringify({ model, input, ...(options ? { options } : {}) }) }, model)
+    const res = await request('/api/embed', { method: 'POST', body: JSON.stringify({ model, input, ...(options ? { options } : {}) }) }, { model })
     const body = (await res.json()) as { embeddings?: number[][]; prompt_eval_count?: number; total_duration?: number; load_duration?: number }
     if (!Array.isArray(body.embeddings) || body.embeddings.length !== input.length) {
       throw new OllamaError('parse', t('err.badEmbed'))

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { flushPendingSaves } from './pendingSaves'
 import { t } from '@shared/i18n'
-import type { Conversation, Message, ModelState, Plan, PlanStep, Result, SendResult, StreamEvent, StreamKind } from '@shared/types'
+import type { Conversation, Message, ModelState, Plan, PlanStep, Result, SendResult, SkippedStep, StreamEvent, StreamKind } from '@shared/types'
 
 export interface LiveStream {
   streamId: string
@@ -18,6 +18,18 @@ export interface LiveStream {
   searching: boolean
   /** La richiesta è partita e si aspetta il primo token: cosa fa Ollama, con quale modello e quanti token legge. */
   waiting: { state: ModelState; model: string; promptTokens: number | null } | null
+  /** Ultimo frammento ricevuto (ms), per avvisare quando il testo smette di arrivare. */
+  lastDeltaAt: number | null
+}
+
+/** Secondi senza nuovo testo oltre i quali la risposta in corso mostra un avviso. */
+export const STALL_SECONDS = 30
+
+/** Avviso sotto la risposta: i passi facoltativi che non sono riusciti. */
+export function skippedNotice(steps: SkippedStep[]): string {
+  const names = steps.map((s) => t(`chat.skipped.${s}`))
+  const list = names.length > 1 ? names.slice(0, -1).join(', ') + t('chat.skipped.and') + names.at(-1) : names[0]
+  return t('chat.skipped', { steps: list })
 }
 
 /** Etichetta dell'attesa prima del primo token: cosa sta succedendo davvero. undefined a risposta iniziata. */
@@ -26,6 +38,7 @@ export function stageLabel(live: Pick<LiveStream, 'summarizing' | 'remembering' 
   if (live.searching) return t('message.searching')
   if (live.remembering) return t('message.remembering')
   if (!live.waiting) return undefined
+  if (live.waiting.state === 'silent') return t('message.ollamaSilent')
   if (live.waiting.state === 'loading') return t('message.loadingModel', { model: live.waiting.model })
   if (live.waiting.state === 'loaded') {
     const tokens = live.waiting.promptTokens
@@ -42,6 +55,8 @@ interface ChatState {
   /** Stream in corso, per conversazione: proseguono anche se si cambia conversazione. */
   streams: Record<string, LiveStream>
   error: string | null
+  /** L'ultima risposta è arrivata senza un passo facoltativo (documenti, memoria…): avviso, non errore. */
+  warning: string | null
   /** Tipo dello stream fallito: decide cosa fa "Riprova". */
   errorKind: StreamKind | null
   loading: boolean
@@ -65,6 +80,7 @@ interface ChatState {
   rejectPlan(planId: string): Promise<void>
   handleStream(event: StreamEvent): void
   clearError(): void
+  clearWarning(): void
 }
 
 /** Eventi arrivati prima che la risposta della chiamata IPC ci abbia comunicato lo streamId. */
@@ -75,7 +91,7 @@ const replacePlan = (plans: Plan[], plan: Plan): Plan[] => plans.map((p) => (p.i
 export const useChat = create<ChatState>((set, get) => {
   /** Registra un nuovo stream e applica gli eventi eventualmente già arrivati. */
   const startStream = (conversationId: string, streamId: string, kind: StreamKind): void => {
-    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '', startedAt: Date.now(), summarizing: false, remembering: false, searching: false, waiting: null } } }))
+    set((s) => ({ streams: { ...s.streams, [conversationId]: { streamId, kind, content: '', thinking: '', startedAt: Date.now(), summarizing: false, remembering: false, searching: false, waiting: null, lastDeltaAt: null } } }))
     const early = pending.get(streamId) ?? []
     pending.delete(streamId)
     early.forEach((e) => get().handleStream(e))
@@ -92,7 +108,7 @@ export const useChat = create<ChatState>((set, get) => {
     await flushPendingSaves()
     const conv = get().conversation
     if (!conv || get().streams[conv.id]) return false
-    set({ error: null, errorKind: null })
+    set({ error: null, errorKind: null, warning: null })
     const res = await call(conv)
     if (!res.ok) {
       set({ error: res.error, errorKind: kind })
@@ -116,14 +132,15 @@ export const useChat = create<ChatState>((set, get) => {
     plans: [],
     streams: {},
     error: null,
+    warning: null,
     errorKind: null,
     loading: false,
     knowledgeNext: null,
     setKnowledgeNext: (value) => set({ knowledgeNext: value }),
 
     async load(id) {
-      if (!id) return set({ conversation: null, messages: [], plans: [], error: null, errorKind: null, knowledgeNext: null })
-      set({ loading: true, error: null, errorKind: null, knowledgeNext: null })
+      if (!id) return set({ conversation: null, messages: [], plans: [], error: null, errorKind: null, warning: null, knowledgeNext: null })
+      set({ loading: true, error: null, errorKind: null, warning: null, knowledgeNext: null })
       const res = await window.api.conversations.get(id)
       if (res.ok) {
         set({ conversation: res.data.conversation, messages: res.data.messages, plans: res.data.plans, loading: false })
@@ -227,7 +244,7 @@ export const useChat = create<ChatState>((set, get) => {
         case 'content': {
           const key = event.type === 'thinking' ? 'thinking' : 'content'
           set((s) => ({
-            streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: false, searching: false, waiting: null, [key]: live[key] + (event.delta ?? '') } }
+            streams: { ...s.streams, [event.conversationId]: { ...live, summarizing: false, remembering: false, searching: false, waiting: null, lastDeltaAt: Date.now(), [key]: live[key] + (event.delta ?? '') } }
           }))
           return
         }
@@ -244,7 +261,8 @@ export const useChat = create<ChatState>((set, get) => {
               streams,
               plans,
               messages: event.message ? [...s.messages, event.message] : s.messages,
-              ...(event.type === 'error' ? { error: event.error ?? 'Errore sconosciuto', errorKind: event.kind } : {})
+              ...(event.type === 'error' ? { error: event.error ?? 'Errore sconosciuto', errorKind: event.kind } : {}),
+              ...(event.type === 'done' && event.skipped?.length ? { warning: skippedNotice(event.skipped) } : {})
             }
           })
         }
@@ -253,6 +271,10 @@ export const useChat = create<ChatState>((set, get) => {
 
     clearError() {
       set({ error: null, errorKind: null })
+    },
+
+    clearWarning() {
+      set({ warning: null })
     }
   }
 })

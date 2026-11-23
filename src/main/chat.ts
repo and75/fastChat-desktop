@@ -24,6 +24,7 @@ import {
   type Plan,
   type SendOptions,
   type SendResult,
+  type SkippedStep,
   type StreamEvent,
   type StreamKind
 } from '@shared/types'
@@ -48,7 +49,7 @@ import { chatParts } from '@shared/context'
 import { t } from '@shared/i18n'
 import type { ContextOrder, ContextPart, ContextSettings } from '@shared/types'
 import { callInput, type CallStart, type ContextLog } from './contextLog'
-import type { ChatMessage, ChatOptions, ChatRequest, OllamaClient } from './ollama'
+import { OllamaError, type ChatMessage, type ChatOptions, type ChatRequest, type OllamaClient } from './ollama'
 import { memoryBudget, type Memory, type Recall } from './memory'
 import type { Summarizer } from './summary'
 import { knowledgeBudget } from '@shared/knowledge'
@@ -304,8 +305,9 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
   }
 
   /** Un passo facoltativo è fallito: la risposta prosegue senza, ma il motivo resta nel registro. */
-  const skipped = (step: string, conversationId: string) => (err: unknown): null => {
+  const skipped = (step: string, conversationId: string, note?: () => void) => (err: unknown): null => {
     log.warn('chat', `${step} non riuscito: la risposta prosegue senza`, { conversation: conversationId, error: errorDetail(err) })
+    note?.()
     return null
   }
 
@@ -314,8 +316,9 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     try {
       const loaded = await ollama.loadedModels()
       return loaded.some((m) => m.name === model || m.name === `${model}:latest`) ? 'loaded' : 'loading'
-    } catch {
-      return 'unknown'
+    } catch (err) {
+      // Ollama non raggiungibile o muto; un altro errore (versione senza /api/ps) non dice nulla.
+      return err instanceof OllamaError && (err.code === 'unreachable' || err.code === 'timeout') ? 'silent' : 'unknown'
     }
   }
 
@@ -475,6 +478,9 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
       }
       // Stato del modello in Ollama mentre si aspetta il primo token.
       const wait: { timer: ReturnType<typeof setInterval> | null; stopped: boolean; first: ModelState | null } = { timer: null, stopped: false, first: null }
+      // Passi facoltativi non riusciti: la risposta arriva lo stesso, ma l'utente lo vede.
+      const missing = new Set<SkippedStep>()
+      const miss = (step: SkippedStep) => (): void => void missing.add(step)
       const stopWaiting = (): void => {
         wait.stopped = true
         if (wait.timer) clearInterval(wait.timer)
@@ -487,7 +493,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         // altrimenti la domanda partirebbe con lo stato vecchio e potrebbe esaurire la memoria.
         const summarized = await summarizer
           ?.summarize(conv.id, false, () => emit(target, { ...base, type: 'summarizing' }), true)
-          .catch(skipped('riassunto prima della risposta', conv.id))
+          .catch(skipped('riassunto prima della risposta', conv.id, miss('summary')))
         lap('summaryMs', t0)
         if (summarized?.outcome === 'updated' && summarized.conversation) {
           conv = summarized.conversation
@@ -520,7 +526,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
           // solo, condiviso tra documenti e memoria; un pacchetto può dichiararne un altro per i suoi vettori).
           const vectors = new Map<string, Promise<number[] | null>>()
           const vector = (model: string): Promise<number[] | null> => {
-            if (!vectors.has(model)) vectors.set(model, questionEmbedder ? questionEmbedder.embedQuestion(conv, history, model).catch(skipped(`embedding della domanda (${model})`, conv.id)) : Promise.resolve(null))
+            if (!vectors.has(model)) vectors.set(model, questionEmbedder ? questionEmbedder.embedQuestion(conv, history, model).catch(skipped(`embedding della domanda (${model})`, conv.id, miss('embedding'))) : Promise.resolve(null))
             return vectors.get(model)!
           }
           if (useKnowledge || useRole) {
@@ -529,7 +535,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
             found = await knowledge!
               .recallAll(conv, { text: question?.content ?? '', vector }, { total: knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), shares, documents: useKnowledge }, cpt)
               .catch((err: unknown) => {
-                skipped('ricerca nei documenti', conv.id)(err)
+                skipped('ricerca nei documenti', conv.id, miss('documents'))(err)
                 return found
               })
             lap('searchMs', since)
@@ -540,7 +546,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
             const since = Date.now()
             const query = questionEmbedder ? await vector(await questionEmbedder.model()) : null
             recall = await memory!.recall(conv, memoryBudget(s.numCtx, s.reserveTokens, used), query).catch((err: unknown) => {
-              skipped('ricerca nella conversazione', conv.id)(err)
+              skipped('ricerca nella conversazione', conv.id, miss('memory'))(err)
               return recall
             })
             lap('memoryMs', since)
@@ -567,7 +573,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         const refresh = async (): Promise<void> => {
           const next = await modelState(conv.model)
           if (wait.stopped || next === 'unknown') return
-          wait.first ??= next
+          if (next !== 'silent') wait.first ??= next
           if (next !== state) {
             state = next
             waiting(state)
@@ -621,7 +627,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
         })
         const done = await finish(conv, mode, result, recall.refs, found.documents.refs)
         answered = !!done.message
-        emit(target, { ...base, type: 'done', ...done })
+        emit(target, { ...base, type: 'done', ...done, ...(missing.size && !result.aborted ? { skipped: [...missing] } : {}) })
       } catch (err) {
         log.error('chat', 'risposta fallita', { conversation: conv.id, kind: mode.kind, model: conv.model, modelAtStart: wait.first ?? 'unknown', ...times, totalMs: Date.now() - t0, error: errorDetail(err) })
         emit(target, { ...base, type: 'error', error: err instanceof Error ? err.message : String(err) })
