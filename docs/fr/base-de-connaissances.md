@@ -187,6 +187,11 @@ Une base liée à une conversation a un **usage** (`conversation_bases.purpose`)
 
 Le choix du bouton livre est enregistré sur le message de l'utilisateur : « Régénérer » le répète.
 
+Pendant la recherche, la réponse en cours affiche « Je cherche dans les documents » ; le libellé ne vaut que pour la
+recherche, puis il dit ce que fait Ollama. Si l'embedding de la question ou la recherche échoue, la réponse arrive
+quand même, sans les documents : un avis sous la réponse le dit, et la raison est dans le journal de diagnostic
+(Paramètres → Général).
+
 ## 4. Budget : quelle place dans le prompt
 
 ```

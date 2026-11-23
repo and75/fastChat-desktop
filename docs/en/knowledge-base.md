@@ -162,6 +162,10 @@ At every question, if both conditions hold:
 
 The book button's choice is saved on the user's message: “Regenerate” repeats it.
 
+During the search the incoming answer shows “Searching the documents”; the label covers the search only, then it
+says what Ollama is doing. If the embedding of the question or the search fails, the answer still arrives, without
+the documents: a notice under the answer says so, and the reason is in the diagnostic log (Settings → General).
+
 ## 4. Budget: how much space in the prompt
 
 ```

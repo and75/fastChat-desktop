@@ -50,6 +50,18 @@ In «Come risponde» si trovano «Ragionamento» e «Stile della risposta», con
 
 «↺ Tutti i valori suggeriti» riporta temperatura e memoria ai valori consigliati per il modello.
 
+La «Memoria della conversazione» suggerita è calcolata sulla memoria del computer: sotto il cursore sono scritti i conti. Più memoria si sceglie a mano, spostando il cursore.
+
+## Attesa ed errori
+
+Mentre si aspetta la risposta, una riga dice cosa sta succedendo: «Sto riassumendo i messaggi più vecchi», «Cerco nei documenti», «Cerco nella conversazione», poi «Ollama sta caricando il modello» oppure «Modello in memoria: legge il contesto». Accanto c'è il tempo trascorso.
+
+«Ollama non risponde: puoi aspettare o interrompere» compare quando Ollama smette di rispondere. «Nessun nuovo testo da … s» compare quando la risposta è iniziata ma si è fermata. In entrambi i casi si può aspettare, oppure fermare con «Interrompi».
+
+Se il modello non si carica per memoria insufficiente, l'errore propone «Riprova con memoria a … token»: dimezza la «Memoria della conversazione» e ripete la domanda.
+
+Un riquadro giallo sotto la risposta avvisa quando è arrivata senza un passo che non è riuscito, per esempio senza i documenti, o quando Ollama ha dovuto ricaricare il modello.
+
 ## Plan mode
 
 Con «Plan mode» acceso il pulsante di invio diventa «Pianifica». Il modello propone un piano in passi; i passi si possono modificare. «Approva ed esegui» fa partire la risposta che segue il piano.
@@ -76,4 +88,4 @@ L'icona di esportazione, in alto a destra, salva la conversazione in Markdown o 
 
 L'ingranaggio in fondo alla barra laterale apre le «Impostazioni», con le schede «Generale», «Modelli», «Ollama», «Conoscenza», «Contesto».
 
-In «Generale» si scelgono «Lingua», «Tema», «URL di Ollama» e «Modello predefinito». In «Conoscenza» si gestiscono le basi della libreria e si importa un pacchetto con «Importa pacchetto…».
+In «Generale» si scelgono «Lingua», «Tema», «URL di Ollama» e «Modello predefinito»; «Apri il registro» apre il «Registro diagnostico», con le chiamate a Ollama, i tempi di ogni risposta e gli errori, senza il testo dei messaggi. In «Conoscenza» si gestiscono le basi della libreria e si importa un pacchetto con «Importa pacchetto…».

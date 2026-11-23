@@ -9,11 +9,12 @@ temperature, reasoning on or off, plan mode. The history stays on the computer.
 - **Roles**: the arrow next to “New conversation” opens “Talk to a…”, with the installed roles; “New conversation” on its own uses the “Generalist” (no instructions). A role brings its own instructions, model settings and knowledge bases; it is adjusted in the “Model” tab through guided choices, in four sections: “Identity and goals”, “Style and format”, “Rules”, “Method”. Each choice adds a sentence to the instructions and may change a model setting (it says so). The role can be changed in an empty conversation; otherwise a new conversation opens, which can start from the summary of the previous one.
 - **Situation → system prompt**: in the “Situation” tab you write the context of the conversation, with a character limit tied to the model's memory. The model receives the role's instructions, then the situation; the preview is in the same tab. Recomputed on every send, never truncated.
 - **Templates**: “Save as template”, in the “Situation” tab, saves the role, the choices and the situation; it is then found in “Talk to a…”, under the roles.
-- **Model**: temperature 0–2, `top_p`, `num_ctx`, `seed`; reasoning on or off (disabled if the model lacks the `thinking` capability), shown in a separate, collapsible block.
+- **Model**: temperature 0–2, `top_p`, `num_ctx`, `seed`; reasoning on or off (disabled if the model lacks the `thinking` capability), shown in a separate, collapsible block. “Conversation memory” (`num_ctx`) starts from a value computed on the machine: the usable memory (half of the RAM on PCs, two thirds with unified memory, all of it if the model runs on the CPU only), minus the model, the embedding model and a 1.5 GB margin, divided by the cost of one token; the figures are written under the slider. If a model fails to load for lack of memory, the app remembers it and from then on suggests half.
 - **Plan mode**: the model proposes a plan (JSON constrained by a schema); you edit it, reorder it, approve it; then it answers by following it.
 - **Knowledge bases** (RAG over documents): each conversation has its own base, in the “Knowledge” tab, and can link reusable bases from the library (Settings → Knowledge), shared between several conversations. PDF, Word, text and Markdown documents, or a connected folder on the computer. A base is exported and installed as a `.fcpack` package, with the vectors already computed and the embedding model declared; the app ships with a built-in base (“FastChat Guide”). The **Store** (button in the sidebar) shows by category — Roles, Knowledge bases, Plugins, Bundles — what can be installed and what is already there; a role is installed with the bases it requires, and when it exists in several languages you choose which one to install; it reads the catalogue bundled with the app or a repository configured in Settings. If the documents fit in the reserved space (25/50/75% of memory, adjustable per conversation, 50% by default) the model reads them **in full** at every question (it can count and add up); otherwise it receives the documents marked “Whole”, then the most relevant excerpts, chosen with a hybrid score (semantic similarity + exact words with FTS5: numbers, names) until the budget is filled. Sources (“[Report, p. 3]”) appear in the prompt and under the answer. The “Use the knowledge base” switch applies to the conversation, the book button next to “Send” to a single question. Everything is local: embedding with Ollama, vectors and FTS index in SQLite.
 - **History**: search (title and messages), rename, archive, delete; title generated after the first exchange; export as Markdown or JSON (with documents and sources).
 - **Robustness**: banner with “Retry” if Ollama does not respond, interruption that saves the partial answer, regeneration of the last answer, history trimmed to the available context.
+- **Waiting and errors**: before the first token the app says what is happening: summary, search in the documents or in the conversation, then Ollama's state (“is loading the model”, “model in memory: reading the context”, “is not answering”). Once the answer has started it warns after 30 seconds without new text. Errors have distinct messages: Ollama not reachable, no answer within the limit, connection dropped, not enough memory to load the model (with “Retry with memory at N tokens”). After the answer a notice says whether it came without a step that failed (summary, documents, memory) or whether Ollama had to reload the model.
 
 ## Requirements
 
@@ -40,7 +41,7 @@ Useful variables: `OLLAMA_URL` overrides the saved URL; `FASTCHAT_USER_DATA` cha
 
 ## Architecture
 
-- `src/main` — main process: window, IPC (`ipc.ts`), Ollama client (`ollama.ts`), chat and plan mode (`chat.ts`), summary (`summary.ts`), conversation memory (`memory.ts`), knowledge base (`knowledge/`), shared embedding (`embedder.ts`), export (`export.ts`), database (`db/`).
+- `src/main` — main process: window, IPC (`ipc.ts`), Ollama client (`ollama.ts`), chat and plan mode (`chat.ts`), summary (`summary.ts`), conversation memory (`memory.ts`), knowledge base (`knowledge/`), shared embedding (`embedder.ts`), diagnostic log (`log.ts`), export (`export.ts`), database (`db/`).
 - `src/preload` — exposes only `window.api` to the renderer (contract in `src/shared/api.ts`).
 - `src/renderer` — React + Zustand + Tailwind.
 - `src/shared` — types, IPC channels, `roles.ts` (roles: validation, instructions, model settings), `compose.ts` (context composition), `prompt.ts` (system prompt, plan, history selection), `memory.ts` and `knowledge.ts` (chunks, choice of excerpts, budget, prompt sections), `i18n/` (Italian, English, French).
@@ -65,6 +66,11 @@ The full mechanism is described in [`knowledge-base.md`](knowledge-base.md).
 reach the model is adjustable (everything in the system prompt, or knowledge next to the question), with an
 optional role reminder. The context monitor records, for every call, the order used and the time to the first
 fragment, and exports everything as CSV to compare layouts and models.
+
+**Diagnostic log.** `userData/logs/fastchat.log` (past 1 MB it becomes `fastchat.log.1`): every call to Ollama with
+model, duration and outcome; for each answer the timings per stage (summary, search, model loading, prompt reading,
+first token) and the other models in memory; the errors that do not stop the answer. It never contains the text of
+messages or documents. Open it from Settings → General → “Open the log”.
 
 **Database.** SQLite in `userData/chats.db`, through the built-in `node:sqlite` module (Electron 45 / Node 24)
 and Drizzle ORM (`sqlite-proxy` driver). No native module to rebuild for Electron or to package.

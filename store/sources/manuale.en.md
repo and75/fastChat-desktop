@@ -50,6 +50,18 @@ In the “Model” tab, under the role's sections, there are four groups: “Whe
 
 “↺ All suggested values” brings temperature and memory back to the values recommended for the model.
 
+The suggested “Conversation memory” is computed on the computer's memory: the figures are written under the slider. More memory is chosen by hand, by moving the slider.
+
+## Waiting and errors
+
+While you wait for the answer, a line says what is happening: “Summarizing the older messages”, “Searching the documents”, “Searching the conversation”, then “Ollama is loading the model” or “Model in memory: reading the context”. The elapsed time is next to it.
+
+“Ollama is not answering: you can wait or stop” appears when Ollama stops answering. “No new text for … s” appears when the answer has started but has stalled. In both cases you can wait, or stop with “Stop”.
+
+If the model fails to load for lack of memory, the error offers “Retry with memory at … tokens”: it halves the “Conversation memory” and repeats the question.
+
+A yellow box under the answer warns when it came without a step that failed, for example without the documents, or when Ollama had to reload the model.
+
 ## Plan mode
 
 With “Plan mode” on, the send button becomes “Plan”. The model proposes a plan in steps; the steps can be edited. “Approve and run” starts the answer that follows the plan.
@@ -76,4 +88,4 @@ The export icon, at the top right, saves the conversation as Markdown or JSON.
 
 The gear at the bottom of the sidebar opens “Settings”, with the “General”, “Models”, “Ollama”, “Knowledge” and “Context” tabs.
 
-In “General” you choose “Language”, “Theme”, “Ollama URL” and “Default model”. In “Knowledge” you manage the library bases and import a package with “Import package…”.
+In “General” you choose “Language”, “Theme”, “Ollama URL” and “Default model”; “Open the log” opens the “Diagnostic log”, with the calls to Ollama, the timings of each answer and the errors, without the text of the messages. In “Knowledge” you manage the library bases and import a package with “Import package…”.

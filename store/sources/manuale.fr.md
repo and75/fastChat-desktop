@@ -50,6 +50,18 @@ Dans « Comment il répond » se trouvent « Raisonnement » et « Style de la r
 
 « ↺ Toutes les valeurs suggérées » ramène la température et la mémoire aux valeurs conseillées pour le modèle.
 
+La « Mémoire de la conversation » suggérée est calculée sur la mémoire de l'ordinateur : le calcul est écrit sous le curseur. On choisit davantage de mémoire à la main, en déplaçant le curseur.
+
+## Attente et erreurs
+
+Pendant l'attente de la réponse, une ligne dit ce qui se passe : « Résumé des messages les plus anciens en cours », « Je cherche dans les documents », « Recherche dans la conversation », puis « Ollama charge le modèle » ou « Modèle en mémoire : il lit le contexte ». Le temps écoulé est affiché à côté.
+
+« Ollama ne répond pas : vous pouvez attendre ou interrompre » apparaît quand Ollama cesse de répondre. « Aucun nouveau texte depuis … s » apparaît quand la réponse a commencé mais s'est arrêtée. Dans les deux cas, on peut attendre, ou arrêter avec « Arrêter ».
+
+Si le modèle ne se charge pas par manque de mémoire, l'erreur propose « Réessayer avec une mémoire de … tokens » : la « Mémoire de la conversation » est divisée par deux et la question est répétée.
+
+Un encadré jaune sous la réponse avertit quand elle est arrivée sans une étape qui a échoué, par exemple sans les documents, ou quand Ollama a dû recharger le modèle.
+
 ## Mode plan
 
 Quand « Mode plan » est activé, le bouton d'envoi devient « Planifier ». Le modèle propose un plan en étapes ; les étapes peuvent être modifiées. « Approuver et exécuter » lance la réponse qui suit le plan.
@@ -76,4 +88,4 @@ L'icône d'exportation, en haut à droite, enregistre la conversation en Markdow
 
 La roue dentée en bas de la barre latérale ouvre les « Paramètres », avec les onglets « Général », « Modèles », « Ollama », « Connaissances », « Contexte ».
 
-Dans « Général », on choisit « Langue », « Thème », « URL d'Ollama » et « Modèle par défaut ». Dans « Connaissances », on gère les bases de la bibliothèque et on importe un paquet avec « Importer un paquet… ».
+Dans « Général », on choisit « Langue », « Thème », « URL d'Ollama » et « Modèle par défaut » ; « Ouvrir le journal » ouvre le « Journal de diagnostic », avec les appels à Ollama, les durées de chaque réponse et les erreurs, sans le texte des messages. Dans « Connaissances », on gère les bases de la bibliothèque et on importe un paquet avec « Importer un paquet… ».

@@ -164,6 +164,10 @@ A ogni domanda, se valgono entrambe le condizioni:
 
 La scelta del bottone libro si salva sul messaggio dell'utente: «Rigenera» la ripete.
 
+Durante la ricerca la risposta in arrivo mostra «Cerco nei documenti»; l'etichetta vale solo per la ricerca, poi
+dice cosa fa Ollama. Se l'embedding della domanda o la ricerca non riescono, la risposta arriva lo stesso, senza i
+documenti: un avviso sotto la risposta lo dice, e il motivo è nel registro diagnostico (Impostazioni → Generale).
+
 ## 4. Budget: quanto spazio nel prompt
 
 ```
