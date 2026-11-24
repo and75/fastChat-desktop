@@ -26,7 +26,16 @@ export const KNOWLEDGE = {
   maxBytes: 25 * 1024 * 1024,
   maxChars: 2_000_000,
   /** Pezzi per richiesta di embedding. */
-  embedBatch: 16
+  embedBatch: 16,
+  /**
+   * Estratti dei documenti al massimo per risposta. Senza un tetto la scelta riempiva tutto lo spazio: decine di
+   * estratti poco pertinenti, che il modello deve leggere a ogni domanda e in cui si perde.
+   */
+  maxExcerpts: 5,
+  /** Somiglianza minima quando nessuna parola della domanda compare nei documenti: sotto, nessun estratto. */
+  semanticOnlyMin: 0.5,
+  /** Un messaggio con meno parole di così («grazie», «rispondi») non è una domanda sui documenti: nessun estratto. */
+  minQuestionWords: 3
 } as const
 
 export interface Section {
@@ -119,6 +128,8 @@ export function ftsQuery(text: string): string {
   const terms: string[] = []
   for (const raw of text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []) {
     if (raw.length < 3 && !/^\d+$/.test(raw)) continue
+    // Le parole di servizio stanno in quasi ogni pezzo: farebbero sembrare pertinente qualunque documento.
+    if (STOPWORDS.has(raw)) continue
     if (seen.has(raw)) continue
     seen.add(raw)
     terms.push(`"${raw}"`)
@@ -127,7 +138,30 @@ export function ftsQuery(text: string): string {
   return terms.join(' OR ')
 }
 
+/**
+ * Parole di servizio (italiano, inglese, francese) di almeno tre lettere: non dicono di cosa parla la domanda.
+ * Le più corte sono già escluse dalla lunghezza.
+ */
+const STOPWORDS = new Set(
+  (
+    'che chi cui non per con del dei gli una uno nel nei sul sui tra fra come dove quando cosa quale quali quanto quanti quanta quante ' +
+    'sono sei siamo siete era ero hai hanno abbiamo avete fare faccio fai può puoi posso devo deve devi voglio vuoi vuole ' +
+    'della dello delle degli dalla dallo dalle dagli dal dai alla allo alle agli nella nello nelle negli sulla sullo sulle sugli ' +
+    'questo questa questi queste quello quella quelli quelle mio mia tuo tua suo sua loro anche più meno molto poco tutto tutta tutti tutte ' +
+    'the and for with from that this these those what which who how why when where are was were has have had can could should would will does did not but you your ' +
+    'les des une que qui est sont pour par avec dans sur pas plus comment pourquoi quand quoi quel quelle quels quelles cette ces mon ton son mes tes ses vous nous ils elles être avoir fait faire peut'
+  ).split(' ')
+)
+
+/** Parole (lettere o cifre) di un testo. */
+const wordsOf = (text: string): string[] => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
+
+/** Un messaggio troppo corto per essere una domanda sui documenti («grazie», «rispondi», «ok»). */
+export const isBareMessage = (text: string): boolean => wordsOf(text).length < KNOWLEDGE.minQuestionWords
+
 export interface PickOptions {
+  /** Estratti al massimo in tutto; se assente nessun tetto oltre al budget. */
+  max?: number
   /** Punteggio BM25 per pezzo (già positivo: più alto = più pertinente), per la parte a parole esatte. */
   bm25?: ReadonlyMap<string, number>
   /** Estratti al massimo per documento; se assente si calcola dal budget e dal numero di documenti. */
@@ -179,6 +213,7 @@ export function pickDocumentChunks(
   let chars = 0
   for (const c of scored) {
     if (c.score < floor) break
+    if (options.max != null && out.length >= options.max) break
     if ((perDoc.get(c.documentId) ?? 0) >= perDocument) continue
     if (chars + c.text.length > maxChars) continue
     perDoc.set(c.documentId, (perDoc.get(c.documentId) ?? 0) + 1)

@@ -613,6 +613,21 @@ massimo (30 s predefiniti, Impostazioni → Contesto); la velocità è la median
 modello, altrimenti quella del test sul modello; senza misura il tetto è di 2.000 token. Le basi del ruolo non ne
 risentono. Non è stato verificato sulla macchina dell'utente.
 
+**Dopo la 0.2.1, non rilasciato** — estratti e parti fisse. Due prompt inviati, letti dall'utente con «Vedi il
+prompt inviato», hanno mostrato il resto: 18 e poi 24 estratti (17.000–22.000 caratteri) per domande a cui la
+documentazione non risponde, uno perfino per «grazie»; e con l'ordine B anche «Come lavorare», che non cambia mai,
+veniva riletto a ogni domanda. Il modello, sommerso, inventava menu e pulsanti. Correzioni:
+- documenti su cui rispondere: al massimo 5 estratti; nessuno se il messaggio ha meno di 3 parole o se nessuna
+  parola della domanda compare nei documenti e la somiglianza è sotto 0,5; le parole di servizio non entrano nella
+  ricerca a parole esatte (`KNOWLEDGE.maxExcerpts`, `semanticOnlyMin`, `minQuestionWords`, `STOPWORDS`). Le basi
+  del ruolo non cambiano;
+- ordine B: nel messaggio di sistema restano anche i blocchi fermi in testa alla sequenza (tecniche e documenti
+  entrati per intero); si taglia al primo che dipende dalla domanda. La sequenza del contratto del prompt non
+  cambia e le regole scelte restano l'ultimo blocco prima della domanda (`ComposeBlock.stable`).
+Le soglie (5 estratti, 0,5, 3 parole) sono valori di partenza scelti senza misure su un modello di embedding vero.
+Da decidere: rendere l'ordine B il predefinito quando ci sono documenti; dare all'Assistente solo il Manuale d'uso
+(README e documento tecnico portano nelle risposte termini che l'utente non vede); tagliare i pezzi a fine frase.
+
 **Aperto**:
 
 - **Numeri veri**: l'utente deve usare l'Esperto di prompt con questa versione e riportare le righe `chat risposta`
@@ -763,7 +778,7 @@ risentono. Non è stato verificato sulla macchina dell'utente.
 | Cosa | Comando |
 |---|---|
 | Typecheck | `npm run typecheck` |
-| Test unitari (404) | `npx vitest run` |
+| Test unitari (406) | `npx vitest run` |
 | End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
 | Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
 | Pacchetti e catalogo dello Store | `npm run packs:build` |

@@ -135,6 +135,9 @@ export interface Extras {
   behaviorCount?: number
   examples?: string
   examplesCount?: number
+  /** Tecniche e documenti entrati per intero: restano uguali tra una domanda e l'altra (vedi ComposeBlock.stable). */
+  behaviorStable?: boolean
+  knowledgeStable?: boolean
 }
 
 /**
@@ -192,10 +195,13 @@ export function composeChat(
     base,
     summary: aligned ? conv.summary : null,
     blocks: [
+      // Fermi tra una domanda e l'altra: tecniche e documenti entrati per intero. Memoria, esempi ed estratti
+      // dipendono dalla domanda. Regole scelte, stile e piano restano sempre accanto alla domanda (contratto del
+      // prompt: le regole sono l'ultimo blocco prima della domanda), anche se non cambiano: sono poche righe.
       { key: 'memory', text: memory },
-      { key: 'behavior', text: behavior },
+      { key: 'behavior', text: behavior, stable: extras.behaviorStable === true },
       { key: 'examples', text: examples },
-      { key: 'knowledge', text: knowledge },
+      { key: 'knowledge', text: knowledge, stable: extras.knowledgeStable === true },
       { key: 'rules', text: rules },
       { key: 'style', text: style },
       { key: 'plan', text: plan }
@@ -595,6 +601,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
           knowledgeCount: found.documents.refs.length,
           behavior: found.behavior.section,
           behaviorCount: found.behavior.count,
+          behaviorStable: found.stable?.behavior === true,
+          knowledgeStable: found.stable?.documents === true,
           examples: found.examples.section,
           examplesCount: found.examples.count
         })

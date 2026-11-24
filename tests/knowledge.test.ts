@@ -14,7 +14,7 @@ import { SourceError, type KnowledgeSource } from '../src/main/knowledge/source'
 import { BUILTIN_SOURCES } from '../src/main/knowledge/sources'
 import { textSource } from '../src/main/knowledge/sources/text'
 import { createOllamaClient } from '../src/main/ollama'
-import { buildBehaviorSection, buildDocumentChunks, buildExamplesSection, buildKnowledgeSection, splitKnowledgeBudget, ftsQuery, hybridScores, knowledgeBudget, normalizeText, READING, readingLimit, readingSpeed, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs, wholeDocuments } from '../src/shared/knowledge'
+import { buildBehaviorSection, buildDocumentChunks, buildExamplesSection, buildKnowledgeSection, splitKnowledgeBudget, ftsQuery, hybridScores, isBareMessage, KNOWLEDGE, knowledgeBudget, normalizeText, READING, readingLimit, readingSpeed, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs, wholeDocuments } from '../src/shared/knowledge'
 import { fromBuffer } from '../src/shared/memory'
 import { DEFAULT_CONTEXT_SETTINGS, type Conversation, type KnowledgeProgress, type StreamEvent } from '../src/shared/types'
 import { fakeEmbedding, startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
@@ -97,7 +97,14 @@ describe('base di conoscenza: funzioni pure', () => {
   })
 
   it('ftsQuery: parole di almeno tre lettere e numeri, senza doppioni, tra virgolette, unite con OR', () => {
-    expect(ftsQuery('La fattura n. 17 di Rossi, la fattura (Rossi) del 2026!')).toBe('"fattura" OR "17" OR "rossi" OR "del" OR "2026"')
+    // le parole di servizio («del», «come», «con»…) non entrano: stanno in quasi ogni pezzo
+    expect(ftsQuery('La fattura n. 17 di Rossi, la fattura (Rossi) del 2026!')).toBe('"fattura" OR "17" OR "rossi" OR "2026"')
+    expect(ftsQuery('Come faccio a verificare con Ollama se Vulkan è attivo?')).toBe('"verificare" OR "ollama" OR "vulkan" OR "attivo"')
+    expect(ftsQuery('How can I check what the model does?')).toBe('"check" OR "model"')
+    expect(ftsQuery('come dove quando')).toBe('')
+    // un messaggio di una o due parole non è una domanda sui documenti
+    expect(['grazie', 'rispondi', 'ok grazie', ''].map(isBareMessage)).toEqual([true, true, true, true])
+    expect(['dove cambio il modello?', 'e il tema scuro?'].map(isBareMessage)).toEqual([false, false])
     expect(ftsQuery('a e')).toBe('')
   })
 
@@ -124,6 +131,14 @@ describe('base di conoscenza: funzioni pure', () => {
     expect(readingLimit(0, 30)).toBe(2000)
     expect(readingLimit(69, 0)).toBeNull()
     expect(readingLimit(null, 0)).toBeNull()
+  })
+
+  it('pickDocumentChunks: al massimo `max` estratti, i migliori', () => {
+    expect(KNOWLEDGE).toMatchObject({ maxExcerpts: 5, semanticOnlyMin: 0.5, minQuestionWords: 3 })
+    const many = Array.from({ length: 12 }, (_, i) => ({ id: `c${i}`, documentId: `d${i}`, title: `Doc ${i}`, locator: null, part: 0, text: 'x'.repeat(100), embedding: new Float32Array(1) }))
+    const scores = new Map(many.map((c, i) => [c.id, 0.9 - i * 0.01]))
+    expect(pickDocumentChunks([], many, 100_000, { scores }).length).toBe(12)
+    expect(pickDocumentChunks([], many, 100_000, { scores, max: 5 }).map((c) => c.id)).toEqual(['c0', 'c1', 'c2', 'c3', 'c4'])
   })
 
   it('wholeDocuments: i documenti indicati per intero e in ordine, finché stanno nel budget', () => {
@@ -359,6 +374,15 @@ describe('base di conoscenza: servizio', () => {
     expect(timed.documents.refs.length).toBeGreaterThan(0)
     expect(timed.documents.refs.some((r) => r.whole)).toBe(false)
     expect(timed.documents.refs[0].excerpt).toContain('Torino')
+    expect(timed.stable).toEqual({ behavior: true, documents: false })
+    expect(roomy.stable).toEqual({ behavior: true, documents: true })
+    // un messaggio che non è una domanda non cerca estratti (i documenti interi, se ci stanno, entrano comunque)
+    const thanks = { vector: async () => query, text: 'grazie' }
+    expect((await k.recallAll(conv, thanks, { total: 800, documents: true, documentsMax: 100 }, 4)).documents).toEqual({ section: '', refs: [] })
+    expect((await k.recallAll(conv, thanks, { total: 800, documents: true }, 4)).documents.section).toBe(roomy.documents.section)
+    // nessuna parola della domanda nei documenti: resta solo la somiglianza, e sotto la soglia non entra nulla
+    const off = { vector: async () => fakeEmbedding('Quante persone ha assunto la sede di Torino?').map((v, i) => (i % 2 ? v : -v)), text: 'xilofono quarzo zenzero' }
+    expect((await k.recallAll(conv, off, { total: 800, documents: true, documentsMax: 100 }, 4)).documents).toEqual({ section: '', refs: [] })
     // un tetto più largo dei documenti non cambia nulla; null = nessun limite
     expect((await k.recallAll(conv, question, { total: 800, documents: true, documentsMax: 5000 }, 4)).documents.section).toBe(roomy.documents.section)
     expect((await k.recallAll(conv, question, { total: 800, documents: true, documentsMax: null }, 4)).documents.section).toBe(roomy.documents.section)
@@ -1192,9 +1216,11 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
       { role: 'system', content: `# Ruolo\nSei un tutor.\n\n# Situazione\nLezione di matematica\n\n${section}\n\n${rules}` },
       { role: 'user', content: 'come sommo due frazioni?' }
     ])
+    // B: le tecniche entrate per intero non cambiano tra una domanda e l'altra e restano nel messaggio di sistema
+    // (Ollama non le rilegge); le regole scelte restano l'ultimo blocco prima della domanda
     expect(await sent('B')).toEqual([
-      { role: 'system', content: '# Ruolo\nSei un tutor.\n\n# Situazione\nLezione di matematica' },
-      { role: 'user', content: `${section}\n\n${rules}\n\n# Domanda\ncome sommo due frazioni?` }
+      { role: 'system', content: `# Ruolo\nSei un tutor.\n\n# Situazione\nLezione di matematica\n\n${section}` },
+      { role: 'user', content: `${rules}\n\n# Domanda\ncome sommo due frazioni?` }
     ])
     // C: nessun messaggio di sistema; la stessa sequenza, tutta con la domanda
     expect(await sent('C')).toEqual([{ role: 'user', content: `# Ruolo\nSei un tutor.\n\n# Situazione\nLezione di matematica\n\n${section}\n\n${rules}\n\n# Domanda\ncome sommo due frazioni?` }])

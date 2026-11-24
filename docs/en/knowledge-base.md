@@ -193,20 +193,27 @@ budget = min( share × num_ctx ,
 3. **Excerpts** in the space that remains:
    - a single embedding of the question (text of the question + last 500 characters of the previous answer),
      shared with the conversation memory;
-   - FTS5 exact-word search on the question (words of at least 3 letters and numbers);
+   - FTS5 exact-word search on the question (words of at least 3 letters and numbers, without function words
+     such as “how”, “with”, “the”: they are in almost every chunk);
    - **hybrid score** = 0.6 × cosine + 0.4 × BM25 normalised on the best (the BM25 part counts only if some
      chunk has a significant score);
    - thresholds: score ≥ 0.25 and ≥ 50% of the best;
    - cap per document = max(2, budget in chunks ÷ number of documents): it grows with the budget and shrinks
      with the number of documents;
-   - the budget is filled in score order; no fixed limit on the number of excerpts.
+   - in score order, **at most 5 excerpts** per answer (and never beyond the budget);
+   - **no excerpt** if the message has fewer than 3 words (“thanks”, “answer”), or if no word of the question
+     appears in the documents and the similarity stays below 0.5.
 
 ## 6. In the prompt
 
 - `# Knowledge base` section, at its place in the fixed block order: role, situation, summary, memory
   (`# Earlier messages`), techniques (`# How to work`, each section with its `## …` title), examples
   (`# Examples`, each with its title), **knowledge base**, chosen rules (`# Rules for this conversation`),
-  response style, plan, reminder, question. A role
+  response style, plan, reminder, question. With the knowledge next to the question (order B) the system
+  message keeps, besides role, situation and summary, the blocks that follow as long as they do not change from
+  one question to the next: the techniques and the documents that went in whole; the cut is at the first block
+  that depends on the question (memory, examples, excerpts), and rules, style and plan always stay next to the
+  question. A role
   can declare, per base, which sections depend on the choices (`sections` in `role.json`): a technique or
   example that contradicts the choices is left out of the prompt.
 - Introduction for “complete documents” or for “excerpts” (and a linking sentence when both are present);

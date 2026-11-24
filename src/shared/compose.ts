@@ -18,6 +18,11 @@ export const CONTEXT_ORDERS: ContextOrder[] = ['A', 'B', 'C']
 export interface ComposeBlock {
   key: 'memory' | 'behavior' | 'examples' | 'knowledge' | 'rules' | 'style' | 'plan'
   text: string
+  /**
+   * Il testo resta uguale tra una domanda e l'altra (tecniche del ruolo, regole scelte, stile, documenti interi).
+   * Con l'ordine B i blocchi fermi in testa alla sequenza restano nel messaggio di sistema, che Ollama non rilegge.
+   */
+  stable?: boolean
 }
 
 export interface ComposeInput<T extends HistoryMessage> {
@@ -63,10 +68,15 @@ export function composeMessages<T extends HistoryMessage>(input: ComposeInput<T>
   const flat = join([withSummary(input.base, input.summary), ...sections])
 
   // La sequenza dei blocchi è una sola: l'ordine sceglie soltanto quanti stanno nel messaggio di sistema.
-  // A: tutti; B: ruolo, situazione e riassunto; C: nessuno (tutto viaggia con la domanda).
+  // A: tutti; B: ruolo, situazione, riassunto e i blocchi che seguono finché restano fermi tra una domanda e
+  // l'altra (si taglia al primo che cambia: memoria, esempi, estratti); C: nessuno (tutto viaggia con la domanda).
   const opening = withSummary(input.base, input.summary)
-  let system = input.order === 'A' ? join([opening, ...sections]) : input.order === 'B' ? opening : ''
-  let tail: string[] = input.order === 'A' ? [] : input.order === 'B' ? [...sections] : [opening, ...sections].filter((s) => s)
+  const filled = (input.blocks ?? []).filter((b) => b.text)
+  const firstMoving = filled.findIndex((b) => !b.stable)
+  const steady = (firstMoving < 0 ? filled : filled.slice(0, firstMoving)).map((b) => b.text)
+  const moving = (firstMoving < 0 ? [] : filled.slice(firstMoving)).map((b) => b.text)
+  let system = input.order === 'A' ? join([opening, ...sections]) : input.order === 'B' ? join([opening, ...steady]) : ''
+  let tail: string[] = input.order === 'A' ? [] : input.order === 'B' ? moving : [opening, ...sections].filter((s) => s)
   if (reminder) tail.push(reminder)
 
   // Lo storico entra finché c'è spazio: conta anche ciò che viaggia con la domanda.

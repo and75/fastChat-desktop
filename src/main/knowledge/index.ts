@@ -16,6 +16,7 @@ import {
   ftsQuery,
   hybridScores,
   KNOWLEDGE,
+  isBareMessage,
   pickDocumentChunks,
   toKnowledgeRefs,
   totalChars,
@@ -130,6 +131,11 @@ export interface RoleRecall {
   documents: KnowledgeRecall
   behavior: { section: string; count: number }
   examples: { section: string; count: number }
+  /**
+   * Quali sezioni restano uguali tra una domanda e l'altra: tecniche e documenti entrati per intero (non scelti
+   * in base alla domanda). Gli esempi dipendono sempre dalla domanda.
+   */
+  stable?: { behavior: boolean; documents: boolean }
 }
 
 /** Impronta del contenuto di un file (SHA-256, in streaming). */
@@ -502,7 +508,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
    * 2. altrimenti prima i documenti «fissati» per intero (finché stanno), poi gli estratti scelti con il
    *    punteggio ibrido (somiglianza semantica + parole esatte) nello spazio che resta.
    */
-  async function choose(docs: KnowledgeDocument[], groups: Map<string, StoredDocumentChunk[]>, question: Question, maxChars: number): Promise<{ whole: SectionItem[]; picked: PickedDocumentChunk[] }> {
+  async function choose(docs: KnowledgeDocument[], groups: Map<string, StoredDocumentChunk[]>, question: Question, maxChars: number, strict = false): Promise<{ whole: SectionItem[]; picked: PickedDocumentChunk[] }> {
     const chunks = [...groups.values()].flat()
     if (totalChars(chunks) <= maxChars) return { whole: chunks.map((c) => ({ ...c, whole: true })), picked: [] }
     const pinnedIds = new Set(docs.filter((d) => d.pinned).map((d) => d.id))
@@ -512,18 +518,26 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     const scores = new Map<string, number>()
     const rest: StoredDocumentChunk[] = []
     const fts = ftsQuery(question.text)
-    if (room > 0) {
+    // Scelta severa (documenti su cui rispondere): un messaggio che non è una domanda («grazie») non cerca nulla.
+    if (room > 0 && !(strict && isBareMessage(question.text))) {
       for (const [model, group] of groups) {
         const candidates = group.filter((c) => !pinnedIds.has(c.documentId))
         if (candidates.length === 0) continue
         const vector = await question.vector(model).catch(() => null)
         if (!vector) continue
         const bm25 = await searchKnowledgeChunks(db, [...new Set(candidates.map((c) => c.documentId))], model, fts).catch(() => new Map<string, number>())
-        for (const [id, score] of hybridScores(vector, candidates, bm25)) scores.set(id, score)
-        rest.push(...candidates)
+        const scored = hybridScores(vector, candidates, bm25)
+        // Nessuna parola della domanda compare in questi documenti: resta solo la somiglianza, e deve essere netta.
+        const weak = strict && bm25.size === 0
+        for (const c of candidates) {
+          const score = scored.get(c.id) ?? 0
+          if (weak && score < KNOWLEDGE.semanticOnlyMin) continue
+          scores.set(c.id, score)
+          rest.push(c)
+        }
       }
     }
-    return { whole: whole.map((c) => ({ ...c, whole: true })), picked: rest.length ? pickDocumentChunks([], rest, room, { scores }) : [] }
+    return { whole: whole.map((c) => ({ ...c, whole: true })), picked: rest.length ? pickDocumentChunks([], rest, room, { scores, ...(strict ? { max: KNOWLEDGE.maxExcerpts } : {}) }) : [] }
   }
 
   /**
@@ -589,6 +603,7 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     const need = (k: BasePurpose): number => Math.ceil(totalChars([...groups[k].values()].flat()) / cpt)
     const tokens = splitKnowledgeBudget(budget.total, budget.shares ?? { documents: 1, behavior: 0, examples: 0 }, { documents: need('documents'), behavior: need('behavior'), examples: need('examples') })
     // Limite del tempo di lettura: se i documenti interi non ci stanno, più sotto si passa agli estratti.
+    const stable = { behavior: true, documents: true }
     if (budget.documentsMax != null) tokens.documents = Math.min(tokens.documents, Math.max(0, Math.floor(budget.documentsMax)))
 
     for (const k of ['behavior', 'examples'] as const) {
@@ -597,15 +612,18 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
       const { whole, picked } = nearest ? { whole: nearest, picked: [] } : await choose(docs[k], groups[k], question, tokens[k] * cpt)
       const items = [...whole, ...picked]
       out[k] = { section: k === 'behavior' ? buildBehaviorSection(items) : buildExamplesSection(items), count: items.length }
+      if (k === 'behavior') stable.behavior = picked.length === 0
     }
     if (docs.documents.length && tokens.documents > 0) {
       // Le fonti dicono da quale base della libreria viene il documento.
       const baseNames = new Map(linked.map((b) => [b.id, b.meta?.i18n?.[getLocale()]?.name ?? b.name]))
       const baseOf = new Map(docs.documents.map((d) => [d.id, baseNames.get(d.baseId)]))
       const withBase = (refs: KnowledgeRef[]): KnowledgeRef[] => refs.map((r) => (baseOf.get(r.documentId) ? { ...r, base: baseOf.get(r.documentId) } : r))
-      const { whole, picked } = await choose(docs.documents, groups.documents, question, tokens.documents * cpt)
+      const { whole, picked } = await choose(docs.documents, groups.documents, question, tokens.documents * cpt, true)
       if (whole.length || picked.length) out.documents = { section: buildKnowledgeSection([...whole, ...picked]), refs: withBase(toKnowledgeRefs(whole, picked)) }
+      stable.documents = picked.length === 0
     }
+    out.stable = stable
     return out
   }
 

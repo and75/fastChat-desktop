@@ -195,13 +195,16 @@ budget = min( quota × num_ctx ,
 3. **Estratti** nello spazio che avanza:
    - un solo embedding della domanda (testo della domanda + ultimi 500 caratteri della risposta precedente),
      condiviso con la memoria della conversazione;
-   - ricerca a parole esatte FTS5 sulla domanda (parole di almeno 3 lettere e numeri);
+   - ricerca a parole esatte FTS5 sulla domanda (parole di almeno 3 lettere e numeri, senza le parole di
+     servizio come «come», «con», «del»: stanno in quasi ogni pezzo);
    - **punteggio ibrido** = 0,6 × coseno + 0,4 × BM25 normalizzato sul migliore (la parte BM25 conta solo
      se qualche pezzo ha un punteggio significativo);
    - soglie: punteggio ≥ 0,25 e ≥ 50 % del migliore;
    - tetto per documento = max(2, budget in pezzi ÷ numero di documenti): cresce con il budget, cala con
      il numero di documenti;
-   - si riempie il budget in ordine di punteggio; nessun limite fisso al numero di estratti.
+   - in ordine di punteggio, **al massimo 5 estratti** per risposta (e mai oltre il budget);
+   - **nessun estratto** se il messaggio ha meno di 3 parole («grazie», «rispondi»), oppure se nessuna parola
+     della domanda compare nei documenti e la somiglianza resta sotto 0,5.
 
 ## 6. Nel prompt
 
@@ -209,6 +212,10 @@ budget = min( quota × num_ctx ,
   situazione, riassunto, memoria (`# Messaggi precedenti`), tecniche (`# Come lavorare`, ogni sezione con il
   suo titolo `## …`), esempi (`# Esempi`, ognuno con il suo titolo), **base di conoscenza**, regole scelte
   (`# Regole di questa conversazione`), stile della risposta, piano, promemoria, domanda.
+- Con la conoscenza accanto alla domanda (ordine B) restano nel messaggio di sistema, oltre a ruolo, situazione
+  e riassunto, i blocchi che seguono finché non cambiano tra una domanda e l'altra: le tecniche e i documenti
+  entrati per intero. Si taglia al primo blocco che dipende dalla domanda (memoria, esempi, estratti); regole,
+  stile e piano restano sempre accanto alla domanda.
 - Il ruolo può dichiarare, per ogni base, quali sezioni dipendono dalle scelte (`sections` in `role.json`,
   vedi `docs/ruoli.md` §3.3): una tecnica o un esempio che contraddice le scelte non entra nel prompt, e un
   esempio «fissato» entra sempre tra i due inviati.

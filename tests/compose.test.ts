@@ -188,6 +188,27 @@ describe('ordini del contesto', () => {
 })
 
 describe('impostazioni della composizione', () => {
+  it('ordine B: i blocchi fermi in testa alla sequenza restano nel sistema; si taglia al primo che cambia', () => {
+    const history = [{ role: 'user' as const, content: 'domanda' }]
+    const limits = { maxMessages: 50, maxTokens: 8192, reserveTokens: 1000 }
+    const compose = (blocks: Parameters<typeof composeMessages>[0]['blocks']) => composeMessages({ order: 'B', base: 'RUOLO', blocks, history, limits })
+    // tecniche ferme, estratti che cambiano: le tecniche nel sistema, il resto con la domanda
+    const mixed = compose([{ key: 'behavior', text: 'TECNICHE', stable: true }, { key: 'knowledge', text: 'ESTRATTI' }, { key: 'rules', text: 'REGOLE' }])
+    expect(mixed.system).toBe('RUOLO\n\nTECNICHE')
+    expect(mixed.attached).toBe('ESTRATTI\n\nREGOLE')
+    // un blocco che cambia prima di uno fermo: la sequenza non si rompe, il fermo viaggia con la domanda
+    const memoryFirst = compose([{ key: 'memory', text: 'MEMORIA' }, { key: 'behavior', text: 'TECNICHE', stable: true }])
+    expect(memoryFirst.system).toBe('RUOLO')
+    expect(memoryFirst.attached).toBe('MEMORIA\n\nTECNICHE')
+    // un blocco vuoto non interrompe; senza indicazione un blocco viaggia con la domanda, come prima
+    expect(compose([{ key: 'memory', text: '' }, { key: 'behavior', text: 'TECNICHE', stable: true }, { key: 'knowledge', text: 'INTERI', stable: true }]).system).toBe('RUOLO\n\nTECNICHE\n\nINTERI')
+    expect(compose([{ key: 'behavior', text: 'TECNICHE' }]).system).toBe('RUOLO')
+    // A e C non cambiano: tutto nel sistema, oppure tutto con la domanda
+    const blocks = [{ key: 'behavior' as const, text: 'TECNICHE', stable: true }, { key: 'knowledge' as const, text: 'ESTRATTI' }]
+    expect(composeMessages({ order: 'A', base: 'RUOLO', blocks, history, limits }).system).toBe('RUOLO\n\nTECNICHE\n\nESTRATTI')
+    expect(composeMessages({ order: 'C', base: 'RUOLO', blocks, history, limits }).system).toBe('')
+  })
+
   it('predefinito: automatico, cioè il comportamento storico (ordine A, niente promemoria)', () => {
     expect(DEFAULT_CONTEXT_SETTINGS).toEqual({ order: 'auto', reminder: 'auto', shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, situationShare: 0.05, readSeconds: 30 })
     // tempo massimo di lettura dei documenti: 30 secondi se l'impostazione manca (salvata da una versione precedente)

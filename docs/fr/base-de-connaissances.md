@@ -220,20 +220,23 @@ budget = min( part × num_ctx ,
 3. **Extraits** dans la place qui reste :
    - un seul embedding de la question (texte de la question + 500 derniers caractères de la réponse précédente),
      partagé avec la mémoire de la conversation ;
-   - recherche par mots exacts FTS5 sur la question (mots d'au moins 3 lettres et nombres) ;
+   - recherche par mots exacts FTS5 sur la question (mots d'au moins 3 lettres et nombres, sans les mots outils
+     comme « comment », « avec », « des » : ils sont dans presque tous les morceaux) ;
    - **score hybride** = 0,6 × cosinus + 0,4 × BM25 normalisé sur le meilleur (la part BM25 ne compte que si un
      morceau a un score significatif) ;
    - seuils : score ≥ 0,25 et ≥ 50 % du meilleur ;
    - plafond par document = max(2, budget en morceaux ÷ nombre de documents) : il augmente avec le budget et
      diminue avec le nombre de documents ;
-   - on remplit le budget par ordre de score ; aucune limite fixe au nombre d'extraits.
+   - par ordre de score, **au plus 5 extraits** par réponse (et jamais au-delà du budget) ;
+   - **aucun extrait** si le message a moins de 3 mots (« merci », « réponds »), ou si aucun mot de la question
+     n'apparaît dans les documents et que la similarité reste sous 0,5.
 
 ## 6. Dans le prompt
 
 - Section `# Base de connaissances`, à sa place dans l'ordre fixe des blocs : rôle, situation, résumé, mémoire
   (`# Messages précédents`), techniques (`# Comment travailler`, chaque section avec son titre `## …`),
   exemples (`# Exemples`, chacun avec son titre), **base de connaissances**, règles choisies
-  (`# Règles de cette conversation`), style de la réponse, plan, rappel, question. Le rôle peut déclarer, pour chaque base, les sections qui dépendent des
+  (`# Règles de cette conversation`), style de la réponse, plan, rappel, question. Avec les connaissances à côté de la question (ordre B), restent dans le message système, en plus du rôle, de la situation et du résumé, les blocs suivants tant qu'ils ne changent pas d'une question à l'autre : les techniques et les documents entrés en entier ; on coupe au premier bloc qui dépend de la question (mémoire, exemples, extraits), et les règles, le style et le plan restent toujours à côté de la question. Le rôle peut déclarer, pour chaque base, les sections qui dépendent des
   choix (`sections` dans `role.json`) : une technique ou un exemple qui contredit les choix n'entre pas dans
   le prompt.
 - Introduction pour « documents complets » ou pour « extraits » (et une phrase de liaison quand il y a les deux) ;
