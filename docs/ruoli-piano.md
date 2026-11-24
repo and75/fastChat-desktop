@@ -553,7 +553,7 @@ Scoperte durante il lavoro:
 - **Seconda consegna** (ruoli): fatta, su `main` e rilasciata nella **0.2.0** (passi 2.1–2.8; il tag `v0.2.0` è
   l'ultimo commit di `main`). È la versione che l'utente usa.
 - **Diagnostica e affidabilità** (dopo la seconda consegna): sul branch `claude/vibrant-hopper-v149tl`, **non su
-  `main`**, senza pull request. **Rilasciato nella 0.2.1** (24 novembre 2026; il tag `v0.2.1` è sul commit di unione
+  `main`**, senza pull request. **Rilasciato nella 0.2.1** (23 novembre 2026; il tag `v0.2.1` è sul commit di unione
   del branch, non su `main`), tranne il limite del tempo di lettura, aggiunto dopo. Vedi «Diagnostica e
   affidabilità» qui sotto.
 - Cosa c'è: ruoli scelti da «Parla con un…» e regolati nella scheda «Modello»; scheda «Situazione» al posto del
