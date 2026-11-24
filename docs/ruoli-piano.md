@@ -2,9 +2,10 @@
 
 Stato: **prima consegna rilasciata nella 0.1.22** (passi 1.0–1.8); manca solo la prova con Ollama vero (passo
 1.7), che va eseguita sul computer dell'utente. **Seconda consegna rilasciata nella 0.2.0** (passi 2.1–2.8, 14
-novembre 2026): è la versione che l'utente usa. Ogni release parte solo con la sua conferma esplicita.
-**Dopo la seconda consegna**: lavoro di diagnostica e affidabilità sul branch `claude/vibrant-hopper-v149tl`, non
-ancora su `main` (vedi la Parte 3).
+novembre 2026). Ogni release parte solo con la conferma esplicita dell'utente.
+**Dopo la seconda consegna**: lavoro di diagnostica e affidabilità, **rilasciato nella 0.2.1 e nella 0.2.2** (24
+novembre 2026). `main` coincide con il tag `v0.2.2`; il branch `claude/vibrant-hopper-v149tl` ha in più la
+correzione della finestra piccola (vedi la Parte 3).
 
 - L'idea, il formato dei ruoli e gli esempi completi sono in [`ruoli.md`](ruoli.md).
 - Questo documento è la versione operativa: **cosa è stato deciso** (Parte 1) e **in che passi si realizza**
@@ -550,12 +551,14 @@ Scoperte durante il lavoro:
 ## Dove siamo
 
 - **Prima consegna**: fatta e rilasciata nella **0.1.22** (passi 1.0–1.8).
-- **Seconda consegna** (ruoli): fatta, su `main` e rilasciata nella **0.2.0** (passi 2.1–2.8; il tag `v0.2.0` è
-  l'ultimo commit di `main`). È la versione che l'utente usa.
-- **Diagnostica e affidabilità** (dopo la seconda consegna): sul branch `claude/vibrant-hopper-v149tl`, **non su
-  `main`**, senza pull request. **Rilasciato nella 0.2.1** (23 novembre 2026; il tag `v0.2.1` è sul commit di unione
-  del branch, non su `main`), tranne il limite del tempo di lettura, aggiunto dopo. Vedi «Diagnostica e
-  affidabilità» qui sotto.
+- **Seconda consegna** (ruoli): fatta e rilasciata nella **0.2.0** (passi 2.1–2.8).
+- **Diagnostica e affidabilità** (dopo la seconda consegna): rilasciato in due volte. **0.2.1** (23 novembre 2026):
+  registro, stadi dell'attesa, errori, velocità, memoria suggerita, più i 24 commit di
+  `claude/contesto-parametri-effettivi`. **0.2.2** (24 novembre 2026): limite del tempo di lettura, selezione severa
+  degli estratti, tecniche del ruolo nel sistema con l'ordine B. **`main` è stato portato al tag `v0.2.2`** su
+  richiesta dell'utente. Vedi «Diagnostica e affidabilità» qui sotto.
+- **Non rilasciato**: sul branch `claude/vibrant-hopper-v149tl`, un commit dopo `main`: la correzione della
+  finestra piccola.
 - Cosa c'è: ruoli scelti da «Parla con un…» e regolati nella scheda «Modello»; scheda «Situazione» al posto del
   Brief; due ruoli italiani inclusi nell'app con le loro basi; ruoli francesi, Guida francese e Guida inglese
   nello Store; testi riletti e approvati dall'utente.
@@ -568,7 +571,7 @@ Scoperte durante il lavoro:
 - **Trascinamento dei bordi** della barra della memoria: verificato solo da tastiera nei test automatici.
 - **Test instabile** «finestra piccola» dell'end-to-end (topbar a −48 px dopo la rotella): era un vero difetto di
   impaginazione, corretto il 12 novembre sul branch `claude/beautiful-curie-qcqkm6` e mai unito. Portato in
-  `claude/vibrant-hopper-v149tl` dopo la 0.2.2: non rilasciato.
+  `claude/vibrant-hopper-v149tl` dopo la 0.2.2: non rilasciato e non su `main`.
 
 ## Diagnostica e affidabilità (branch `claude/vibrant-hopper-v149tl`)
 
@@ -605,7 +608,7 @@ della memoria, registro del prompt inviato): erano rimasti fuori da `main` e son
 - **Documentazione** nelle tre lingue e Guida rigenerata. I testi inglesi e francesi nuovi **non sono stati
   riletti** dall'utente.
 
-**Dopo la 0.2.1, non rilasciato** — limite del tempo di lettura dei documenti. Il primo registro dell'utente
+**Nella 0.2.2** — limite del tempo di lettura dei documenti. Il primo registro dell'utente
 (Windows, 0.2.1) ha mostrato dove va l'attesa: una risposta ha letto 11.545 token di prompt a 69 token al secondo,
 cioè 168 secondi su 193 di attesa; ricerca e riassunto pochi millisecondi. Causa: con una memoria di 32.768 token
 la quota dei documenti è 16.384, e i documenti entrano interi a ogni domanda. Correzione
@@ -614,7 +617,7 @@ massimo (30 s predefiniti, Impostazioni → Contesto); la velocità è la median
 modello, altrimenti quella del test sul modello; senza misura il tetto è di 2.000 token. Le basi del ruolo non ne
 risentono. Non è stato verificato sulla macchina dell'utente.
 
-**Dopo la 0.2.1, non rilasciato** — estratti e parti fisse. Due prompt inviati, letti dall'utente con «Vedi il
+**Nella 0.2.2** — estratti e parti fisse. Due prompt inviati, letti dall'utente con «Vedi il
 prompt inviato», hanno mostrato il resto: 18 e poi 24 estratti (17.000–22.000 caratteri) per domande a cui la
 documentazione non risponde, uno perfino per «grazie»; e con l'ordine B anche «Come lavorare», che non cambia mai,
 veniva riletto a ogni domanda. Il modello, sommerso, inventava menu e pulsanti. Correzioni:
@@ -812,6 +815,6 @@ Da decidere: rendere l'ordine B il predefinito quando ci sono documenti; dare al
 ## Messaggio di apertura suggerito per la nuova sessione
 
 > Riprendiamo FastChat. Leggi `docs/ruoli.md` e `docs/ruoli-piano.md` (soprattutto la Parte 3). La seconda
-> consegna è rilasciata nella 0.2.0; il lavoro di diagnostica e affidabilità è sul branch `claude/vibrant-hopper-v149tl`, non su
-> `main`. Ti dico io da dove ripartire: i numeri del registro diagnostico, il rilascio, i profili per modello dopo
+> consegna è rilasciata nella 0.2.0, il lavoro di diagnostica e affidabilità nella 0.2.1 e nella 0.2.2; `main` è al
+> tag `v0.2.2` e il branch `claude/vibrant-hopper-v149tl` ha un commit in più, non rilasciato. Ti dico io da dove ripartire: i numeri del registro diagnostico, il rilascio, i profili per modello dopo
 > la prova con Ollama, o altro. Prima di scrivere codice dimmi in breve cosa farai e aspetta il mio ok.
