@@ -175,6 +175,11 @@ budget = min( share × num_ctx ,
 
 - **Share** per conversation, in the “Knowledge” tab: 25%, **50% (default)**, 75%.
 - The budget is a ceiling: in an already long conversation the documents may get less than the share.
+- **Reading time** (Settings → Context → “Reading the documents”, 30 seconds by default): the documents to answer
+  from never exceed what the model reads in that time, that is reading speed × seconds. The speed is the median of
+  the model's latest long reads (at least 500 tokens), otherwise the one from the model test; with no measure at
+  all the ceiling is 2,000 tokens. If the whole documents do not fit, excerpts are used. “No limit” lets only the
+  space count. The role's bases (techniques and examples) are not affected.
 - After the documents, the conversation memory (excerpts of the summarised messages) takes at most 12% of
   what is left. Below 64 tokens nothing is searched.
 

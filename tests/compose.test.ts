@@ -89,7 +89,7 @@ describe('composizione con l\'ordine A: tutti i blocchi nel messaggio di sistema
 })
 
 // ------------------------------------------------------------------ ordini B e C, promemoria
-import { composeMessages, normalizeContextSettings, resolveContext, roleReminder, validateContextSettings } from '../src/shared/compose'
+import { composeMessages, normalizeContextSettings, readSecondsOf, resolveContext, roleReminder, validateContextSettings } from '../src/shared/compose'
 import { DEFAULT_CONTEXT_SETTINGS } from '../src/shared/types'
 
 describe('ordini del contesto', () => {
@@ -189,7 +189,13 @@ describe('ordini del contesto', () => {
 
 describe('impostazioni della composizione', () => {
   it('predefinito: automatico, cioè il comportamento storico (ordine A, niente promemoria)', () => {
-    expect(DEFAULT_CONTEXT_SETTINGS).toEqual({ order: 'auto', reminder: 'auto', shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, situationShare: 0.05 })
+    expect(DEFAULT_CONTEXT_SETTINGS).toEqual({ order: 'auto', reminder: 'auto', shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, situationShare: 0.05, readSeconds: 30 })
+    // tempo massimo di lettura dei documenti: 30 secondi se l'impostazione manca (salvata da una versione precedente)
+    expect(readSecondsOf(null)).toBe(30)
+    expect(readSecondsOf({ ...DEFAULT_CONTEXT_SETTINGS, readSeconds: 0 })).toBe(0)
+    expect(normalizeContextSettings({ order: 'B' }).readSeconds).toBe(30)
+    expect(normalizeContextSettings({ readSeconds: 45 }).readSeconds).toBe(30)
+    expect(normalizeContextSettings({ readSeconds: 120 }).readSeconds).toBe(120)
     expect(resolveContext(DEFAULT_CONTEXT_SETTINGS)).toEqual({ order: 'A', reminder: false, shares: DEFAULT_CONTEXT_SETTINGS.shares })
     expect(resolveContext(null)).toMatchObject({ order: 'A', reminder: false })
     expect(resolveContext({ ...DEFAULT_CONTEXT_SETTINGS, order: 'B', reminder: 'on' })).toMatchObject({ order: 'B', reminder: true })
@@ -202,7 +208,8 @@ describe('impostazioni della composizione', () => {
   })
 
   it('salvataggio severo: valori non ammessi sono un errore', () => {
-    expect(validateContextSettings({ order: 'B', reminder: 'on', shares: { behavior: 0.25, examples: 0.25, documents: 0.5 }, situationShare: 0.1 })).toEqual({ order: 'B', reminder: 'on', shares: { behavior: 0.25, examples: 0.25, documents: 0.5 }, situationShare: 0.1 })
+    expect(validateContextSettings({ order: 'B', reminder: 'on', shares: { behavior: 0.25, examples: 0.25, documents: 0.5 }, situationShare: 0.1, readSeconds: 60 })).toEqual({ order: 'B', reminder: 'on', shares: { behavior: 0.25, examples: 0.25, documents: 0.5 }, situationShare: 0.1, readSeconds: 60 })
+    expect(() => validateContextSettings({ readSeconds: 45 })).toThrow(/Tempo di lettura/)
     expect(() => validateContextSettings({ order: 'D' })).toThrow(/Ordine del contesto/)
     expect(() => validateContextSettings({ reminder: 'forse' })).toThrow(/promemoria/)
     expect(() => validateContextSettings({ shares: { behavior: 0.5, examples: 0.5, documents: 0.5 } })).toThrow(/sommare a 100/)

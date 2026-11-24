@@ -35,6 +35,7 @@ import {
   planToFollow,
   getConversation,
   getModelSetting,
+  recentPromptReads,
   saveModelSetting,
   getPlan,
   listMessages,
@@ -45,7 +46,7 @@ import {
   updateConversation,
   updatePlan
 } from './db/repo'
-import { composeMessages, resolveContext, roleReminder } from '@shared/compose'
+import { composeMessages, readSecondsOf, resolveContext, roleReminder } from '@shared/compose'
 import { chatParts } from '@shared/context'
 import { t } from '@shared/i18n'
 import type { ContextOrder, ContextPart, ContextSettings } from '@shared/types'
@@ -53,7 +54,7 @@ import { callInput, type CallStart, type ContextLog } from './contextLog'
 import { OllamaError, type ChatMessage, type ChatOptions, type ChatRequest, type OllamaClient } from './ollama'
 import { memoryBudget, type Memory, type Recall } from './memory'
 import type { Summarizer } from './summary'
-import { knowledgeBudget } from '@shared/knowledge'
+import { knowledgeBudget, readingLimit, readingSpeed } from '@shared/knowledge'
 import { GENERALIST_ROLE, rolePrompt, roleReminderText, roleSectionRules } from '@shared/roles'
 import { withPromptLanguage } from './promptLocale'
 import type { Knowledge, RoleRecall } from './knowledge'
@@ -313,6 +314,18 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
     }
   }
 
+  /**
+   * Velocità di lettura del modello, token al secondo: dalle sue ultime risposte; se non ne ha ancora, dal test sul
+   * modello per la configurazione CPU/GPU in uso. null = nessuna misura.
+   */
+  async function readSpeedOf(model: string): Promise<number | null> {
+    const measured = readingSpeed(await recentPromptReads(db, model).catch(() => []))
+    if (measured != null) return measured
+    const setting = await getModelSetting(db, model).catch(() => null)
+    const run = setting?.benchmark?.find((r) => r.numGpu === setting.numGpu && r.promptTps != null && !r.error)
+    return run?.promptTps ?? null
+  }
+
   /** Un passo facoltativo è fallito: la risposta prosegue senza, ma il motivo resta nel registro. */
   const skipped = (step: string, conversationId: string, note?: () => void) => (err: unknown): null => {
     log.warn('chat', `${step} non riuscito: la risposta prosegue senza`, { conversation: conversationId, error: errorDetail(err) })
@@ -490,6 +503,8 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
       }
       // Stato del modello in Ollama mentre si aspetta il primo token.
       const wait: { timer: ReturnType<typeof setInterval> | null; stopped: boolean; first: ModelState | null; others: string[] } = { timer: null, stopped: false, first: null, others: [] }
+      // Limite del tempo di lettura applicato ai documenti, per il registro.
+      const reading: Record<string, unknown> = {}
       // Passi facoltativi non riusciti: la risposta arriva lo stesso, ma l'utente lo vede.
       const missing = new Set<SkippedStep>()
       const miss = (step: SkippedStep) => (): void => void missing.add(step)
@@ -545,9 +560,16 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
           }
           if (useKnowledge || useRole) {
             const since = Date.now()
-            const { shares } = resolveContext(await getContext?.().catch(() => null))
+            const contextSettings = await getContext?.().catch(() => null)
+            const { shares } = resolveContext(contextSettings)
+            const readSeconds = readSecondsOf(contextSettings)
+            // Limite del tempo di lettura: i documenti non superano ciò che questo modello legge nel tempo massimo.
+            // Senza una misura della sua velocità vale il valore prudente fisso.
+            const readTps = useKnowledge && readSeconds > 0 ? await readSpeedOf(conv.model) : null
+            const documentsMax = useKnowledge ? readingLimit(readTps, readSeconds) : null
+            if (documentsMax != null) Object.assign(reading, { docsMaxTokens: documentsMax, readTps: readTps == null ? 'non misurata' : Math.round(readTps) })
             found = await knowledge!
-              .recallAll(conv, { text: question?.content ?? '', vector }, { total: knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), shares, documents: useKnowledge, sections: roleSectionRules((await roleOf(db, conv)).definition, conv.roleParams) }, cpt)
+              .recallAll(conv, { text: question?.content ?? '', vector }, { total: knowledgeBudget(s.numCtx, s.reserveTokens, used, conv.knowledgeShare), shares, documents: useKnowledge, documentsMax, sections: roleSectionRules((await roleOf(db, conv)).definition, conv.roleParams) }, cpt)
               .catch((err: unknown) => {
                 skipped('ricerca nei documenti', conv.id, miss('documents'))(err)
                 return found
@@ -648,6 +670,7 @@ export function createChatService({ db, ollama, emit, onConversationUpdated, sum
           modelAtStart: wait.first ?? 'unknown',
           othersInMemory: wait.others.join(', ') || undefined,
           reloaded: reloaded ? true : undefined,
+          ...reading,
           ...times,
           promptTokensEstimated: promptTokens,
           promptTokens: result.promptEvalCount,

@@ -733,13 +733,22 @@ export interface ContextSettings {
   shares: { behavior: number; examples: number; documents: number }
   /** Quota del contesto del modello concessa alla «situazione» scritta dall'utente. */
   situationShare: number
+  /**
+   * Tempo massimo, in secondi, che il modello può impiegare a leggere i documenti a ogni domanda: oltre, al posto
+   * dei documenti interi riceve gli estratti che ci stanno. 0 = nessun limite di tempo (conta solo lo spazio).
+   */
+  readSeconds: number
 }
+
+/** Valori ammessi per il tempo massimo di lettura dei documenti (0 = nessun limite). */
+export const READ_SECONDS = [0, 15, 30, 60, 120] as const
 
 export const DEFAULT_CONTEXT_SETTINGS: ContextSettings = {
   order: 'auto',
   reminder: 'auto',
   shares: { behavior: 0.2, examples: 0.2, documents: 0.6 },
-  situationShare: 0.05
+  situationShare: 0.05,
+  readSeconds: 30
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {

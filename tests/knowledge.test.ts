@@ -3,20 +3,20 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { openDatabase, runMigrations, type DbHandle } from '../src/main/db/client'
-import { addMessage, createConversation, getConversationBase, listContextCalls, listDocuments, listKnowledgeChunks, listMessages, saveModelSetting, saveRole, setSettings, updateConversation } from '../src/main/db/repo'
+import { addContextCall, addMessage, createConversation, getConversationBase, listContextCalls, listDocuments, listKnowledgeChunks, listMessages, saveModelSetting, saveRole, setSettings, updateConversation } from '../src/main/db/repo'
 import { createChatService, wantsKnowledge } from '../src/main/chat'
 import { createMemory } from '../src/main/memory'
 import { createEmbedder } from '../src/main/embedder'
-import { createContextLog } from '../src/main/contextLog'
+import { callInput, createContextLog } from '../src/main/contextLog'
 import { createKnowledge, hashFile } from '../src/main/knowledge'
 import { createRegistry } from '../src/main/knowledge/registry'
 import { SourceError, type KnowledgeSource } from '../src/main/knowledge/source'
 import { BUILTIN_SOURCES } from '../src/main/knowledge/sources'
 import { textSource } from '../src/main/knowledge/sources/text'
 import { createOllamaClient } from '../src/main/ollama'
-import { buildBehaviorSection, buildDocumentChunks, buildExamplesSection, buildKnowledgeSection, splitKnowledgeBudget, ftsQuery, hybridScores, knowledgeBudget, normalizeText, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs, wholeDocuments } from '../src/shared/knowledge'
+import { buildBehaviorSection, buildDocumentChunks, buildExamplesSection, buildKnowledgeSection, splitKnowledgeBudget, ftsQuery, hybridScores, knowledgeBudget, normalizeText, READING, readingLimit, readingSpeed, pickDocumentChunks, splitMarkdownSections, toKnowledgeRefs, wholeDocuments } from '../src/shared/knowledge'
 import { fromBuffer } from '../src/shared/memory'
-import type { Conversation, KnowledgeProgress, StreamEvent } from '../src/shared/types'
+import { DEFAULT_CONTEXT_SETTINGS, type Conversation, type KnowledgeProgress, type StreamEvent } from '../src/shared/types'
 import { fakeEmbedding, startFakeOllama, type FakeOllama } from './helpers/fakeOllama'
 
 const fixtures = resolve(__dirname, 'fixtures')
@@ -99,6 +99,31 @@ describe('base di conoscenza: funzioni pure', () => {
   it('ftsQuery: parole di almeno tre lettere e numeri, senza doppioni, tra virgolette, unite con OR', () => {
     expect(ftsQuery('La fattura n. 17 di Rossi, la fattura (Rossi) del 2026!')).toBe('"fattura" OR "17" OR "rossi" OR "del" OR "2026"')
     expect(ftsQuery('a e')).toBe('')
+  })
+
+  it('velocità di lettura del modello: mediana delle letture lunghe più recenti', () => {
+    expect(READING).toMatchObject({ unmeasuredTokens: 2000, minSampleTokens: 500, samples: 5 })
+    // 11.545 token in 168 secondi: 69 token al secondo
+    expect(Math.round(readingSpeed([{ tokens: 11545, ms: 168349 }])!)).toBe(69)
+    // le letture brevi (Ollama ha riusato il lavoro già fatto, o la domanda era corta) non contano
+    expect(readingSpeed([{ tokens: 40, ms: 10 }, { tokens: 499, ms: 5 }])).toBeNull()
+    expect(readingSpeed([{ tokens: null, ms: 100 }, { tokens: 800, ms: null }, { tokens: 800, ms: 0 }])).toBeNull()
+    expect(readingSpeed([])).toBeNull()
+    // mediana, non media: una lettura anomala non sposta il risultato (100, 100, 1.000 token/s → 100)
+    expect(readingSpeed([{ tokens: 1000, ms: 10_000 }, { tokens: 1000, ms: 1000 }, { tokens: 2000, ms: 20_000 }])).toBe(100)
+    // numero pari: la media delle due centrali; e si guardano solo le 5 più recenti
+    expect(readingSpeed([{ tokens: 1000, ms: 10_000 }, { tokens: 1000, ms: 5000 }])).toBe(150)
+    const recent = Array.from({ length: 5 }, () => ({ tokens: 1000, ms: 10_000 }))
+    expect(readingSpeed([...recent, { tokens: 1000, ms: 1 }, { tokens: 1000, ms: 1 }])).toBe(100)
+  })
+
+  it('limite del tempo di lettura: velocità × secondi; senza misura il valore prudente; 0 secondi = nessun limite', () => {
+    expect(readingLimit(69, 30)).toBe(2070)
+    expect(readingLimit(2000, 30)).toBe(60_000)
+    expect(readingLimit(null, 30)).toBe(2000)
+    expect(readingLimit(0, 30)).toBe(2000)
+    expect(readingLimit(69, 0)).toBeNull()
+    expect(readingLimit(null, 0)).toBeNull()
   })
 
   it('wholeDocuments: i documenti indicati per intero e in ordine, finché stanno nel budget', () => {
@@ -323,6 +348,20 @@ describe('base di conoscenza: servizio', () => {
     expect(whole.section).toContain('riportati per intero (2 in tutto)')
     expect(whole.refs.map((r) => [r.title, r.whole])).toEqual([['manuale', true], ['relazione', true]])
     expect(await k.recall(conv, { vector: async () => query, text: 'x' }, 10, 4)).toEqual({ section: '', refs: [] })
+
+    // limite del tempo di lettura: lo spazio basterebbe per i documenti interi (800 token), ma il tetto dei
+    // documenti (100 token) no → estratti, come con un budget piccolo
+    const question = { vector: async () => query, text: 'Quante persone ha assunto la sede di Torino?' }
+    const roomy = await k.recallAll(conv, question, { total: 800, documents: true }, 4)
+    expect(roomy.documents.refs.every((r) => r.whole)).toBe(true)
+    const timed = await k.recallAll(conv, question, { total: 800, documents: true, documentsMax: 100 }, 4)
+    expect(timed.documents.section).not.toContain('riportati per intero')
+    expect(timed.documents.refs.length).toBeGreaterThan(0)
+    expect(timed.documents.refs.some((r) => r.whole)).toBe(false)
+    expect(timed.documents.refs[0].excerpt).toContain('Torino')
+    // un tetto più largo dei documenti non cambia nulla; null = nessun limite
+    expect((await k.recallAll(conv, question, { total: 800, documents: true, documentsMax: 5000 }, 4)).documents.section).toBe(roomy.documents.section)
+    expect((await k.recallAll(conv, question, { total: 800, documents: true, documentsMax: null }, 4)).documents.section).toBe(roomy.documents.section)
   })
 
   it('stato: documenti, pezzi, da indicizzare, modello installato; rimozione a cascata dei pezzi', async () => {
@@ -401,6 +440,54 @@ describe('base di conoscenza: nella chat', () => {
     const chat = createChatService({ db: h.db, ollama, memory, knowledge, embedder, contextLog, emit: (_t, e) => events.push(e) })
     return { knowledge, memory, chat }
   }
+
+  it('tempo di lettura: un modello lento riceve gli estratti al posto dei documenti interi; veloce, o senza limite, li riceve interi', async () => {
+    const ollama = createOllamaClient(() => fake.url)
+    const embedder = createEmbedder({ db: h.db, ollama })
+    const knowledge = createKnowledge({ db: h.db, embedder, registry: createRegistry(BUILTIN_SOURCES) })
+    const lines: Array<{ message: string; data?: Record<string, unknown> }> = []
+    const at = (_scope: string, message: string, data?: Record<string, unknown>) => void lines.push({ message, data })
+    const chatWith = (readSeconds: number) =>
+      createChatService({
+        db: h.db,
+        ollama,
+        knowledge,
+        embedder,
+        emit: () => undefined,
+        log: { info: at, warn: at, error: at, path: null },
+        getContext: async () => ({ ...DEFAULT_CONTEXT_SETTINGS, readSeconds })
+      })
+    const conv = await createConversation(h.db, { model: 'chat', title: 'Già col titolo' })
+    await knowledge.addFiles(conv, [join(fixtures, 'relazione.txt'), join(fixtures, 'manuale.md')])
+    await knowledge.wait(conv.id)
+    const ask = async (svc: ReturnType<typeof chatWith>, text: string): Promise<string> => {
+      await svc.wait((await svc.send({}, conv.id, text)).streamId)
+      return chatBodyFor(text).messages[0].content
+    }
+    const answer = (): Record<string, unknown> | undefined => lines.filter((l) => l.message === 'risposta').at(-1)?.data
+    const read = (tokens: number, ms: number) =>
+      addContextCall(h.db, { ...callInput({ conversationId: conv.id, kind: 'chat', model: 'chat', numCtx: 4096, parts: [] }, { promptEvalCount: tokens, promptEvalMs: ms }) })
+
+    // nessuna misura: vale il valore prudente (2.000 token); questi documenti sono piccoli ed entrano interi
+    expect(await ask(chatWith(30), 'Quante persone ha assunto la sede di Torino?')).toContain('riportati per intero')
+    expect(answer()).toMatchObject({ docsMaxTokens: 2000, readTps: 'non misurata' })
+
+    // il modello ha letto 600 token in 5 minuti: 2 token al secondo → in 30 secondi 60 token: solo estratti
+    await read(600, 300_000)
+    const slow = await ask(chatWith(30), 'Dove ha assunto personale la sede di Torino?')
+    expect(slow).toContain('# Base di conoscenza')
+    expect(slow).not.toContain('riportati per intero')
+    expect(answer()).toMatchObject({ docsMaxTokens: 60, readTps: 2 })
+
+    // limite spento: conta solo lo spazio, come prima
+    expect(await ask(chatWith(0), 'E la sede di Torino quante persone ha assunto?')).toContain('riportati per intero')
+    expect(answer()?.docsMaxTokens).toBeUndefined()
+
+    // tre letture veloci (600 token in 0,3 secondi): la mediana delle ultime è 2.000 token al secondo → nessun taglio
+    for (let i = 0; i < 3; i++) await read(600, 300)
+    expect(await ask(chatWith(30), 'Quanti assunti a Torino?')).toContain('riportati per intero')
+    expect(answer()).toMatchObject({ docsMaxTokens: 60_000, readTps: 2000 })
+  })
 
   /** La richiesta di chat che risponde alla domanda (non quella del titolo automatico). */
   const chatBodyFor = (question: string) =>
@@ -1095,7 +1182,7 @@ describe('basi di conoscenza: base della conversazione e basi della libreria col
         knowledge: k,
         embedder: createEmbedder({ db: h.db, ollama }),
         emit: () => undefined,
-        getContext: async () => ({ order, reminder: 'off', shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, situationShare: 0.05 })
+        getContext: async () => ({ order, reminder: 'off', shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, situationShare: 0.05, readSeconds: 0 })
       })
       const { streamId } = await chat.send({}, conv.id, 'come sommo due frazioni?')
       await chat.wait(streamId)

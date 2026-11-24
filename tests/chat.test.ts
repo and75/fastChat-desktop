@@ -467,7 +467,7 @@ describe('composizione del contesto scelta nelle Impostazioni', () => {
       db: h.db,
       ollama: createOllamaClient(() => fake.url),
       emit: (_t, e) => events.push(e),
-      getContext: async () => ({ order, reminder, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, situationShare: 0.05 })
+      getContext: async () => ({ order, reminder, shares: { behavior: 0.2, examples: 0.2, documents: 0.6 }, situationShare: 0.05, readSeconds: 0 })
     })
   const ask = async (svc: ReturnType<typeof service>, id: string, text: string): Promise<void> => {
     const { streamId } = await svc.send(target, id, text)

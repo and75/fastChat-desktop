@@ -88,4 +88,4 @@ The export icon, at the top right, saves the conversation as Markdown or JSON.
 
 The gear at the bottom of the sidebar opens “Settings”, with the “General”, “Models”, “Ollama”, “Knowledge” and “Context” tabs.
 
-In “General” you choose “Language”, “Theme”, “Ollama URL” and “Default model”; “Open the log” opens the “Diagnostic log”, with the calls to Ollama, the timings of each answer and the errors, without the text of the messages. In “Knowledge” you manage the library bases and import a package with “Import package…”.
+In “General” you choose “Language”, “Theme”, “Ollama URL” and “Default model”; “Open the log” opens the “Diagnostic log”, with the calls to Ollama, the timings of each answer and the errors, without the text of the messages. In “Knowledge” you manage the library bases and import a package with “Import package…”. In “Context”, “Reading the documents” sets how long the model may spend reading the documents at each question: if the whole documents need more, it gets only the relevant excerpts; “No limit” lets them in whole as long as there is room.

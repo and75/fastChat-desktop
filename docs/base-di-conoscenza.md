@@ -177,6 +177,11 @@ budget = min( quota × num_ctx ,
 
 - **Quota** per conversazione, nella scheda «Conoscenza»: 25 %, **50 % (predefinito)**, 75 %.
 - Il budget è un tetto: in una conversazione già lunga i documenti possono avere meno della quota.
+- **Tempo di lettura** (Impostazioni → Contesto → «Lettura dei documenti», 30 secondi predefiniti): i documenti su
+  cui rispondere non superano ciò che il modello legge in quel tempo, cioè velocità di lettura × secondi. La
+  velocità è la mediana delle ultime letture lunghe del modello (almeno 500 token), altrimenti quella del test sul
+  modello; senza nessuna misura il tetto è di 2.000 token. Se i documenti interi non ci stanno, si passa agli
+  estratti. «Nessun limite» lascia contare solo lo spazio. Le basi del ruolo (tecniche ed esempi) non ne risentono.
 - Dopo i documenti, la memoria della conversazione (estratti dei messaggi riassunti) prende al massimo il
   12 % di quel che resta. Sotto 64 token non si cerca nulla.
 

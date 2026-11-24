@@ -2,7 +2,7 @@ import { normalizeContextSettings } from '@shared/compose'
 import { briefToSituation } from '@shared/prompt'
 import { GENERALIST_ROLE, type Role, type RoleChoices } from '@shared/roles'
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import {
   DEFAULT_SETTINGS,
   GENERALIST_ROLE_ID,
@@ -877,6 +877,19 @@ export async function getContextRequest(db: Db, callId: string): Promise<Context
 }
 
 /** Ultime chiamate della conversazione, dalla più recente. */
+/**
+ * Le ultime letture del prompt fatte dal modello in una chiamata di chat riuscita, dalla più recente, in tutte le
+ * conversazioni: token letti e tempo impiegato. Servono a stimare la velocità di lettura del modello.
+ */
+export async function recentPromptReads(db: Db, model: string, limit = 20): Promise<Array<{ tokens: number | null; ms: number | null }>> {
+  return db
+    .select({ tokens: contextCalls.promptEvalCount, ms: contextCalls.promptEvalMs })
+    .from(contextCalls)
+    .where(and(eq(contextCalls.model, model), inArray(contextCalls.kind, ['chat', 'execute', 'plan']), isNotNull(contextCalls.promptEvalMs), isNotNull(contextCalls.promptEvalCount), isNull(contextCalls.error)))
+    .orderBy(desc(contextCalls.createdAt), desc(sql`rowid`))
+    .limit(limit)
+}
+
 export async function listContextCalls(db: Db, conversationId: string): Promise<ContextCall[]> {
   const rows = await db
     .select()

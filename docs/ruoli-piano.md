@@ -553,7 +553,9 @@ Scoperte durante il lavoro:
 - **Seconda consegna** (ruoli): fatta, su `main` e rilasciata nella **0.2.0** (passi 2.1–2.8; il tag `v0.2.0` è
   l'ultimo commit di `main`). È la versione che l'utente usa.
 - **Diagnostica e affidabilità** (dopo la seconda consegna): sul branch `claude/vibrant-hopper-v149tl`, **non su
-  `main`**, senza pull request e **non rilasciato**: la 0.2.0 non lo contiene. Vedi «Diagnostica e affidabilità» qui sotto.
+  `main`**, senza pull request. **Rilasciato nella 0.2.1** (24 novembre 2026; il tag `v0.2.1` è sul commit di unione
+  del branch, non su `main`), tranne il limite del tempo di lettura, aggiunto dopo. Vedi «Diagnostica e
+  affidabilità» qui sotto.
 - Cosa c'è: ruoli scelti da «Parla con un…» e regolati nella scheda «Modello»; scheda «Situazione» al posto del
   Brief; due ruoli italiani inclusi nell'app con le loro basi; ruoli francesi, Guida francese e Guida inglese
   nello Store; testi riletti e approvati dall'utente.
@@ -601,6 +603,15 @@ della memoria, registro del prompt inviato): erano rimasti fuori da `main` e son
   metà). Sull'errore: «Riprova con memoria a N token».
 - **Documentazione** nelle tre lingue e Guida rigenerata. I testi inglesi e francesi nuovi **non sono stati
   riletti** dall'utente.
+
+**Dopo la 0.2.1, non rilasciato** — limite del tempo di lettura dei documenti. Il primo registro dell'utente
+(Windows, 0.2.1) ha mostrato dove va l'attesa: una risposta ha letto 11.545 token di prompt a 69 token al secondo,
+cioè 168 secondi su 193 di attesa; ricerca e riassunto pochi millisecondi. Causa: con una memoria di 32.768 token
+la quota dei documenti è 16.384, e i documenti entrano interi a ogni domanda. Correzione
+(`src/shared/knowledge.ts`, `READING`): i documenti su cui rispondere non superano velocità di lettura × tempo
+massimo (30 s predefiniti, Impostazioni → Contesto); la velocità è la mediana delle ultime letture lunghe del
+modello, altrimenti quella del test sul modello; senza misura il tetto è di 2.000 token. Le basi del ruolo non ne
+risentono. Non è stato verificato sulla macchina dell'utente.
 
 **Aperto**:
 
@@ -752,7 +763,7 @@ della memoria, registro del prompt inviato): erano rimasti fuori da `main` e son
 | Cosa | Comando |
 |---|---|
 | Typecheck | `npm run typecheck` |
-| Test unitari (401) | `npx vitest run` |
+| Test unitari (404) | `npx vitest run` |
 | End-to-end | `npm run build && xvfb-run -a node e2e/run.mjs` |
 | Schermate di anteprima | `xvfb-run -a node e2e/preview.mjs` (in `test-results/preview/`) |
 | Pacchetti e catalogo dello Store | `npm run packs:build` |

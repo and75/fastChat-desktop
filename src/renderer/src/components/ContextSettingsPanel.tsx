@@ -4,7 +4,7 @@ import { CONTEXT_ORDERS, orderLayout, reminderApplies, resolveContext, type Cont
 import { KNOWLEDGE } from '@shared/knowledge'
 import { DEFAULT_CHARS_PER_TOKEN } from '@shared/prompt'
 import { RESERVE_SHARE, resolveSettings } from '@shared/settings'
-import { DEFAULT_CONTEXT_SETTINGS, type ContextOrder, type ContextSettings } from '@shared/types'
+import { DEFAULT_CONTEXT_SETTINGS, READ_SECONDS, type ContextOrder, type ContextSettings } from '@shared/types'
 import { useConversations } from '../store/useConversations'
 import { useModels } from '../store/useModels'
 
@@ -251,6 +251,15 @@ export function ContextSettingsPanel(): React.JSX.Element {
               { value: 'off', label: t('settings.context.reminder.off') }
             ]}
             onChange={(v) => change({ reminder: v })}
+          />
+        </div>
+        <div className="flex flex-col gap-1 sm:col-span-2" title={t('settings.context.read.hint')}>
+          <span className="font-medium">{t('settings.context.read')}</span>
+          <Segmented
+            testid="context-read"
+            value={String(draft.readSeconds ?? DEFAULT_CONTEXT_SETTINGS.readSeconds)}
+            options={READ_SECONDS.map((n) => ({ value: String(n), label: n === 0 ? t('settings.context.read.off') : t('settings.context.read.seconds', { n }) }))}
+            onChange={(v) => change({ readSeconds: Number(v) })}
           />
         </div>
       </div>

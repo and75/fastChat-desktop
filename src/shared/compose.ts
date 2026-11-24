@@ -10,7 +10,7 @@
 // seguito. Nel database resta solo il testo scritto dall'utente.
 import { t } from './i18n'
 import { selectHistory, withSummary, type HistoryLimits, type HistoryMessage } from './prompt'
-import { DEFAULT_CONTEXT_SETTINGS, type ContextOrder, type ContextSettings, type SystemSlot } from './types'
+import { DEFAULT_CONTEXT_SETTINGS, READ_SECONDS, type ContextOrder, type ContextSettings, type SystemSlot } from './types'
 
 export const CONTEXT_ORDERS: ContextOrder[] = ['A', 'B', 'C']
 
@@ -106,7 +106,8 @@ export function normalizeContextSettings(raw: unknown): ContextSettings {
     order: r.order === 'auto' || CONTEXT_ORDERS.includes(r.order as ContextOrder) ? (r.order as ContextSettings['order']) : d.order,
     reminder: r.reminder === 'on' || r.reminder === 'off' || r.reminder === 'auto' ? r.reminder : d.reminder,
     shares: ok ? (shares as ContextSettings['shares']) : { ...d.shares },
-    situationShare: situation != null && situation >= 0.01 && situation <= 0.25 ? situation : d.situationShare
+    situationShare: situation != null && situation >= 0.01 && situation <= 0.25 ? situation : d.situationShare,
+    readSeconds: (READ_SECONDS as readonly number[]).includes(r.readSeconds as number) ? (r.readSeconds as number) : d.readSeconds
   }
 }
 
@@ -119,6 +120,7 @@ export function validateContextSettings(raw: unknown): ContextSettings {
   if (r.shares !== undefined && JSON.stringify(clean.shares) !== JSON.stringify({ behavior: r.shares?.behavior, examples: r.shares?.examples, documents: r.shares?.documents }))
     throw new Error(t('err.context.shares'))
   if (r.situationShare !== undefined && clean.situationShare !== r.situationShare) throw new Error(t('err.context.situation'))
+  if (r.readSeconds !== undefined && clean.readSeconds !== r.readSeconds) throw new Error(t('err.context.read'))
   return clean
 }
 
@@ -128,6 +130,9 @@ export function resolveContext(settings: ContextSettings | null | undefined): { 
   const order = s.order === 'auto' ? 'A' : s.order
   return { order, reminder: s.reminder === 'on' && reminderApplies(order), shares: s.shares }
 }
+
+/** Tempo massimo di lettura dei documenti, in secondi (0 = nessun limite); il predefinito se l'impostazione manca. */
+export const readSecondsOf = (settings: ContextSettings | null | undefined): number => settings?.readSeconds ?? DEFAULT_CONTEXT_SETTINGS.readSeconds
 
 // ---------------------------------------------------------------- posto «sistema» del modello
 

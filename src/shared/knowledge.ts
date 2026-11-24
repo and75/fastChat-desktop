@@ -213,6 +213,44 @@ export function knowledgeBudget(numCtx: number, reserveTokens: number, usedToken
   return Math.max(0, Math.min(Math.floor(numCtx * share), numCtx - reserveTokens - usedTokens))
 }
 
+/**
+ * Tempo di lettura dei documenti. Su una macchina lenta lo spazio non è il limite vero: 10.000 token di documenti
+ * a 70 token al secondo sono più di due minuti di attesa prima di ogni risposta.
+ */
+export const READING = {
+  /** Senza una misura della velocità del modello: i documenti entrano per intero solo fino a questo numero di token. */
+  unmeasuredTokens: 2000,
+  /** Una lettura conta come misura solo se è abbastanza lunga (le letture brevi, o quelle in cui Ollama riusa il lavoro già fatto, non dicono la velocità). */
+  minSampleTokens: 500,
+  /** Quante letture recenti del modello si guardano. */
+  samples: 5
+} as const
+
+/**
+ * Velocità di lettura del modello, in token al secondo: la mediana delle letture valide (dalla più recente).
+ * null se non ce n'è nessuna.
+ */
+export function readingSpeed(samples: ReadonlyArray<{ tokens: number | null; ms: number | null }>): number | null {
+  const speeds = samples
+    .filter((s): s is { tokens: number; ms: number } => s.tokens != null && s.ms != null && s.tokens >= READING.minSampleTokens && s.ms > 0)
+    .slice(0, READING.samples)
+    .map((s) => (s.tokens / s.ms) * 1000)
+    .sort((a, b) => a - b)
+  if (speeds.length === 0) return null
+  const mid = Math.floor(speeds.length / 2)
+  return speeds.length % 2 ? speeds[mid] : (speeds[mid - 1] + speeds[mid]) / 2
+}
+
+/**
+ * Token di documenti che il modello legge nel tempo massimo: velocità × secondi. Senza una misura della velocità
+ * vale il valore prudente fisso. null = nessun limite di tempo (secondi a 0).
+ */
+export function readingLimit(tokensPerSecond: number | null, seconds: number): number | null {
+  if (!(seconds > 0)) return null
+  if (tokensPerSecond == null || !(tokensPerSecond > 0)) return READING.unmeasuredTokens
+  return Math.max(1, Math.floor(tokensPerSecond * seconds))
+}
+
 /** Etichetta di una fonte: «Titolo, p. 12» o solo «Titolo». */
 export const sourceLabel = (title: string, locator: string | null | undefined): string => (locator ? `${title}, ${locator}` : title)
 

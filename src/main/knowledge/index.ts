@@ -566,7 +566,8 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
   async function recallAll(
     conv: Conversation,
     question: Question,
-    budget: { total: number; shares?: Record<BasePurpose, number>; documents?: boolean; sections?: Record<string, SectionRules> },
+    /** `documentsMax`: tetto in token per i soli documenti su cui rispondere (limite del tempo di lettura); le basi del ruolo non ne risentono. */
+    budget: { total: number; shares?: Record<BasePurpose, number>; documents?: boolean; sections?: Record<string, SectionRules>; documentsMax?: number | null },
     cpt: number
   ): Promise<RoleRecall> {
     const out: RoleRecall = { documents: { section: '', refs: [] }, behavior: { section: '', count: 0 }, examples: { section: '', count: 0 } }
@@ -587,6 +588,8 @@ export function createKnowledge({ db, embedder, registry, cipher = plainCipher, 
     const groups = { documents: await loadChunks(docs.documents, modelOf), behavior: await kept(docs.behavior), examples: await kept(docs.examples) }
     const need = (k: BasePurpose): number => Math.ceil(totalChars([...groups[k].values()].flat()) / cpt)
     const tokens = splitKnowledgeBudget(budget.total, budget.shares ?? { documents: 1, behavior: 0, examples: 0 }, { documents: need('documents'), behavior: need('behavior'), examples: need('examples') })
+    // Limite del tempo di lettura: se i documenti interi non ci stanno, più sotto si passa agli estratti.
+    if (budget.documentsMax != null) tokens.documents = Math.min(tokens.documents, Math.max(0, Math.floor(budget.documentsMax)))
 
     for (const k of ['behavior', 'examples'] as const) {
       if (docs[k].length === 0 || tokens[k] <= 0) continue

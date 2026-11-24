@@ -88,4 +88,4 @@ L'icona di esportazione, in alto a destra, salva la conversazione in Markdown o 
 
 L'ingranaggio in fondo alla barra laterale apre le «Impostazioni», con le schede «Generale», «Modelli», «Ollama», «Conoscenza», «Contesto».
 
-In «Generale» si scelgono «Lingua», «Tema», «URL di Ollama» e «Modello predefinito»; «Apri il registro» apre il «Registro diagnostico», con le chiamate a Ollama, i tempi di ogni risposta e gli errori, senza il testo dei messaggi. In «Conoscenza» si gestiscono le basi della libreria e si importa un pacchetto con «Importa pacchetto…».
+In «Generale» si scelgono «Lingua», «Tema», «URL di Ollama» e «Modello predefinito»; «Apri il registro» apre il «Registro diagnostico», con le chiamate a Ollama, i tempi di ogni risposta e gli errori, senza il testo dei messaggi. In «Conoscenza» si gestiscono le basi della libreria e si importa un pacchetto con «Importa pacchetto…». In «Contesto», «Lettura dei documenti» fissa quanto tempo il modello può impiegare a leggere i documenti a ogni domanda: se interi richiedono di più, riceve solo gli estratti pertinenti; «Nessun limite» li lascia entrare interi finché c'è spazio.

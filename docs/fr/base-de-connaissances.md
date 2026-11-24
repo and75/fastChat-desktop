@@ -201,6 +201,12 @@ budget = min( part × num_ctx ,
 
 - **Part** par conversation, dans l'onglet « Connaissances » : 25 %, **50 % (par défaut)**, 75 %.
 - Le budget est un plafond : dans une conversation déjà longue, les documents peuvent avoir moins que leur part.
+- **Temps de lecture** (Paramètres → Contexte → « Lecture des documents », 30 secondes par défaut) : les documents
+  sur lesquels répondre ne dépassent pas ce que le modèle lit dans ce temps, soit vitesse de lecture × secondes. La
+  vitesse est la médiane des dernières lectures longues du modèle (au moins 500 tokens), sinon celle du test sur le
+  modèle ; sans aucune mesure, le plafond est de 2 000 tokens. Si les documents entiers ne tiennent pas, on passe
+  aux extraits. « Aucune limite » ne laisse compter que la place. Les bases du rôle (techniques et exemples) ne
+  sont pas concernées.
 - Après les documents, la mémoire de la conversation (extraits des messages résumés) prend au maximum 12 % de ce
   qui reste. En dessous de 64 tokens, on ne cherche rien.
 
