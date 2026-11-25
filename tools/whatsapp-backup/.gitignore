@@ -1,0 +1,7 @@
+node_modules/
+dist/
+resources/bin/win/*
+resources/bin/linux/*
+resources/bin/mac/*
+!resources/bin/**/.gitkeep
+*.log

@@ -1,0 +1,27 @@
+appId: com.andrea.whatsappbackup
+productName: Backup WhatsApp
+directories:
+  output: dist
+  buildResources: build
+files:
+  - src/**/*
+  - package.json
+  - '!**/*.map'
+# Binari esterni (adb, libimobiledevice) e simili: copiati accanto all'app in `resources/bin`.
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter:
+      - '**/*'
+# better-sqlite3 è nativo: lasciato fuori dall'asar; electron-builder lo ricostruisce per Electron.
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+win:
+  target:
+    - nsis
+    - portable
+  artifactName: ${productName}-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
